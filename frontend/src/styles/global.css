@@ -1,0 +1,17 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    font-family: "Inter", system-ui, sans-serif !important;
+    color: #E5E7EB;
+    background-color: #121212;
+  }
+}
