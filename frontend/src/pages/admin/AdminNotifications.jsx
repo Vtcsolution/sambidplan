@@ -1,4 +1,4 @@
-// frontend/src/pages/admin/AdminNotifications.jsx
+﻿// frontend/src/pages/admin/AdminNotifications.jsx
 import { useState, useEffect } from 'react';
 import { 
   Bell, 
@@ -13,7 +13,7 @@ import {
   Send,
   AlertCircle
 } from 'lucide-react';
-import { adminAPI } from '../../services/api';
+import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 
@@ -31,8 +31,8 @@ export default function AdminNotifications() {
 
   useEffect(() => {
     fetchNotifications();
-    // Poll for new notifications every 10 seconds
-    const interval = setInterval(fetchNotifications, 10000);
+    // Poll every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, []);
 

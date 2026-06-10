@@ -6,56 +6,42 @@ export default function WinningBidsAnalysis({ naicsCode, autoFetch = true }) {
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [userNAICS, setUserNAICS] = useState([]);
-  const [selectedNAICS, setSelectedNAICS] = useState(naicsCode || '');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
 
-  // Load user's NAICS codes from localStorage
+  // Auto-fetch whenever the naicsCode prop changes
   useEffect(() => {
-    const storedNAICS = localStorage.getItem('userNAICS');
-    if (storedNAICS) {
-      const parsed = JSON.parse(storedNAICS);
-      setUserNAICS(parsed);
-      if (!naicsCode && parsed.length > 0 && !selectedNAICS) {
-        setSelectedNAICS(parsed[0]);
-      }
-    }
-  }, []);
-
-  // Fetch analysis when selectedNAICS or page changes
-  useEffect(() => {
-    if (autoFetch && selectedNAICS && selectedNAICS.trim()) {
+    if (autoFetch && naicsCode?.trim()) {
+      setCurrentPage(1);
       fetchAnalysis();
     }
-  }, [selectedNAICS, currentPage, autoFetch]);
+  }, [naicsCode, autoFetch]);
+
+  // Re-fetch when page changes
+  useEffect(() => {
+    if (naicsCode?.trim()) fetchAnalysis();
+  }, [currentPage]);
 
   const fetchAnalysis = async () => {
+    if (!naicsCode?.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await opportunityAPI.getWinningBidsAnalysis(selectedNAICS, currentPage, itemsPerPage);
+      const response = await opportunityAPI.getWinningBidsAnalysis(naicsCode, currentPage, itemsPerPage);
       if (response.data.success) {
         setAnalysis(response.data.data);
       } else {
         setError(response.data.message);
       }
-    } catch (error) {
-      console.error('Failed to fetch analysis:', error);
-      setError(error.response?.data?.message || 'Failed to load analysis');
+    } catch (err) {
+      console.error('Failed to fetch analysis:', err);
+      setError(err.response?.data?.message || 'Failed to load analysis');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleNAICSClick = (code) => {
-    setSelectedNAICS(code);
-    setCurrentPage(1); // Reset to first page when changing NAICS
-  };
-
-  const handlePageChange = (newPage) => {
-    setCurrentPage(newPage);
-  };
+  const handlePageChange = (newPage) => setCurrentPage(newPage);
 
   const formatCurrency = (value) => {
     if (value >= 1000000) {
@@ -87,23 +73,10 @@ export default function WinningBidsAnalysis({ naicsCode, autoFetch = true }) {
           <AlertCircle className="w-6 h-6 text-yellow-600" />
           <h3 className="font-semibold text-yellow-800">No Data Available</h3>
         </div>
-        <p className="text-yellow-700">{analysis?.errorMessage || error || 'No federal spending data found for this NAICS code.'}</p>
-        {userNAICS.length > 0 && (
-          <div className="mt-3">
-            <p className="text-yellow-600 text-sm">Try one of your NAICS codes:</p>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {userNAICS.map(code => (
-                <button
-                  key={code}
-                  onClick={() => handleNAICSClick(code)}
-                  className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm hover:bg-yellow-200"
-                >
-                  {code}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <p className="text-yellow-700">
+          {analysis?.errorMessage || error || 'No federal spending data found for this NAICS code.'}
+        </p>
+        <p className="text-yellow-600 text-sm mt-2">Try a different NAICS code using the selector above.</p>
       </div>
     );
   }
@@ -111,21 +84,8 @@ export default function WinningBidsAnalysis({ naicsCode, autoFetch = true }) {
   if (!analysis || analysis.totalAwards === 0) {
     return (
       <div className="bg-gray-50 rounded-xl p-6 text-center">
-        <p className="text-gray-500">No past award data available for NAICS {selectedNAICS}</p>
-        <p className="text-gray-400 text-sm mt-2">Try selecting a different NAICS code</p>
-        {userNAICS.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-4 justify-center">
-            {userNAICS.map(code => (
-              <button
-                key={code}
-                onClick={() => handleNAICSClick(code)}
-                className="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm hover:bg-gray-300"
-              >
-                {code}
-              </button>
-            ))}
-          </div>
-        )}
+        <p className="text-gray-500">No past award data found for NAICS {naicsCode}</p>
+        <p className="text-gray-400 text-sm mt-1">Try a different NAICS code using the selector above.</p>
       </div>
     );
   }
@@ -136,7 +96,7 @@ export default function WinningBidsAnalysis({ naicsCode, autoFetch = true }) {
         <div>
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-emerald-600" />
-            Past Award Analysis for NAICS {analysis.naicsCode}
+            Past Award Analysis — NAICS {naicsCode}
           </h3>
           <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
             <CheckCircle className="w-3 h-3 text-gray-400" />
@@ -221,16 +181,17 @@ export default function WinningBidsAnalysis({ naicsCode, autoFetch = true }) {
                       </span>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right flex flex-col items-end gap-1">
                     <span className="font-semibold text-green-600">{formatCurrency(award.value)}</span>
                     {award.url && (
                       <a
                         href={award.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="ml-2 text-gray-400 hover:text-indigo-600"
+                        className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-1 underline"
                       >
-                        <ExternalLink className="w-3 h-3 inline" />
+                        <ExternalLink className="w-3 h-3" />
+                        View on USAspending
                       </a>
                     )}
                   </div>
@@ -265,28 +226,6 @@ export default function WinningBidsAnalysis({ naicsCode, autoFetch = true }) {
           <p className="text-xs text-gray-400 mt-3 pt-2 border-t">
             * These contracts have already been awarded. Use for market research only.
           </p>
-        </div>
-      )}
-      
-      {/* User NAICS Quick Select */}
-      {userNAICS.length > 1 && (
-        <div className="mt-4 pt-3 border-t border-gray-100">
-          <p className="text-xs text-gray-500 mb-2">Quick select from your NAICS codes:</p>
-          <div className="flex flex-wrap gap-2">
-            {userNAICS.map(code => (
-              <button
-                key={code}
-                onClick={() => handleNAICSClick(code)}
-                className={`px-3 py-1 rounded-full text-xs transition-colors ${
-                  selectedNAICS === code
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {code}
-              </button>
-            ))}
-          </div>
         </div>
       )}
       

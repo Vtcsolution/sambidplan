@@ -7,12 +7,17 @@ import {
   getInvoiceById,
   adminVerifyPayment,
   cancelSubscription,
+  createPayPalPayment,
+  capturePayPalPaymentHandler,
+  getPlanStatus,
   createStripePayment,
   confirmStripePaymentHandler,
-  createPayPalPayment,
-  capturePayPalPaymentHandler
+  createPayoneerCheckout,
+  capturePayoneerReturn,
 } from '../controllers/paymentController.js';
-import { protect, adminOnly } from '../middleware/authMiddleware.js';
+import { createPlanRequest, getUserPlanRequests, submitPaymentProof } from '../controllers/adminController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { flexAdmin } from '../middleware/flexAdminMiddleware.js';
 
 const router = express.Router();
 
@@ -28,15 +33,27 @@ router.get('/invoices', getUserInvoices);
 router.get('/invoices/:id', getInvoiceById);
 router.post('/cancel', cancelSubscription);
 
+// PayPal payment routes
+router.post('/paypal/create-order', createPayPalPayment);
+router.post('/paypal/capture', capturePayPalPaymentHandler);
+
 // Stripe payment routes
 router.post('/stripe/create-intent', createStripePayment);
 router.post('/stripe/confirm', confirmStripePaymentHandler);
 
-// PayPal payment routes
-router.post('/paypal/create-order', createPayPalPayment);     // ← Make sure this exists
-router.post('/paypal/capture', capturePayPalPaymentHandler);  // ← Make sure this exists
+// Payoneer payment routes
+router.post('/payoneer/create-session', createPayoneerCheckout);
+router.post('/payoneer/capture', capturePayoneerReturn);
 
-// Admin only routes
-router.post('/verify-payment/:invoiceId', adminOnly, adminVerifyPayment);
+// Plan status polling (used after payment to confirm activation)
+router.get('/plan-status', getPlanStatus);
+
+// Annual plan requests (submitted by regular users)
+router.post('/plan-requests', createPlanRequest);
+router.get('/plan-requests', getUserPlanRequests);
+router.post('/plan-requests/:id/submit-proof', submitPaymentProof);
+
+// Admin only routes (accept both adminToken and user-admin token)
+router.post('/verify-payment/:invoiceId', flexAdmin, adminVerifyPayment);
 
 export default router;

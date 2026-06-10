@@ -51,6 +51,22 @@ const planRequestSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  userPaymentRef: {
+    type: String,
+    default: ''
+  },
+  userPaymentNote: {
+    type: String,
+    default: ''
+  },
+  paymentProofAt: {
+    type: Date,
+    default: null
+  },
+  instructionsSentAt: {
+    type: Date,
+    default: null
+  },
   approvedAt: {
     type: Date,
     default: null

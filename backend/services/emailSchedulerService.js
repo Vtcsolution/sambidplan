@@ -3,45 +3,120 @@ import cron from 'node-cron';
 import User from '../models/User.js';
 import Opportunity from '../models/Opportunity.js';
 import AlertNotification from '../models/AlertNotification.js';
+import SavedOpportunity from '../models/SavedOpportunity.js';
+import UserCertification from '../models/UserCertification.js';
 import {
   sendTrialReminder,
+  sendTrialDailyUpgradeEmail,
   sendTrialExpiredNotification,
   sendDailyDigest,
   sendRealTimeAlert,
-  sendWeeklyDigest
+  sendWeeklyDigest,
+  sendDeadlineReminder,
+  sendCertificationExpiryAlert,
+  sendWeeklyMarketResearchEmail,
 } from './emailService.js';
+import { generateMarketResearchReport } from './geminiService.js';
 
-// Process trial reminders
+// SAM Registration & Certification Expiry Alerts — 90, 60, 30 days before
+const processCertificationExpiryAlerts = async () => {
+  const REMINDER_DAYS = [90, 60, 30];
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+
+  for (const daysAhead of REMINDER_DAYS) {
+    const from = new Date(now); from.setDate(from.getDate() + daysAhead);
+    const to   = new Date(from); to.setDate(to.getDate() + 1);
+
+    const certs = await UserCertification.find({
+      expiryDate: { $gte: from, $lt: to },
+      [`remindersSent.d${daysAhead}`]: { $ne: true },
+    }).populate('user', 'email name emailAlertsEnabled plan');
+
+    for (const cert of certs) {
+      if (!cert.user?.emailAlertsEnabled) continue;
+      try {
+        await sendCertificationExpiryAlert(cert.user, cert, daysAhead);
+        cert.remindersSent = { ...(cert.remindersSent || {}), [`d${daysAhead}`]: true };
+        await cert.save();
+      } catch (e) {
+        console.error(`Cert expiry alert failed for ${cert.user?.email}:`, e.message);
+      }
+    }
+  }
+};
+
+// Smart Deadline Reminders — fires at 30, 14, 7, 3, 1 day before submission deadline
+const processDeadlineReminders = async () => {
+  const REMINDER_DAYS = [30, 14, 7, 3, 1];
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  for (const daysAhead of REMINDER_DAYS) {
+    const targetDate = new Date(now);
+    targetDate.setDate(targetDate.getDate() + daysAhead);
+    const nextDay = new Date(targetDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    const saved = await SavedOpportunity.find({
+      [`deadlineReminderSent.d${daysAhead}`]: { $ne: true },
+    }).populate([
+      { path: 'user', match: { emailAlertsEnabled: true, plan: { $in: ['starter', 'pro', 'enterprise'] } } },
+      { path: 'opportunity', match: { dueDate: { $gte: targetDate, $lt: nextDay } } },
+    ]);
+
+    for (const s of saved) {
+      if (!s.user || !s.opportunity) continue;
+      try {
+        await sendDeadlineReminder(s.user, s.opportunity, daysAhead);
+        s.deadlineReminderSent = { ...(s.deadlineReminderSent || {}), [`d${daysAhead}`]: true };
+        await s.save();
+      } catch (e) {
+        console.error(`Deadline reminder failed for ${s.user?.email}:`, e.message);
+      }
+    }
+  }
+};
+
+// Process trial reminders — sends an upgrade nudge EVERY day of the 3-day trial
 const processTrialReminders = async () => {
   console.log('📧 Processing trial reminders...');
-  
+
   const users = await User.find({
     plan: 'trial',
     isTrialActive: true,
     trialEndDate: { $exists: true }
   });
-  
+
+  const today = new Date().toDateString();
+
   for (const user of users) {
-    const daysLeft = user.getTrialDaysLeft ? user.getTrialDaysLeft() : Math.ceil((user.trialEndDate - new Date()) / (1000 * 60 * 60 * 24));
-    
-    // Send reminder at 7, 3, and 1 days left
-    if (daysLeft === 7 || daysLeft === 3 || daysLeft === 1) {
-      const lastSent = user.lastTrialReminderSent;
-      const today = new Date().toDateString();
-      
-      if (!lastSent || new Date(lastSent).toDateString() !== today) {
-        await sendTrialReminder(user, daysLeft);
-        user.lastTrialReminderSent = new Date();
-        await user.save();
-      }
-    }
-    
+    const daysLeft = user.getTrialDaysLeft
+      ? user.getTrialDaysLeft()
+      : Math.ceil((user.trialEndDate - new Date()) / (1000 * 60 * 60 * 24));
+
     // Send expired notification on day 0
     if (daysLeft <= 0 && user.isTrialActive) {
-      await sendTrialExpiredNotification(user);
+      try {
+        await sendTrialExpiredNotification(user);
+      } catch (e) {
+        console.error(`Trial expired email failed for ${user.email}:`, e.message);
+      }
       user.isTrialActive = false;
       user.plan = 'expired';
       await user.save();
+      continue;
+    }
+
+    // Send one upgrade nudge per day for every remaining day of the trial
+    const lastSent = user.lastTrialReminderSent;
+    if (!lastSent || new Date(lastSent).toDateString() !== today) {
+      try {
+        await sendTrialDailyUpgradeEmail(user, daysLeft);
+        user.lastTrialReminderSent = new Date();
+        await user.save();
+      } catch (e) {
+        console.error(`Trial daily upgrade email failed for ${user.email}:`, e.message);
+      }
     }
   }
 };
@@ -184,7 +259,7 @@ export const startEmailScheduler = () => {
   console.log('   📨 Real-time emails (Enterprise/Pro) → sent immediately when matches found');
   console.log('   📅 Daily digest (Starter/Pro/Enterprise) → sent at 8 AM');
   console.log('   📆 Weekly digest (Free) → sent on Mondays at 9 AM');
-  console.log('   ⏰ Trial reminders → sent at 7, 3, 1 days before trial ends');
+  console.log('   ⏰ Trial reminders → sent every day during the 3-day trial');
   
   // Process real-time alerts every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
@@ -206,6 +281,17 @@ export const startEmailScheduler = () => {
     }
   });
   
+  // Deadline reminders — run daily at 7 AM
+  cron.schedule('0 7 * * *', async () => {
+    console.log('\n📧 [SCHEDULER] Checking deadline reminders...');
+    try {
+      await processDeadlineReminders();
+      await processCertificationExpiryAlerts();
+    } catch (error) {
+      console.error('❌ Deadline/cert reminders error:', error);
+    }
+  });
+
   // Daily digest at 8 AM
   cron.schedule('0 8 * * *', async () => {
     console.log('\n📧 [SCHEDULER] Running daily digest...', new Date().toLocaleString());
@@ -216,6 +302,25 @@ export const startEmailScheduler = () => {
     }
   });
   
+  // Weekly AI Market Research Report — Enterprise users, Monday at 6 AM
+  cron.schedule('0 6 * * 1', async () => {
+    console.log('\n📊 [SCHEDULER] Sending weekly market research to Enterprise users...');
+    try {
+      const enterpriseUsers = await User.find({ plan: 'enterprise', emailAlertsEnabled: true });
+      for (const user of enterpriseUsers) {
+        try {
+          const report = await generateMarketResearchReport({ naicsCodes: user.naicsCodes, businessName: user.businessName });
+          await sendWeeklyMarketResearchEmail(user, report);
+          await new Promise(r => setTimeout(r, 2000)); // rate limit
+        } catch (e) {
+          console.error(`Market research email failed for ${user.email}:`, e.message);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Weekly market research error:', error);
+    }
+  });
+
   // Weekly digest on Monday at 9 AM
   cron.schedule('0 9 * * 1', async () => {
     console.log('\n📧 [SCHEDULER] Running weekly digest...', new Date().toLocaleString());

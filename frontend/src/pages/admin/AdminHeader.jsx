@@ -19,17 +19,8 @@ export default function AdminHeader({ admin, onMenuClick }) {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('userName');
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('userId');
-    sessionStorage.removeItem('authToken');
-    sessionStorage.removeItem('userEmail');
-    sessionStorage.removeItem('userName');
-    sessionStorage.removeItem('userRole');
-    sessionStorage.removeItem('userId');
-    window.location.href = '/login';
+    ['adminToken', 'adminName', 'adminEmail', 'adminRole'].forEach(k => localStorage.removeItem(k));
+    window.location.href = '/admin/login';
   };
 
   return (

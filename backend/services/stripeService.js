@@ -1,30 +1,30 @@
 // backend/services/stripeService.js
 import Stripe from 'stripe';
 
-// Initialize Stripe only if API key exists
+// Lazy Stripe client — re-created whenever key changes
 let stripe = null;
 
-try {
-  if (process.env.STRIPE_SECRET_KEY && 
-      process.env.STRIPE_SECRET_KEY !== 'your_stripe_secret_key_here' &&
-      process.env.STRIPE_SECRET_KEY.startsWith('sk_')) {
-    stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    console.log('✅ Stripe service initialized with LIVE key');
-  } else if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.includes('sk_test_')) {
-    stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    console.log('✅ Stripe service initialized (TEST MODE)');
-  } else {
-    console.log('⚠️ Stripe API key not found or invalid. Running in SIMULATION MODE.');
+const getStripe = () => {
+  if (stripe) return stripe;
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (key && key.startsWith('sk_')) {
+    try {
+      stripe = new Stripe(key);
+      console.log(`✅ Stripe initialized (${key.startsWith('sk_test_') ? 'TEST' : 'LIVE'})`);
+    } catch (e) {
+      console.log('⚠️ Stripe init failed:', e.message);
+    }
   }
-} catch (error) {
-  console.log('⚠️ Stripe initialization failed:', error.message);
-  console.log('⚠️ Running in SIMULATION MODE');
-}
+  return stripe;
+};
+
+// Called after admin updates Stripe key
+export const resetStripeClient = () => { stripe = null; };
 
 // Create a payment intent
 export const createStripePaymentIntent = async (amount, currency = 'usd', metadata = {}) => {
   // SIMULATION MODE (no API key)
-  if (!stripe) {
+  if (!getStripe()) {
     console.log(`📝 [SIMULATION] Stripe payment intent for $${amount}`);
     return {
       success: true,
@@ -38,7 +38,7 @@ export const createStripePaymentIntent = async (amount, currency = 'usd', metada
   
   // REAL Stripe API call
   try {
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await getStripe().paymentIntents.create({
       amount: Math.round(amount * 100), // Convert to cents
       currency,
       metadata: {
@@ -87,7 +87,7 @@ export const confirmStripePayment = async (paymentIntentId) => {
   
   // REAL Stripe API call
   try {
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    const paymentIntent = await getStripe().paymentIntents.retrieve(paymentIntentId);
     
     console.log(`✅ Real Stripe payment status: ${paymentIntent.status}`);
     
@@ -105,6 +105,52 @@ export const confirmStripePayment = async (paymentIntentId) => {
       success: false,
       error: error.message
     };
+  }
+};
+
+// Create a Stripe Checkout session for an enterprise inquiry payment link
+export const createCheckoutSessionForInquiry = async ({ inquiryId, email, planName, amount, billingCycle, successUrl, cancelUrl }) => {
+  if (!getStripe()) {
+    // Simulation mode — return fake link
+    const fakeSessionId = `sim_cs_${Date.now()}`;
+    return {
+      success: true,
+      sessionId: fakeSessionId,
+      url: `${successUrl}?session_id=${fakeSessionId}&simulated=1`,
+      isSimulated: true,
+    };
+  }
+
+  try {
+    const session = await getStripe().checkout.sessions.create({
+      mode: 'payment',
+      customer_email: email,
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: Math.round(amount * 100),
+          product_data: {
+            name: `Sambid Notify — ${planName.charAt(0).toUpperCase() + planName.slice(1)} Plan`,
+            description: `${billingCycle === 'yearly' ? 'Annual' : 'Monthly'} subscription`,
+          },
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        inquiryId: inquiryId.toString(),
+        planName,
+        billingCycle,
+        source: 'inquiry_payment_link',
+      },
+      success_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: cancelUrl,
+    });
+
+    return { success: true, sessionId: session.id, url: session.url, isSimulated: false };
+  } catch (error) {
+    console.error('❌ Stripe checkout session error:', error.message);
+    return { success: false, error: error.message };
   }
 };
 
@@ -129,7 +175,7 @@ export const refundStripePayment = async (paymentIntentId, amount = null) => {
       refundParams.amount = Math.round(amount * 100);
     }
     
-    const refund = await stripe.refunds.create(refundParams);
+    const refund = await getStripe().refunds.create(refundParams);
     
     console.log(`✅ Real Stripe refund created: ${refund.id}`);
     

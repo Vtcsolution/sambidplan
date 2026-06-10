@@ -1,11 +1,16 @@
 // frontend/src/pages/Pricing.jsx
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Check, Zap, Shield, Users, CreditCard, X, ArrowRight, Loader2 } from 'lucide-react';
 import PaymentModal from '../components/PaymentModal';
 import { authAPI, paymentAPI } from '../services/api';
 
+// Yearly prices shown on the pricing page (20% off annual total).
+// These match priceYearly in the Plan model — keep in sync.
+const YEARLY_SAVINGS_PCT = 20; // displayed as badge on yearly toggle
+
 export default function Pricing() {
+  const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -51,26 +56,35 @@ export default function Pricing() {
   const getPrice = (plan) => {
     if (plan.name === 'free') return 'Free';
     if (billingCycle === 'monthly') return `$${plan.priceMonthly}`;
-    return `$${plan.priceYearly}`;
+    return `$${plan.priceYearly.toLocaleString()}`;
   };
 
-  const getPeriodText = () => {
+  const getPeriodText = (plan) => {
+    if (!plan || plan.name === 'free') return '';
     return billingCycle === 'monthly' ? '/month' : '/year';
+  };
+
+  // Monthly equivalent shown under yearly price so users can compare easily
+  const getMonthlyEquivalent = (plan) => {
+    if (plan.name === 'free' || billingCycle === 'monthly') return null;
+    const equiv = (plan.priceYearly / 12).toFixed(0);
+    return `~$${equiv}/mo`;
   };
 
   const handleUpgrade = (plan) => {
     if (!isAuthenticated) {
-      alert('Please login to upgrade your plan');
-      window.location.href = '/login';
+      navigate('/login');
       return;
     }
-    
     if (plan.name === 'free') return;
-    if (plan.name === 'enterprise') {
-      window.location.href = '/contact';
+
+    // All yearly paid plans → Annual Plan Request form (manual activation)
+    if (billingCycle === 'yearly') {
+      navigate(`/annual-plan-request?plan=${plan.name}`);
       return;
     }
-    
+
+    // Monthly plans → direct PayPal/Stripe payment
     setSelectedPlan(plan);
     setShowPaymentModal(true);
   };
@@ -107,22 +121,22 @@ export default function Pricing() {
   const sortedPlans = [...plans].sort((a, b) => a.order - b.order);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-10 sm:py-12 md:py-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+        <div className="text-center mb-8 sm:mb-12">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
             Simple, Transparent Pricing
           </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl text-gray-600 max-w-2xl mx-auto px-2">
             Choose the plan that fits your business. All plans include access to our federal contract matching engine.
           </p>
-          
+
           {/* Billing Toggle */}
-          <div className="inline-flex items-center gap-4 mt-8 p-1 bg-gray-100 rounded-full">
+          <div className="inline-flex items-center gap-2 sm:gap-4 mt-6 sm:mt-8 p-1 bg-gray-100 rounded-full">
             <button
               onClick={() => setBillingCycle('monthly')}
-              className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
+              className={`px-4 sm:px-6 py-2 rounded-full text-sm font-medium transition-all ${
                 billingCycle === 'monthly'
                   ? 'bg-white text-indigo-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -132,20 +146,20 @@ export default function Pricing() {
             </button>
             <button
               onClick={() => setBillingCycle('yearly')}
-              className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
+              className={`px-4 sm:px-6 py-2 rounded-full text-sm font-medium transition-all ${
                 billingCycle === 'yearly'
                   ? 'bg-white text-indigo-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               Yearly
-              <span className="ml-1 text-xs text-green-600">Save 20%</span>
+              <span className="ml-1 text-xs text-green-600 font-semibold">Save {YEARLY_SAVINGS_PCT}%</span>
             </button>
           </div>
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6">
           {sortedPlans.map((plan) => (
             <div
               key={plan._id}
@@ -166,9 +180,21 @@ export default function Pricing() {
                 <p className="text-gray-500 text-sm mt-1">{plan.description}</p>
                 
                 <div className="mt-4">
-                  <span className="text-4xl font-bold text-gray-900">{getPrice(plan)}</span>
-                  {plan.name !== 'free' && (
-                    <span className="text-gray-500 ml-1">{getPeriodText()}</span>
+                  <div className="flex items-end gap-1 flex-wrap">
+                    <span className="text-4xl font-bold text-gray-900">{getPrice(plan)}</span>
+                    {plan.name !== 'free' && (
+                      <span className="text-gray-500 mb-1">{getPeriodText(plan)}</span>
+                    )}
+                  </div>
+                  {getMonthlyEquivalent(plan) && (
+                    <p className="text-xs text-green-600 font-semibold mt-1">
+                      {getMonthlyEquivalent(plan)} · Save {YEARLY_SAVINGS_PCT}%
+                    </p>
+                  )}
+                  {billingCycle === 'monthly' && plan.name !== 'free' && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      or ${plan.priceYearly.toLocaleString()}/yr (save {YEARLY_SAVINGS_PCT}%)
+                    </p>
                   )}
                 </div>
                 
@@ -177,12 +203,23 @@ export default function Pricing() {
                     Current Plan
                   </div>
                 ) : (
-                  <button
-                    onClick={() => handleUpgrade(plan)}
-                    className={`w-full mt-6 px-4 py-2.5 rounded-lg font-medium transition-all ${getButtonStyle(plan)}`}
-                  >
-                    {plan.name === 'free' ? 'Current Plan' : `Upgrade to ${plan.displayName}`}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleUpgrade(plan)}
+                      className={`w-full mt-6 px-4 py-2.5 rounded-lg font-medium transition-all ${getButtonStyle(plan)}`}
+                    >
+                      {plan.name === 'free'
+                        ? 'Current Plan'
+                        : billingCycle === 'yearly'
+                          ? `Request ${plan.displayName} Annual`
+                          : `Upgrade to ${plan.displayName}`}
+                    </button>
+                    {billingCycle === 'yearly' && plan.name !== 'free' && (
+                      <p className="text-xs text-center text-gray-400 mt-2">
+                        Reviewed &amp; activated within 1 business day
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
               
@@ -208,18 +245,16 @@ export default function Pricing() {
         </div>
         
         {/* Trust Badges */}
-        <div className="mt-16 text-center">
+        <div className="mt-12 sm:mt-16 text-center">
           <p className="text-sm text-gray-500 mb-4">Trusted by federal contractors nationwide</p>
-          <div className="flex flex-wrap justify-center gap-8 opacity-50">
-            <span className="text-gray-400 font-semibold">✓ Secure Payments</span>
-            <span className="text-gray-400 font-semibold">✓ 24/7 Support</span>
-            <span className="text-gray-400 font-semibold">✓ Cancel Anytime</span>
-            <span className="text-gray-400 font-semibold">✓ No Hidden Fees</span>
+          <div className="flex flex-wrap justify-center gap-4 sm:gap-8 opacity-60">
+            {['✓ Secure Payments', '✓ 24/7 Support', '✓ Cancel Anytime', '✓ No Hidden Fees'].map(b => (
+              <span key={b} className="text-xs sm:text-sm text-gray-500 font-semibold">{b}</span>
+            ))}
           </div>
         </div>
       </div>
       
-      {/* Payment Modal */}
       <PaymentModal
         isOpen={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}

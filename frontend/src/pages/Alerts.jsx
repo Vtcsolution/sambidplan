@@ -2,13 +2,18 @@
 import { useState, useEffect } from 'react';
 import { Bell, Zap, Clock, Eye, Target, TrendingUp } from 'lucide-react';
 import { opportunityAPI } from '../services/api';
+import { useUserPlan } from '../hooks/useUserPlan';
+import PlanGate from '../components/PlanGate';
 import Card from '../components/Card';
 
 export default function Alerts() {
+  const { plan: userPlan } = useUserPlan();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState(null);
   const [lastFetched, setLastFetched] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchMatches();
@@ -48,6 +53,15 @@ export default function Alerts() {
     return '📌';
   };
 
+  const totalPages = Math.ceil(matches.length / pageSize);
+  if (!['starter', 'pro', 'enterprise'].includes(userPlan)) {
+    return <PlanGate requiredPlan="starter"
+      featureName="Smart Alerts"
+      description="Get real-time contract match alerts filtered by your NAICS codes and scoring. Available on Starter, Pro, and Enterprise plans." />;
+  }
+
+  const paginatedMatches = matches.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -57,42 +71,42 @@ export default function Alerts() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 py-5 sm:py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-            <Zap className="w-8 h-8 text-indigo-600" />
+        <div className="mb-5 sm:mb-8">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
+            <Zap className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 shrink-0" />
             Your Matched Opportunities
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-sm sm:text-base text-gray-600 mt-0.5 sm:mt-1">
             Automatically matched from SAM.gov based on your NAICS codes
           </p>
           
           {/* User Profile Info */}
           {userProfile && (
-            <div className="mt-4 p-4 bg-white rounded-lg shadow-sm">
-              <div className="flex flex-wrap justify-between items-center gap-4">
+            <div className="mt-3 sm:mt-4 p-3 sm:p-4 bg-white rounded-lg shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <div>
-                  <p className="text-sm text-gray-500">Your NAICS Codes</p>
-                  <div className="flex flex-wrap gap-2 mt-1">
+                  <p className="text-xs sm:text-sm text-gray-500 mb-1">Your NAICS Codes</p>
+                  <div className="flex flex-wrap gap-2">
                     {userProfile.naicsCodes?.map((code, i) => (
-                      <span key={i} className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-md text-sm font-mono">
+                      <span key={i} className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-md text-xs sm:text-sm font-mono">
                         {code}
                       </span>
                     ))}
                     {(!userProfile.naicsCodes || userProfile.naicsCodes.length === 0) && (
-                      <span className="text-gray-400">No NAICS codes configured</span>
+                      <span className="text-gray-400 text-sm">No NAICS codes configured</span>
                     )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm text-gray-500">Your Plan</p>
-                  <p className="text-lg font-semibold capitalize text-indigo-600">{userProfile.plan}</p>
+                <div className="sm:text-right">
+                  <p className="text-xs sm:text-sm text-gray-500">Your Plan</p>
+                  <p className="text-base sm:text-lg font-semibold capitalize text-indigo-600">{userProfile.plan}</p>
                   <p className="text-xs text-gray-400">
-                    {userProfile.dailyLimit === 'Unlimited' 
-                      ? 'Unlimited matches today' 
-                      : `${userProfile.remainingMatches || 0} matches remaining today`}
+                    {userProfile.monthlyLimit === 'Unlimited'
+                      ? 'Unlimited matches'
+                      : `${userProfile.remainingThisMonth ?? userProfile.remainingMatches ?? 0} remaining this month`}
                   </p>
                 </div>
               </div>
@@ -129,7 +143,7 @@ export default function Alerts() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {matches.map((match) => (
+            {paginatedMatches.map((match) => (
               <div
                 key={match._id}
                 className="bg-white rounded-xl p-5 shadow-sm hover:shadow-md transition-all border-l-4 border-l-indigo-500"
@@ -189,18 +203,59 @@ export default function Alerts() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2">
+                  <div className="flex shrink-0">
                     <a
                       href={`/opportunity/${match._id}`}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                      className="px-3 sm:px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-1.5 sm:gap-2 text-sm"
                     >
                       <Eye className="w-4 h-4" />
-                      View Details
+                      <span className="hidden sm:inline">View Details</span>
+                      <span className="sm:hidden">View</span>
                     </a>
                   </div>
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Pagination + Rows per page */}
+        {matches.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6 sm:mt-8">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+              >
+                {[10, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span className="text-gray-400 hidden sm:inline">
+                Showing {Math.min((currentPage - 1) * pageSize + 1, matches.length)}–{Math.min(currentPage * pageSize, matches.length)} of {matches.length}
+              </span>
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 sm:px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50 transition-colors"
+                >
+                  ← Prev
+                </button>
+                <span className="px-3 sm:px-4 py-2 text-sm text-gray-600">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 sm:px-4 py-2 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50 transition-colors"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
         )}
 

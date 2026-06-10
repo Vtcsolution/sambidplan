@@ -77,7 +77,7 @@ const defaultPlans = [
     displayName: 'Starter',
     description: 'For growing contractors',
     priceMonthly: 29,
-    priceYearly: 290,
+    priceYearly: 278,   // 20% off ($29×12=$348 → $278)
     features: [
       { name: '50 Alerts per month', included: true },
       { name: 'Advanced contract search', included: true },
@@ -102,7 +102,7 @@ const defaultPlans = [
     displayName: 'Pro',
     description: 'For established federal contractors',
     priceMonthly: 79,
-    priceYearly: 790,
+    priceYearly: 758,   // 20% off ($79×12=$948 → $758)
     features: [
       { name: 'Unlimited alerts', included: true },
       { name: 'Real-time tracking', included: true },
@@ -127,7 +127,7 @@ const defaultPlans = [
     displayName: 'Enterprise',
     description: 'For large organizations',
     priceMonthly: 499,
-    priceYearly: 4990,
+    priceYearly: 4788,  // 20% off ($499×12=$5,988 → $4,788 ≈ $399/mo)
     features: [
       { name: 'Unlimited alerts', included: true },
       { name: 'Real-time tracking', included: true },
@@ -151,12 +151,29 @@ const defaultPlans = [
   }
 ];
 
-// Initialize default plans if none exist
+let _initialized = false;
+
+// Single source of truth for plan init + price/feature sync.
+// Runs at most once per server process (flag prevents repeated DB writes).
 export const initializePlans = async () => {
-  const count = await mongoose.model('Plan').countDocuments();
+  if (_initialized) return;
+  _initialized = true;
+
+  const Plan = mongoose.model('Plan');
+  const count = await Plan.countDocuments();
   if (count === 0) {
-    await mongoose.model('Plan').insertMany(defaultPlans);
+    await Plan.insertMany(defaultPlans);
     console.log('✅ Default plans created');
+  } else {
+    // Insert any missing plans; preserve prices already set by admin (only set on insert)
+    for (const def of defaultPlans) {
+      const exists = await Plan.findOne({ name: def.name });
+      if (!exists) {
+        await Plan.create(def);
+        console.log(`✅ Created missing plan: ${def.name}`);
+      }
+    }
+    console.log('✅ Plans checked (existing prices preserved, missing plans inserted)');
   }
 };
 

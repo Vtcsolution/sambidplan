@@ -1,0 +1,36 @@
+User-agent: *
+
+# Allow public marketing pages
+Allow: /$
+Allow: /pricing
+Allow: /about
+Allow: /how-it-works
+Allow: /contact
+Allow: /login
+Allow: /signup
+
+# Block private dashboard and API
+Disallow: /dashboard
+Disallow: /opportunities
+Disallow: /opportunity/
+Disallow: /saved
+Disallow: /alerts
+Disallow: /settings
+Disallow: /profile
+Disallow: /notifications
+Disallow: /help
+Disallow: /pipeline
+Disallow: /calendar
+Disallow: /referral
+Disallow: /capability-statement
+Disallow: /rfp-analyzer
+Disallow: /go-no-go
+Disallow: /teaming-finder
+Disallow: /contract-vehicles
+Disallow: /market-research
+Disallow: /winning-bids
+Disallow: /admin
+Disallow: /api/
+Disallow: /onboarding
+
+Sitemap: https://yourdomain.com/sitemap.xml

@@ -12,7 +12,7 @@ const adminNotificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['plan_request', 'payment', 'user_signup', 'system', 'alert', 'info'],
+    enum: ['plan_request', 'payment', 'user_signup', 'system', 'alert', 'info', 'ticket_created', 'ticket_reply', 'suggestion'],
     default: 'info'
   },
   read: {

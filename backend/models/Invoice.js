@@ -42,11 +42,21 @@ const invoiceSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['payoneer', 'bank_transfer', 'manual', 'stripe', 'paypal'],  // ← ADDED 'stripe' and 'paypal'
+    enum: ['payoneer', 'bank_transfer', 'manual', 'credit_card', 'stripe', 'paypal'],
     default: 'payoneer'
   },
   paidAt: {
     type: Date
+  },
+  // PayPal-specific — unique order ID to prevent double-capture
+  paypalOrderId: {
+    type: String,
+    default: null,
+    sparse: true   // allows multiple null values while enforcing uniqueness on non-null
+  },
+  paypalCaptureId: {
+    type: String,
+    default: null
   },
   expiresAt: {
     type: Date,
@@ -59,6 +69,9 @@ const invoiceSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Unique index on PayPal order ID (sparse = ignore null values)
+invoiceSchema.index({ paypalOrderId: 1 }, { unique: true, sparse: true });
 
 // Generate invoice number before saving
 invoiceSchema.pre('save', async function(next) {

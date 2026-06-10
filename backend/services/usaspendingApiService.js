@@ -1,3 +1,4 @@
+// backend/services/usaspendingApiService.js
 import Opportunity from '../models/Opportunity.js';
 
 /**
@@ -17,29 +18,27 @@ export const fetchUSAspendingOpportunities = async (naicsCode = null, limit = 50
       return date.toISOString().split('T')[0];
     };
     
-    // CORRECTED request body with proper field names
     const requestBody = {
       filters: {
-        award_type_codes: ["A", "B", "C", "D"], // A=Contracts, B=Grants, C=Cooperative Agreements
-        time_period: [
-          {
-            start_date: formatDate(startDate),
-            end_date: formatDate(endDate)
-          }
-        ]
+        award_type_codes: ["A", "B", "C", "D"],
+        time_period: [{ start_date: formatDate(startDate), end_date: formatDate(endDate) }]
       },
       fields: [
         "Award ID",
+        "generated_unique_award_id",
         "Description",
         "Award Amount",
         "Awarding Agency",
         "naics_code",
         "Start Date",
-        "Recipient Name"
+        "End Date",
+        "Recipient Name",
+        "Place of Performance State Code",
+        "Place of Performance City Name"
       ],
       page: 1,
       limit: Math.min(limit, 100),
-      sort: "Start Date",
+      sort: "Award Amount",
       order: "desc"
     };
     
@@ -85,22 +84,33 @@ export const fetchUSAspendingOpportunities = async (naicsCode = null, limit = 50
       });
     }
     
-    // Transform to your schema
+    // Build a direct USAspending award page URL using generated_unique_award_id
+    const buildAwardUrl = (award) => {
+      const uid = award.generated_unique_award_id || award["Award ID"];
+      if (uid) return `https://www.usaspending.gov/award/${encodeURIComponent(uid)}/`;
+      return 'https://www.usaspending.gov/search/';
+    };
+
+    // Transform to schema
     const opportunities = data.results.map(award => ({
       source: 'usaspending',
-      sourceId: award["Award ID"] || `usa_${Date.now()}_${Math.random()}`,
+      sourceId: award.generated_unique_award_id || award["Award ID"] || `usa_${Date.now()}_${Math.random()}`,
       title: award.Description ? award.Description.substring(0, 200) : 'Federal Contract Award',
       description: award.Description || 'No description available',
       agency: award["Awarding Agency"] || 'Federal Agency',
       estimatedValue: award["Award Amount"] || 0,
       postedDate: award["Start Date"] ? new Date(award["Start Date"]) : new Date(),
-      dueDate: award["Start Date"] ? new Date(award["Start Date"]) : new Date(),
+      dueDate: award["End Date"] ? new Date(award["End Date"]) : null,
       naicsCode: award.naics_code || naicsCode || '000000',
       pscCode: '',
       setAside: '',
-      placeOfPerformance: { city: '', state: '', zipCode: '' },
-      contactInfo: { name: '', email: '', phone: '' },
-      url: `https://www.usaspending.gov/award/${award["Award ID"]}`,
+      placeOfPerformance: {
+        city: award["Place of Performance City Name"] || '',
+        state: award["Place of Performance State Code"] || '',
+        zipCode: ''
+      },
+      contactInfo: { name: award["Recipient Name"] || '', email: '', phone: '' },
+      url: buildAwardUrl(award),
       extractedKeywords: [],
       aiSummary: null,
       lastFetched: new Date(),

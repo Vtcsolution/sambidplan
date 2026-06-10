@@ -1,8 +1,9 @@
 // frontend/src/components/admin/NotificationDropdown.jsx
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { Bell, CheckCircle, CreditCard, Users, AlertCircle } from 'lucide-react';
-import { adminAPI } from '../../services/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { Bell, CheckCircle, CreditCard, Users, AlertCircle, MessageSquare, Ticket, Star } from 'lucide-react';
+import { adminPanelAPI as adminAPI } from '../../services/adminApi';
+import { getSocket } from '../../hooks/useSocket';
 import notificationSound from '../../assets/sounds/admin_notification.mp3';
 
 export default function NotificationDropdown() {
@@ -10,6 +11,7 @@ export default function NotificationDropdown() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const navigate = useNavigate();
   const dropdownRef = useRef(null);
   const audioRef = useRef(null);
   const lastNotificationIds = useRef(new Set());
@@ -78,28 +80,64 @@ export default function NotificationDropdown() {
   };
 
   useEffect(() => {
-    // Initial fetch
     fetchNotifications();
     fetchUnreadCount();
 
-    // Poll for new notifications every 3 seconds (faster for real-time)
     const interval = setInterval(() => {
-      fetchNotifications();
-      fetchUnreadCount();
-    }, 3000);
+      if (document.visibilityState === 'visible') { fetchNotifications(); fetchUnreadCount(); }
+    }, 30000);
 
-    // Click outside to close
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
+
+    // Real-time socket events
+    const socket = getSocket('adminToken');
+    const injectLive = (type, title, message, link) => {
+      playNotificationSound();
+      setUnreadCount(prev => prev + 1);
+      setNotifications(prev => [{
+        _id: `live_${Date.now()}`,
+        type, title, message, read: false,
+        createdAt: new Date().toISOString(),
+        metadata: {},
+        _link: link,
+      }, ...prev.slice(0, 19)]);
+    };
+
+    const onTicketNew   = (d) => injectLive('ticket_created',
+      `🎫 New ticket: ${d.ticketNumber}`,
+      `${d.userName} — ${d.subject}`, '/admin/tickets');
+    const onUserReply   = (d) => injectLive('ticket_reply',
+      `💬 User replied: ${d.ticketNumber}`,
+      `${d.userName}: ${d.message?.content?.slice(0, 80) || ''}`, '/admin/tickets');
+    const onTicketUpdate = (d) => {
+      // Just refresh counts silently
+      fetchUnreadCount();
+      // Update status in the displayed list without a full refetch
+      setNotifications(prev => prev.map(n =>
+        n.metadata?.ticketNumber === d.ticketNumber
+          ? { ...n, message: `Status: ${d.status}` } : n
+      ));
+    };
+
+    if (socket) {
+      socket.on('ticket:new',         onTicketNew);
+      socket.on('ticket:user_reply',  onUserReply);
+      socket.on('ticket:updated',     onTicketUpdate);
+    }
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('mousedown', handleClickOutside);
+      if (socket) {
+        socket.off('ticket:new',        onTicketNew);
+        socket.off('ticket:user_reply', onUserReply);
+        socket.off('ticket:updated',    onTicketUpdate);
+      }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchNotifications = async () => {
@@ -160,15 +198,28 @@ export default function NotificationDropdown() {
 
   const getNotificationIcon = (type) => {
     switch(type) {
-      case 'payment':
-        return <CreditCard className="w-4 h-4 text-green-500" />;
-      case 'user_signup':
-        return <Users className="w-4 h-4 text-blue-500" />;
-      case 'plan_request':
-        return <AlertCircle className="w-4 h-4 text-yellow-500" />;
-      default:
-        return <Bell className="w-4 h-4 text-gray-500" />;
+      case 'payment':        return <CreditCard   className="w-4 h-4 text-green-500" />;
+      case 'user_signup':    return <Users         className="w-4 h-4 text-blue-500" />;
+      case 'plan_request':   return <AlertCircle  className="w-4 h-4 text-yellow-500" />;
+      case 'ticket_created': return <Ticket        className="w-4 h-4 text-indigo-500" />;
+      case 'ticket_reply':   return <MessageSquare className="w-4 h-4 text-blue-500" />;
+      case 'plan_activated': return <Star          className="w-4 h-4 text-amber-500" />;
+      default:               return <Bell          className="w-4 h-4 text-gray-500" />;
     }
+  };
+
+  const getNotifLink = (n) => {
+    if (n._link) return n._link;
+    if (n.type === 'ticket_created' || n.type === 'ticket_reply') return '/admin/tickets';
+    if (n.type === 'payment') return '/admin/invoices';
+    if (n.type === 'user_signup') return '/admin/plan-requests';
+    return null;
+  };
+
+  const handleNotifClick = async (n) => {
+    if (!n.read) await handleMarkAsRead(n._id);
+    const link = getNotifLink(n);
+    if (link) { setIsOpen(false); navigate(link); }
   };
 
   const getTimeAgo = (date) => {
@@ -196,7 +247,7 @@ export default function NotificationDropdown() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden">
+        <div className="absolute right-0 mt-2 w-[min(320px,calc(100vw-2rem))] sm:w-80 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden">
           {/* Header */}
           <div className="flex justify-between items-center px-4 py-3 border-b border-gray-100 bg-gray-50">
             <h3 className="font-semibold text-gray-900">Notifications</h3>
@@ -221,8 +272,9 @@ export default function NotificationDropdown() {
               notifications.map((notification) => (
                 <div
                   key={notification._id}
-                  className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                    !notification.read ? 'bg-blue-50/30' : ''
+                  onClick={() => handleNotifClick(notification)}
+                  className={`p-4 border-b border-gray-100 transition-colors cursor-pointer ${
+                    !notification.read ? 'bg-blue-50/30 hover:bg-blue-50/50' : 'hover:bg-gray-50'
                   }`}
                 >
                   <div className="flex gap-3">
@@ -231,15 +283,15 @@ export default function NotificationDropdown() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start gap-2">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className={`text-sm truncate ${!notification.read ? 'font-semibold text-gray-900' : 'font-medium text-gray-800'}`}>
                           {notification.title}
                         </p>
                         {!notification.read && (
                           <button
-                            onClick={() => handleMarkAsRead(notification._id)}
+                            onClick={e => { e.stopPropagation(); handleMarkAsRead(notification._id); }}
                             className="text-xs text-indigo-600 hover:text-indigo-700 flex-shrink-0"
                           >
-                            Mark read
+                            ✓
                           </button>
                         )}
                       </div>
@@ -257,6 +309,7 @@ export default function NotificationDropdown() {
                         )}
                       </div>
                     </div>
+                    {!notification.read && <div className="w-2 h-2 bg-indigo-500 rounded-full mt-1.5 shrink-0" />}
                   </div>
                 </div>
               ))

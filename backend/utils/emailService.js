@@ -62,7 +62,7 @@ class EmailService {
           <div class="container">
             <div class="header">
               <h1>🎯 New Partnership Application</h1>
-              <p>Greatodeal Partnership Program</p>
+              <p>Sambid</p>
             </div>
             
             <div class="content">
@@ -106,13 +106,13 @@ class EmailService {
                 <h2>🚀 Quick Actions</h2>
                 <p>📧 <a href="mailto:${formData.email}">Reply to ${formData.name}</a></p>
                 <p>📞 <a href="tel:${formData.phone || ''}">Call ${formData.name}</a></p>
-                <p>📅 <a href="https://calendly.com/greatodeal/partnership-consultation?email=${encodeURIComponent(formData.email)}&name=${encodeURIComponent(formData.name)}">Schedule Consultation</a></p>
+                <p>📅 <a href="https://sambid.co/contact?email=${encodeURIComponent(formData.email)}&name=${encodeURIComponent(formData.name)}">Schedule Consultation</a></p>
               </div>
             </div>
             
             <div class="footer">
               <p>This application was submitted on ${new Date().toLocaleString()}</p>
-              <p>Greatodeal Partnership Program | AI & Automation Solutions</p>
+              <p>Sambid | AI & Automation Solutions</p>
               <p><small>This email was automatically generated from the partnership application form.</small></p>
             </div>
           </div>
@@ -153,8 +153,8 @@ Submission Date: ${new Date().toLocaleString()}
       `;
 
       const mailOptions = {
-        from: `"Greatodeal Partnership" <${process.env.EMAIL_USER}>`,
-        to: 'sales@greatodeal.com',
+        from: `"Sambid" <${process.env.EMAIL_USER}>`,
+        to: 'support@sambid.co',
         cc: process.env.EMAIL_CC ? process.env.EMAIL_CC.split(',') : [],
         bcc: process.env.EMAIL_BCC ? process.env.EMAIL_BCC.split(',') : [],
         subject: `🎯 New Partnership Application: ${formData.company} - ${formData.name}`,
@@ -200,13 +200,13 @@ Submission Date: ${new Date().toLocaleString()}
           <div class="container">
             <div class="header">
               <h1>✨ Thank You for Your Partnership Application!</h1>
-              <p>Greatodeal Partnership Program</p>
+              <p>Sambid</p>
             </div>
             
             <div class="content">
               <div class="thank-you">
                 <h2>Dear ${formData.name},</h2>
-                <p>Thank you for submitting your partnership application to Greatodeal. We're excited to learn more about your project and explore how we can work together to bring your vision to life.</p>
+                <p>Thank you for submitting your partnership application to Sambid. We're excited to learn more about your project and explore how we can work together to bring your vision to life.</p>
               </div>
               
               <div class="next-steps">
@@ -221,13 +221,13 @@ Submission Date: ${new Date().toLocaleString()}
               
               <div class="contact-info">
                 <h3>📞 Need Immediate Assistance?</h3>
-                <p><strong>Email:</strong> partnership@greatodeal.com</p>
+                <p><strong>Email:</strong> support@sambid.co</p>
                 <p><strong>Phone:</strong> +1 (234) 567-890</p>
-                <p><strong>Schedule Directly:</strong> <a href="https://calendly.com/greatodeal/partnership-consultation">Book a Consultation</a></p>
+                <p><strong>Schedule Directly:</strong> <a href="https://sambid.co/contact">Book a Consultation</a></p>
               </div>
               
               <div style="text-align: center; margin: 30px 0;">
-                <a href="https://greatodeal.com/partnership-faq" style="background: #2E7D7B; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                <a href="https://sambid.co/contact" style="background: #2E7D7B; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
                   📚 View Partnership FAQ
                 </a>
               </div>
@@ -235,7 +235,7 @@ Submission Date: ${new Date().toLocaleString()}
             
             <div class="footer">
               <p>This is an automated confirmation email. Please do not reply to this message.</p>
-              <p>Greatodeal Partnership Program | Transforming Businesses with AI & Automation</p>
+              <p>Sambid | Transforming Businesses with AI & Automation</p>
               <p><small>Application ID: ${Date.now()}-${Math.random().toString(36).substr(2, 9)}</small></p>
             </div>
           </div>
@@ -244,9 +244,9 @@ Submission Date: ${new Date().toLocaleString()}
       `;
 
       const mailOptions = {
-        from: `"Greatodeal Partnership Team" <${process.env.EMAIL_USER}>`,
+        from: `"Sambid Partnership Team" <${process.env.EMAIL_USER}>`,
         to: formData.email,
-        subject: '🎯 Greatodeal Partnership Application Received',
+        subject: '🎯 Sambid Partnership Application Received',
         html: htmlContent,
         headers: {
           'X-Auto-Response-Suppress': 'All'

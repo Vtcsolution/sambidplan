@@ -51,6 +51,44 @@ export const isAdmin = async (req, res, next) => {
 // Alias for compatibility
 export const adminOnly = isAdmin;
 
+// Auto-expire plans and enforce active subscription on every request.
+// Call this after protect() on any paid-feature route.
+export const enforcePlanExpiry = async (req, res, next) => {
+  if (!req.user || req.user.role === 'admin') return next();
+
+  const now = new Date();
+  let changed = false;
+
+  // Trial expired → free
+  if (req.user.plan === 'trial' && now > new Date(req.user.trialEndDate)) {
+    req.user.plan        = 'free';
+    req.user.isTrialActive = false;
+    changed = true;
+  }
+
+  // Paid plan expired → free
+  if (
+    ['starter', 'pro', 'enterprise'].includes(req.user.plan) &&
+    req.user.planExpiresAt &&
+    now > new Date(req.user.planExpiresAt)
+  ) {
+    req.user.plan        = 'free';
+    req.user.planExpiresAt = null;
+    changed = true;
+  }
+
+  if (changed) {
+    await User.findByIdAndUpdate(req.user._id, {
+      plan:           req.user.plan,
+      isTrialActive:  req.user.isTrialActive ?? false,
+      planExpiresAt:  req.user.planExpiresAt ?? null,
+    });
+    console.log(`⏰ Plan auto-expired for ${req.user.email} → ${req.user.plan}`);
+  }
+
+  next();
+};
+
 // Check user plan
 export const checkPlan = (requiredPlan) => {
   return (req, res, next) => {

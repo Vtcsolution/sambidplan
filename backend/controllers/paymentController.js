@@ -1,138 +1,30 @@
 // backend/controllers/paymentController.js
 import Invoice from '../models/Invoice.js';
 import User from '../models/User.js';
-import Plan from '../models/Plan.js';
+import Plan, { initializePlans } from '../models/Plan.js';
 import AdminNotification from '../models/admin/AdminNotification.js';
+import Stripe from 'stripe';
 import { createStripePaymentIntent, confirmStripePayment } from '../services/stripeService.js';
-import { createPayPalOrder, capturePayPalPayment } from '../services/paypalService.js';
+import { createPayPalOrder, capturePayPalPayment, verifyPayPalOrder } from '../services/paypalService.js';
+import {
+  createCheckoutSession,
+  getCheckoutSession,
+  createSandboxMock,
+  IS_SANDBOX,
+  verifyWebhookSignature,
+} from '../services/payoneerService.js';
+import { distributeToUser } from '../services/schedulerService.js';
+import { sendAdminPaymentAlert, sendPaymentConfirmationEmail } from '../services/emailService.js';
+import { creditReferralCommission } from './referralController.js';
+import { createUserNotification } from '../services/notificationService.js';
+import { MIN_BALANCE_TO_USE } from '../models/Withdrawal.js';
 
-// Initialize default plans if none exist
-const initializePlansIfEmpty = async () => {
-  const count = await Plan.countDocuments();
-  if (count === 0) {
-    console.log('📋 No plans found, creating default plans...');
-    const defaultPlans = [
-      {
-        name: 'free',
-        displayName: 'Free',
-        description: 'Perfect for getting started',
-        priceMonthly: 0,
-        priceYearly: 0,
-        features: [
-          { name: '5 Alerts per month', included: true },
-          { name: 'Basic contract search', included: true },
-          { name: 'Email notifications', included: true },
-          { name: 'Save up to 10 opportunities', included: true },
-          { name: 'Basic match scoring', included: true },
-          { name: 'Priority support', included: false },
-          { name: 'Advanced AI matching', included: false },
-          { name: 'AI proposal generation', included: false },
-          { name: 'API access', included: false }
-        ],
-        limits: {
-          maxSavedOpportunities: 10,
-          maxAlerts: 5,
-          aiProposals: false,
-          prioritySupport: false,
-          apiAccess: false
-        },
-        isActive: true,
-        order: 1
-      },
-      {
-        name: 'starter',
-        displayName: 'Starter',
-        description: 'For growing contractors',
-        priceMonthly: 29,
-        priceYearly: 290,
-        features: [
-          { name: '50 Alerts per month', included: true },
-          { name: 'Advanced contract search', included: true },
-          { name: 'Email + SMS notifications', included: true },
-          { name: 'Save up to 100 opportunities', included: true },
-          { name: 'Advanced AI matching', included: true },
-          { name: 'Priority email support', included: true },
-          { name: 'Competitive analysis', included: true },
-          { name: 'AI proposal generation', included: false },
-          { name: 'API access', included: false }
-        ],
-        limits: {
-          maxSavedOpportunities: 100,
-          maxAlerts: 50,
-          aiProposals: false,
-          prioritySupport: true,
-          apiAccess: false
-        },
-        isActive: true,
-        order: 2
-      },
-      {
-        name: 'pro',
-        displayName: 'Pro',
-        description: 'For established federal contractors',
-        priceMonthly: 79,
-        priceYearly: 790,
-        features: [
-          { name: 'Unlimited alerts', included: true },
-          { name: 'Real-time tracking', included: true },
-          { name: 'All notification channels', included: true },
-          { name: 'Unlimited saved opportunities', included: true },
-          { name: 'Premium AI matching', included: true },
-          { name: '24/7 Priority support', included: true },
-          { name: 'Full competitive analysis', included: true },
-          { name: 'AI proposal generation', included: true },
-          { name: 'Full API access', included: true },
-          { name: 'Dedicated account manager', included: true }
-        ],
-        limits: {
-          maxSavedOpportunities: -1,
-          maxAlerts: -1,
-          aiProposals: true,
-          prioritySupport: true,
-          apiAccess: true
-        },
-        isActive: true,
-        order: 3
-      },
-      {
-        name: 'enterprise',
-        displayName: 'Enterprise',
-        description: 'For large organizations',
-        priceMonthly: 499,
-        priceYearly: 4990,
-        features: [
-          { name: 'Unlimited alerts', included: true },
-          { name: 'Real-time tracking', included: true },
-          { name: 'All notification channels', included: true },
-          { name: 'Unlimited saved opportunities', included: true },
-          { name: 'Premium AI matching', included: true },
-          { name: 'AI proposal generation', included: true },
-          { name: '24/7 Priority support', included: true },
-          { name: 'Full API access', included: true },
-          { name: 'Dedicated account manager', included: true },
-          { name: 'Custom integration', included: true }
-        ],
-        limits: {
-          maxSavedOpportunities: -1,
-          maxAlerts: -1,
-          aiProposals: true,
-          prioritySupport: true,
-          apiAccess: true
-        },
-        isActive: true,
-        order: 4
-      }
-    ];
-    await Plan.insertMany(defaultPlans);
-    console.log('✅ Default plans created successfully');
-  }
-};
 
 // @desc    Get all available plans
 // @route   GET /api/payment/plans
 export const getPlans = async (req, res) => {
   try {
-    await initializePlansIfEmpty();
+    await initializePlans(); // ensures correct prices & features on first call
     const plans = await Plan.find({ isActive: true }).sort('order');
     res.json({ success: true, data: plans });
   } catch (error) {
@@ -281,7 +173,11 @@ export const confirmStripePaymentHandler = async (req, res) => {
       await user.save();
       
       console.log(`✅ User ${user.email} upgraded from ${oldPlan} to ${invoice.plan}`);
-      
+
+      // Credit referral commission to whoever referred this user (fire-and-forget)
+      creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+        .catch(e => console.error('Referral commission (stripe):', e.message));
+
       // Create notification for admin about successful payment
       const plan = await Plan.findOne({ name: invoice.plan });
       if (plan) {
@@ -305,9 +201,33 @@ export const confirmStripePaymentHandler = async (req, res) => {
         } catch (notifError) {
           console.error('Failed to create notification:', notifError);
         }
+
+        // Admin email + user confirmation email (fire-and-forget)
+        sendAdminPaymentAlert({
+          userEmail: user.email, userName: user.name,
+          planName: invoice.plan, amount: invoice.amount,
+          billingCycle: invoice.billingCycle, paymentMethod: 'stripe',
+          invoiceNumber: invoice.invoiceNumber,
+        }).catch(e => console.error('Admin payment email failed (stripe):', e.message));
+
+        sendPaymentConfirmationEmail({
+          name: user.name, email: user.email,
+          planName: invoice.plan, amount: invoice.amount,
+          billingCycle: invoice.billingCycle, paymentMethod: 'stripe',
+          invoiceNumber: invoice.invoiceNumber,
+        }).catch(e => console.error('User payment confirmation email failed (stripe):', e.message));
       }
+
+      // In-app notification for user
+      createUserNotification(
+        user._id,
+        'plan_purchased',
+        `${invoice.plan.charAt(0).toUpperCase() + invoice.plan.slice(1)} plan activated!`,
+        `Your payment of $${invoice.amount} was successful. Enjoy your upgraded access.`,
+        '/dashboard'
+      );
     }
-    
+
     res.json({
       success: true,
       message: 'Payment confirmed and plan upgraded!',
@@ -323,42 +243,59 @@ export const confirmStripePaymentHandler = async (req, res) => {
 // @route   POST /api/payment/paypal/create-order
 export const createPayPalPayment = async (req, res) => {
   try {
-    const { planName, billingCycle = 'monthly' } = req.body;
+    const { planName, billingCycle = 'monthly', referralBalanceToApply = 0 } = req.body;
     const user = await User.findById(req.user._id);
-    
+
     console.log(`📝 Creating PayPal order for user: ${user.email}, plan: ${planName}`);
-    
+
     if (!planName) {
       return res.status(400).json({ success: false, message: 'Plan name is required' });
     }
-    
+
     const plan = await Plan.findOne({ name: planName });
     if (!plan) {
       return res.status(404).json({ success: false, message: `Plan "${planName}" not found` });
     }
-    
-    const amount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
-    
+
+    const fullAmount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+
+    // Validate and compute referral balance reservation (not deducted until capture succeeds)
+    let referralReserved = 0;
+    if (referralBalanceToApply > 0) {
+      if (user.referralBalance < MIN_BALANCE_TO_USE) {
+        return res.status(400).json({
+          success: false,
+          message: `Minimum $${MIN_BALANCE_TO_USE} referral balance required to apply it.`
+        });
+      }
+      referralReserved = Math.round(Math.min(referralBalanceToApply, user.referralBalance, fullAmount) * 100) / 100;
+    }
+    const chargeAmount = Math.round((fullAmount - referralReserved) * 100) / 100;
+
     const invoice = new Invoice({
       user: user._id,
       plan: planName,
       billingCycle,
-      amount,
+      amount: fullAmount,
       currency: 'USD',
       status: 'pending',
       paymentMethod: 'paypal'
     });
-    
+
+    if (referralReserved > 0) {
+      invoice.metadata = new Map([['referralBalanceReserved', referralReserved.toString()]]);
+    }
+
     await invoice.save();
-    console.log(`✅ Invoice created: ${invoice.invoiceNumber}`);
-    
-    const result = await createPayPalOrder(amount, 'USD', {
+    console.log(`✅ Invoice created: ${invoice.invoiceNumber}${referralReserved > 0 ? ` (referral reserved: $${referralReserved})` : ''}`);
+
+    const result = await createPayPalOrder(chargeAmount, 'USD', {
       userId: user._id.toString(),
       userEmail: user.email,
       planName: planName,
       billingCycle: billingCycle
     });
-    
+
     res.json({
       success: true,
       orderId: result.orderId,
@@ -366,78 +303,174 @@ export const createPayPalPayment = async (req, res) => {
       invoiceId: invoice._id,
       isSimulated: result.isSimulated
     });
-    
+
   } catch (error) {
-    console.error('PayPal payment error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('❌ PayPal createOrder controller error:', error.message);
+    // Pass the actual PayPal/service error to the frontend so it's visible
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create PayPal order',
+      hint: 'Check server logs for the full PayPal API response'
+    });
   }
 };
 
-// @desc    Capture PayPal payment
+// @desc    Capture & verify PayPal payment — prevents duplicates, activates plan, distributes opps
 // @route   POST /api/payment/paypal/capture
 export const capturePayPalPaymentHandler = async (req, res) => {
+  const { orderId, invoiceId } = req.body;
+
+  if (!orderId || !invoiceId) {
+    return res.status(400).json({ success: false, message: 'orderId and invoiceId are required' });
+  }
+
+  console.log(`📝 PayPal capture request — order: ${orderId}, invoice: ${invoiceId}`);
+
   try {
-    const { orderId, invoiceId } = req.body;
-    
-    console.log(`📝 Capturing PayPal order: ${orderId}`);
-    
+    // ── 1. Duplicate guard ────────────────────────────────────────────────────
+    const duplicate = await Invoice.findOne({ paypalOrderId: orderId });
+    if (duplicate) {
+      console.warn(`⚠️ Duplicate capture attempt for order ${orderId}`);
+      return res.status(409).json({
+        success: false,
+        message: 'This payment has already been processed. Your plan may already be active.',
+        duplicate: true
+      });
+    }
+
+    // ── 2. Verify order exists & is approvable on PayPal's side ──────────────
+    const verification = await verifyPayPalOrder(orderId);
+    if (!verification.success) {
+      return res.status(400).json({ success: false, message: `PayPal verification failed: ${verification.error}` });
+    }
+    if (!['APPROVED', 'COMPLETED', 'CREATED'].includes(verification.status)) {
+      return res.status(400).json({ success: false, message: `Payment not approved by PayPal (status: ${verification.status})` });
+    }
+
+    // ── 3. Find invoice ───────────────────────────────────────────────────────
     const invoice = await Invoice.findById(invoiceId);
     if (!invoice) {
       return res.status(404).json({ success: false, message: 'Invoice not found' });
     }
-    
+    if (invoice.status === 'paid') {
+      return res.status(409).json({ success: false, message: 'Invoice already paid.', duplicate: true });
+    }
+
+    // ── 4. Capture on PayPal ─────────────────────────────────────────────────
     const result = await capturePayPalPayment(orderId);
-    
     if (!result.success) {
-      return res.status(400).json({ success: false, message: result.error });
-    }
-    
-    invoice.status = 'paid';
-    invoice.paidAt = new Date();
-    await invoice.save();
-    
-    const user = await User.findById(invoice.user);
-    const oldPlan = user.plan;
-    user.plan = invoice.plan;
-    
-    const duration = invoice.billingCycle === 'yearly' ? 365 : 30;
-    user.planExpiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
-    await user.save();
-    
-    console.log(`✅ User ${user.email} upgraded from ${oldPlan} to ${invoice.plan}`);
-    
-    // Create notification for admin about successful payment
-    const plan = await Plan.findOne({ name: invoice.plan });
-    if (plan) {
-      try {
-        await AdminNotification.create({
-          title: '💰 New Payment Received',
-          message: `${user.email} purchased ${plan.displayName} plan for $${invoice.amount}`,
-          type: 'payment',
-          actionRequired: false,
-          priority: 'high',
-          metadata: {
-            userId: user._id,
-            userEmail: user.email,
-            plan: plan.displayName,
-            amount: invoice.amount,
-            billingCycle: invoice.billingCycle,
-            invoiceId: invoice._id
-          }
-        });
-        console.log(`📢 Notification created: Payment received from ${user.email}`);
-      } catch (notifError) {
-        console.error('Failed to create notification:', notifError);
+      if (result.alreadyCaptured) {
+        return res.status(409).json({ success: false, message: 'Payment already captured.', duplicate: true });
       }
+      return res.status(400).json({ success: false, message: result.error || 'PayPal capture failed' });
     }
-    
+
+    // ── 5. Mark invoice paid (store unique order ID) ─────────────────────────
+    invoice.status         = 'paid';
+    invoice.paidAt         = new Date();
+    invoice.paypalOrderId  = orderId;
+    invoice.paypalCaptureId = result.captureId;
+    invoice.paymentMethod  = 'paypal';
+    await invoice.save();
+
+    // ── 6. Upgrade user plan ──────────────────────────────────────────────────
+    const user    = await User.findById(invoice.user);
+    const oldPlan = user.plan;
+    user.plan     = invoice.plan;
+    const duration = invoice.billingCycle === 'yearly' ? 365 : 30;
+    user.planExpiresAt  = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+    user.isTrialActive  = false;
+    user.dailyMatchesUsed = 0;         // reset so they immediately get fresh matches
+    user.lastMatchReset = new Date();
+    await user.save();
+
+    // Deduct reserved referral balance now that capture succeeded
+    const referralReserved = parseFloat(invoice.metadata?.get('referralBalanceReserved') || 0);
+    if (referralReserved > 0) {
+      await User.findByIdAndUpdate(invoice.user, { $inc: { referralBalance: -referralReserved } });
+      console.log(`💸 Referral balance deducted: $${referralReserved} for ${user.email}`);
+    }
+
+    console.log(`✅ ${user.email} upgraded ${oldPlan} → ${invoice.plan} (PayPal ${orderId})`);
+
+    // Credit referral commission (fire-and-forget)
+    creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Referral commission (paypal):', e.message));
+
+    // ── 7. Immediately distribute today's opportunities for the upgraded plan ─
+    try {
+      await distributeToUser(user);
+      console.log(`📤 Opportunity distribution triggered for ${user.email} after plan upgrade`);
+    } catch (distErr) {
+      console.error('Distribution error after upgrade:', distErr.message);
+    }
+
+    // ── 8. Admin notification ─────────────────────────────────────────────────
+    const plan = await Plan.findOne({ name: invoice.plan });
+    try {
+      await AdminNotification.create({
+        title: '💰 PayPal Payment Verified & Activated',
+        message: `${user.email} purchased ${plan?.displayName || invoice.plan} for $${invoice.amount} — plan activated automatically`,
+        type: 'payment',
+        actionRequired: false,
+        priority: 'high',
+        metadata: {
+          userId:      user._id,
+          userEmail:   user.email,
+          plan:        plan?.displayName || invoice.plan,
+          amount:      invoice.amount,
+          billingCycle: invoice.billingCycle,
+          invoiceId:   invoice._id,
+          paypalOrderId:   orderId,
+          paypalCaptureId: result.captureId,
+          verifiedBy:  'PayPal API (automatic)'
+        }
+      });
+    } catch (notifErr) {
+      console.error('Admin notification error:', notifErr.message);
+    }
+
+    // Admin email + user confirmation email (fire-and-forget)
+    sendAdminPaymentAlert({
+      userEmail: user.email, userName: user.name,
+      planName: invoice.plan, amount: invoice.amount,
+      billingCycle: invoice.billingCycle, paymentMethod: 'paypal',
+      invoiceNumber: invoice.invoiceNumber,
+    }).catch(e => console.error('Admin payment email failed (paypal):', e.message));
+
+    sendPaymentConfirmationEmail({
+      name: user.name, email: user.email,
+      planName: invoice.plan, amount: invoice.amount,
+      billingCycle: invoice.billingCycle, paymentMethod: 'paypal',
+      invoiceNumber: invoice.invoiceNumber,
+    }).catch(e => console.error('User payment confirmation email failed (paypal):', e.message));
+
+    // In-app notification for user
+    createUserNotification(
+      user._id,
+      'plan_purchased',
+      `${invoice.plan.charAt(0).toUpperCase() + invoice.plan.slice(1)} plan activated!`,
+      `Your PayPal payment of $${invoice.amount} was successful. Enjoy your upgraded access.`,
+      '/dashboard'
+    );
+
     res.json({
-      success: true,
-      message: `Payment captured and user upgraded to ${invoice.plan} plan!`,
-      invoice: invoice
+      success:     true,
+      message:     `Payment verified and ${invoice.plan} plan activated!`,
+      plan:        invoice.plan,
+      planExpires: user.planExpiresAt,
+      invoice:     { invoiceNumber: invoice.invoiceNumber, amount: invoice.amount, paidAt: invoice.paidAt }
     });
-    
+
   } catch (error) {
+    // Handle MongoDB duplicate key (race condition on paypalOrderId unique index)
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Payment already processed.',
+        duplicate: true
+      });
+    }
     console.error('PayPal capture error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
@@ -505,8 +538,12 @@ export const adminVerifyPayment = async (req, res) => {
     user.planExpiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
     await user.save();
     
-    console.log(`✅ User ${user.email} upgraded from ${oldPlan} to ${invoice.plan}`);
-    
+    console.log(`✅ User ${user.email} upgraded from ${oldPlan} to ${invoice.plan} (admin verify)`);
+
+    // Credit referral commission (fire-and-forget)
+    creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Referral commission (admin verify):', e.message));
+
     const plan = await Plan.findOne({ name: invoice.plan });
     
     // Create notification for admin about successful payment
@@ -554,26 +591,352 @@ export const adminVerifyPayment = async (req, res) => {
   }
 };
 
+// @desc    Return current user plan + expiry (used for polling after payment)
+// @route   GET /api/payment/plan-status
+export const getPlanStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    res.json({
+      success:     true,
+      plan:        user.plan,
+      planExpires: user.planExpiresAt,
+      isActive:    user.isPlanActive ? user.isPlanActive() : true
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // @desc    Cancel subscription
 // @route   POST /api/payment/cancel
 export const cancelSubscription = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
-    
+
     if (user.plan === 'free') {
       return res.status(400).json({ success: false, message: 'Already on free plan' });
     }
-    
+
     const oldPlan = user.plan;
     user.plan = 'free';
     user.planExpiresAt = null;
     await user.save();
-    
+
     console.log(`User ${user.email} cancelled subscription from ${oldPlan} to free`);
-    
+
     res.json({ success: true, message: 'Subscription cancelled. You are now on the Free plan.' });
   } catch (error) {
     console.error('Cancel subscription error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYONEER HANDLERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// @desc    Create Payoneer checkout session
+// @route   POST /api/payment/payoneer/create-session
+export const createPayoneerCheckout = async (req, res) => {
+  try {
+    const { planName, billingCycle = 'monthly' } = req.body;
+    const user = await User.findById(req.user._id);
+
+    console.log(`📝 Payoneer checkout for user: ${user.email}, plan: ${planName}`);
+
+    const plan = await Plan.findOne({ name: planName });
+    if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+    const amount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+
+    const invoice = new Invoice({
+      user: user._id,
+      plan: planName,
+      billingCycle,
+      amount,
+      currency: 'USD',
+      status: 'pending',
+      paymentMethod: 'payoneer',
+    });
+    await invoice.save();
+
+    // Try real Payoneer API; fall back to sandbox mock on any error
+    let session;
+    let isMock = false;
+    try {
+      session = await createCheckoutSession({
+        user,
+        plan: planName,
+        billingCycle,
+        invoiceId: invoice._id,
+        amount,
+      });
+    } catch (payoneerErr) {
+      console.warn('⚠️  Payoneer API unavailable — using sandbox mock:', payoneerErr.message);
+      session = createSandboxMock(invoice._id, amount, planName, billingCycle);
+      isMock = true;
+    }
+
+    invoice.payoneerInvoiceId = session.sessionId;
+    await invoice.save();
+
+    console.log(`✅ Payoneer session created (${isMock ? 'MOCK' : 'LIVE'}): ${session.sessionId}`);
+
+    res.json({
+      success:     true,
+      sessionId:   session.sessionId,
+      checkoutUrl: session.checkoutUrl,
+      invoiceId:   invoice._id,
+      isMock,
+      expiresAt:   session.expiresAt,
+    });
+  } catch (error) {
+    console.error('❌ Payoneer checkout error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Capture Payoneer payment (called after user returns from checkout)
+// @route   POST /api/payment/payoneer/capture
+export const capturePayoneerReturn = async (req, res) => {
+  try {
+    const { sessionId, invoiceId, status, isMock } = req.body;
+
+    console.log(`📝 Payoneer capture — session: ${sessionId}, invoice: ${invoiceId}`);
+
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    if (invoice.status === 'paid') {
+      return res.status(409).json({ success: false, message: 'Invoice already paid', duplicate: true });
+    }
+
+    // Verify payment: accept mock/sandbox status directly; verify live sessions via API
+    let paymentSucceeded = false;
+    if (isMock || IS_SANDBOX) {
+      paymentSucceeded = status === 'success' || status === 'completed';
+    } else {
+      try {
+        const session = await getCheckoutSession(sessionId);
+        paymentSucceeded = ['completed', 'paid'].includes(session.status);
+      } catch (e) {
+        return res.status(400).json({ success: false, message: 'Failed to verify Payoneer payment status' });
+      }
+    }
+
+    if (!paymentSucceeded) {
+      return res.status(400).json({ success: false, message: `Payment not completed (status: ${status || 'unknown'})` });
+    }
+
+    // Mark invoice paid
+    invoice.status          = 'paid';
+    invoice.paidAt          = new Date();
+    invoice.payoneerInvoiceId = sessionId;
+    await invoice.save();
+
+    // Upgrade user plan
+    const user    = await User.findById(invoice.user);
+    const oldPlan = user.plan;
+    user.plan     = invoice.plan;
+    const duration = invoice.billingCycle === 'yearly' ? 365 : 30;
+    user.planExpiresAt  = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+    user.isTrialActive  = false;
+    user.dailyMatchesUsed = 0;
+    user.lastMatchReset = new Date();
+    await user.save();
+
+    console.log(`✅ ${user.email} upgraded ${oldPlan} → ${invoice.plan} (Payoneer ${sessionId})`);
+
+    // Referral commission (fire-and-forget)
+    creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Referral commission (payoneer):', e.message));
+
+    // Distribute today's opportunities
+    try {
+      await distributeToUser(user);
+      console.log(`📤 Opportunity distribution triggered for ${user.email} after Payoneer upgrade`);
+    } catch (distErr) {
+      console.error('Distribution error after Payoneer upgrade:', distErr.message);
+    }
+
+    // Admin notification
+    const plan = await Plan.findOne({ name: invoice.plan });
+    try {
+      await AdminNotification.create({
+        title:   '💰 Payoneer Payment Verified & Activated',
+        message: `${user.email} purchased ${plan?.displayName || invoice.plan} for $${invoice.amount} via Payoneer`,
+        type:    'payment',
+        actionRequired: false,
+        priority: 'high',
+        metadata: {
+          userId:           user._id,
+          userEmail:        user.email,
+          plan:             plan?.displayName || invoice.plan,
+          amount:           invoice.amount,
+          billingCycle:     invoice.billingCycle,
+          invoiceId:        invoice._id,
+          payoneerSessionId: sessionId,
+          verifiedBy:       isMock ? 'Sandbox Mock' : 'Payoneer API (automatic)',
+        },
+      });
+    } catch (notifErr) {
+      console.error('Admin notification error (payoneer):', notifErr.message);
+    }
+
+    sendAdminPaymentAlert({
+      userEmail: user.email, userName: user.name,
+      planName: invoice.plan, amount: invoice.amount,
+      billingCycle: invoice.billingCycle, paymentMethod: 'payoneer',
+      invoiceNumber: invoice.invoiceNumber,
+    }).catch(e => console.error('Admin payment email failed (payoneer):', e.message));
+
+    sendPaymentConfirmationEmail({
+      name: user.name, email: user.email,
+      planName: invoice.plan, amount: invoice.amount,
+      billingCycle: invoice.billingCycle, paymentMethod: 'payoneer',
+      invoiceNumber: invoice.invoiceNumber,
+    }).catch(e => console.error('User payment confirmation email failed (payoneer):', e.message));
+
+    // In-app notification for user
+    createUserNotification(
+      user._id,
+      'plan_purchased',
+      `${invoice.plan.charAt(0).toUpperCase() + invoice.plan.slice(1)} plan activated!`,
+      `Your Payoneer payment of $${invoice.amount} was successful. Enjoy your upgraded access.`,
+      '/dashboard'
+    );
+
+    res.json({
+      success:     true,
+      message:     `Payment verified and ${invoice.plan} plan activated!`,
+      plan:        invoice.plan,
+      planExpires: user.planExpiresAt,
+      invoice:     { invoiceNumber: invoice.invoiceNumber, amount: invoice.amount, paidAt: invoice.paidAt },
+    });
+
+  } catch (error) {
+    console.error('❌ Payoneer capture error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Payoneer IPN webhook (called by Payoneer server)
+// @route   POST /api/payment/payoneer/webhook  (PUBLIC — no auth)
+export const payoneerWebhook = async (req, res) => {
+  try {
+    const signature = req.headers['x-payoneer-signature'];
+    if (!verifyWebhookSignature(JSON.stringify(req.body), signature)) {
+      return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
+    }
+
+    const { event_type, data } = req.body;
+    console.log('Payoneer webhook received:', event_type);
+
+    if (event_type === 'checkout.completed') {
+      const invoiceId = data?.client_reference_id;
+      const invoice = invoiceId ? await Invoice.findById(invoiceId) : null;
+      if (invoice && invoice.status !== 'paid') {
+        invoice.status          = 'paid';
+        invoice.paidAt          = new Date();
+        invoice.payoneerInvoiceId = data.session_id || invoice.payoneerInvoiceId;
+        await invoice.save();
+
+        const user = await User.findById(invoice.user);
+        if (user) {
+          user.plan = invoice.plan;
+          const duration = invoice.billingCycle === 'yearly' ? 365 : 30;
+          user.planExpiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+          user.isTrialActive = false;
+          await user.save();
+          console.log(`✅ Webhook: ${user.email} upgraded to ${invoice.plan} via Payoneer`);
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Payoneer webhook error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Stripe webhook — handles checkout.session.completed for enterprise payment links
+// @route   POST /api/payment/stripe/webhook  (PUBLIC — raw body required)
+export const stripeWebhook = async (req, res) => {
+  const sig       = req.headers['stripe-signature'];
+  const secret    = process.env.STRIPE_WEBHOOK_SECRET;
+  let event;
+
+  try {
+    if (secret && sig) {
+      const stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
+      event = stripeInstance.webhooks.constructEvent(req.body, sig, secret);
+    } else {
+      // No webhook secret configured — parse body manually (dev/test)
+      event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    }
+  } catch (err) {
+    console.error('Stripe webhook signature error:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session  = event.data.object;
+    const meta     = session.metadata || {};
+
+    if (meta.source === 'inquiry_payment_link' && meta.inquiryId) {
+      try {
+        const { default: ContactInquiry } = await import('../models/ContactInquiry.js');
+        const { distributeToUser: distribute } = await import('../services/schedulerService.js');
+        const { sendPlanActivatedEmail } = await import('../services/emailService.js');
+
+        const inquiry = await ContactInquiry.findById(meta.inquiryId);
+        if (inquiry && !inquiry.paymentConfirmed) {
+          inquiry.paymentConfirmed  = true;
+          inquiry.paymentReference  = session.payment_intent || session.id;
+          inquiry.paymentMethod     = 'stripe_link';
+          inquiry.paymentAmount     = (session.amount_total || 0) / 100;
+          inquiry.paymentDate       = new Date();
+
+          // Auto-activate the plan
+          const planMap = { enterprise: 'enterprise', custom: 'enterprise', pro: 'pro', starter: 'starter' };
+          const planName = planMap[inquiry.planInterest] || 'enterprise';
+
+          let user = inquiry.userId ? await User.findById(inquiry.userId) : null;
+          if (!user) user = await User.findOne({ email: inquiry.email });
+
+          if (user) {
+            user.plan          = planName;
+            const days         = meta.billingCycle === 'yearly' ? 365 : 30;
+            user.planExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+            user.isTrialActive = false;
+            user.dailyMatchesUsed = 0;
+            await user.save();
+
+            inquiry.status     = 'resolved';
+            inquiry.adminNotes = (inquiry.adminNotes ? inquiry.adminNotes + '\n' : '') +
+              `Auto-activated via Stripe checkout on ${new Date().toLocaleDateString()}.`;
+
+            distribute(user).catch(() => {});
+            sendPlanActivatedEmail({ name: inquiry.name, email: inquiry.email, planName, planExpires: user.planExpiresAt }).catch(() => {});
+            console.log(`✅ Stripe webhook: auto-activated ${planName} for ${inquiry.email}`);
+          }
+
+          await inquiry.save();
+
+          await AdminNotification.create({
+            title:   `💳 Enterprise Payment Received — ${inquiry.name}`,
+            message: `${inquiry.email} paid $${inquiry.paymentAmount} via Stripe checkout link. Plan auto-activated: ${planName}.`,
+            type:    'payment',
+            actionRequired: false,
+            priority: 'high',
+            metadata: { inquiryId: inquiry._id, email: inquiry.email, planName },
+          });
+        }
+      } catch (err) {
+        console.error('Stripe webhook inquiry processing error:', err.message);
+      }
+    }
+  }
+
+  res.json({ received: true });
 };

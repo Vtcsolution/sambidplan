@@ -1,5 +1,6 @@
-// frontend/src/pages/admin/AdminInvoices.jsx
+﻿// frontend/src/pages/admin/AdminInvoices.jsx
 import { useState, useEffect } from 'react';
+import PermissionGuard from '../../components/admin/PermissionGuard';
 import { 
   Eye, 
   Search, 
@@ -12,7 +13,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { adminAPI } from '../../services/api';
+import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
 
 export default function AdminInvoices() {
@@ -22,6 +23,7 @@ export default function AdminInvoices() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [pagination, setPagination] = useState({ page: 1, total: 0, pages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [newStatus, setNewStatus] = useState('');
@@ -30,16 +32,16 @@ export default function AdminInvoices() {
 
   useEffect(() => {
     fetchInvoices();
-  }, [statusFilter, pagination.page]);
+  }, [statusFilter, pagination.page, pageSize]);
 
   const fetchInvoices = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await adminAPI.getInvoices({ 
+      const response = await adminAPI.getInvoices({
         status: statusFilter,
         page: pagination.page,
-        limit: 20
+        limit: pageSize
       });
       if (response.data.success) {
         setInvoices(response.data.data);
@@ -124,17 +126,19 @@ export default function AdminInvoices() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-gray-600">Manage and track all invoices</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Invoices</h1>
+            <p className="text-gray-600 text-sm">Manage and track all invoices</p>
+          </div>
+          <button
+            onClick={fetchInvoices}
+            className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg shrink-0 self-start sm:self-auto"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
         </div>
-        <button
-          onClick={fetchInvoices}
-          className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
      
 
       
@@ -277,26 +281,43 @@ export default function AdminInvoices() {
         )}
       </Card>
 
-      {/* Pagination */}
-      {pagination.pages > 1 && (
-        <div className="flex justify-center gap-2 mt-6">
-          <button
-            onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-            disabled={pagination.page === 1}
-            className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="px-4 py-2 text-gray-600">
-            Page {pagination.page} of {pagination.pages}
-          </span>
-          <button
-            onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
-            disabled={pagination.page === pagination.pages}
-            className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
+      {/* Pagination + Rows per page */}
+      {pagination.total > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>Rows per page:</span>
+            <select
+              value={pageSize}
+              onChange={e => { setPageSize(Number(e.target.value)); setPagination(p => ({ ...p, page: 1 })); }}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+            >
+              {[10, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <span className="text-gray-400 hidden sm:inline">
+              Showing {Math.min((pagination.page - 1) * pageSize + 1, pagination.total)}–{Math.min(pagination.page * pageSize, pagination.total)} of {pagination.total}
+            </span>
+          </div>
+          {pagination.pages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                disabled={pagination.page === 1}
+                className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="px-4 py-2 text-sm text-gray-600">
+                Page {pagination.page} of {pagination.pages}
+              </span>
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
+                disabled={pagination.page === pagination.pages}
+                className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 

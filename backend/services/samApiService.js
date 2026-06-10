@@ -1,24 +1,19 @@
 // backend/services/samApiService.js
+import axios from 'axios';
 import Opportunity from '../models/Opportunity.js';
+import { samFetch } from './samRateLimiter.js';
 
-// Working SAM.gov API endpoint
 const SAM_API_URL = 'https://api.sam.gov/opportunities/v2/search';
 
-/**
- * Helper function to safely extract string value from object or string
- */
-const safeString = (value) => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
-    return value.code || value.name || value.description || '';
-  }
-  return String(value);
+// Helper: safe string extraction
+const safeString = (val) => {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object') return val.code || val.name || val.description || '';
+  return String(val);
 };
 
-/**
- * Format date as MM/dd/yyyy (SAM.gov required format)
- */
+// Format date as MM/dd/yyyy (SAM.gov requirement)
 const formatDate = (date) => {
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const day = date.getDate().toString().padStart(2, '0');
@@ -26,205 +21,195 @@ const formatDate = (date) => {
   return `${month}/${day}/${year}`;
 };
 
-/**
- * Build correct SAM.gov URL from opportunity data
- */
+// Build proper SAM.gov URL
 const buildSamUrl = (opp) => {
-  // Try multiple possible ID fields
-  let identifier = safeString(opp.solicitationNumber);
-  if (!identifier) identifier = safeString(opp.noticeId);
-  if (!identifier) identifier = safeString(opp.opportunityId);
-  
-  // Only return URL if we have a real identifier (not sample)
-  if (identifier && !identifier.includes('SAMPLE') && identifier !== 'undefined') {
+  const identifier = safeString(opp.solicitationNumber) || safeString(opp.noticeId);
+  if (identifier && !identifier.includes('SAMPLE')) {
     return `https://sam.gov/opp/${identifier}/view`;
   }
   return null;
 };
 
-/**
- * Fetch opportunities from SAM.gov API
- */
-export const fetchSAMOpportunities = async (naicsCode = null, limit = 50) => {
+// ─── Core fetch helper: one page from SAM.gov ─────────────────────────────────
+const fetchOnePage = async (apiKey, params) => {
+  let url = `${SAM_API_URL}?api_key=${apiKey}`;
+  for (const [k, v] of Object.entries(params)) url += `&${k}=${v}`;
+
+  const response = await samFetch(() =>
+    axios.get(url, { timeout: 45000, headers: { Accept: 'application/json' } })
+  );
+  const data = response.data;
+  if (!data || data.message || data.error) return [];
+  const arr = data.opportunitiesData || data.opportunities || data._embedded?.opportunities || [];
+  return Array.isArray(arr) ? arr : [];
+};
+
+// 🔥 MAIN FETCH FUNCTION — paginates SAM.gov to get active solicitations only
+export const fetchSAMOpportunities = async (naicsCode = null, limit = 200) => {
   try {
     const apiKey = process.env.SAM_API_KEY;
-    
     if (!apiKey) {
-      console.error('❌ SAM.gov API key not found in .env file');
+      console.error('❌ SAM_API_KEY is missing in .env file');
       return [];
     }
 
-    console.log('🔑 Using SAM.gov API Key:', apiKey.substring(0, 15) + '...');
-
-    // Calculate date range (last 30 days)
+    // Only pull solicitations with a future response deadline
+    const today = formatDate(new Date());
     const postedFrom = new Date();
-    postedFrom.setDate(postedFrom.getDate() - 30);
-    
-    // Build request URL with parameters
-    let url = `${SAM_API_URL}?api_key=${apiKey}`;
-    url += `&postedFrom=${formatDate(postedFrom)}`;
-    url += `&postedTo=${formatDate(new Date())}`;
-    url += `&limit=${Math.min(limit, 100)}`;
-    url += `&offset=0`;
-    
-    // Add NAICS filter if provided
-    if (naicsCode && naicsCode.length === 6) {
-      url += `&naicsCode=${naicsCode}`;
+    postedFrom.setDate(postedFrom.getDate() - 180); // look back 6 months for postings
+
+    const baseParams = {
+      postedFrom: formatDate(postedFrom),
+      postedTo:   formatDate(new Date()),
+      active:     'Yes',
+      rdlfrom:    today, // responseDeadLine must be >= today (active solicitations only)
+    };
+    if (naicsCode && /^\d{6}$/.test(naicsCode)) {
+      baseParams.naicsCode = naicsCode;
     }
-    
-    console.log('📡 Fetching SAM.gov opportunities...');
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      console.error(`❌ SAM.gov API error: ${response.status}`);
+
+    console.log(`\n📡 Fetching SAM.gov active solicitations for NAICS ${naicsCode || 'all'}`);
+
+    // Paginate: fetch up to `limit` records in batches of 100
+    const pageSize = 100;
+    const maxPages = Math.ceil(Math.min(limit, 1000) / pageSize);
+    let allRaw = [];
+
+    for (let page = 0; page < maxPages; page++) {
+      const raw = await fetchOnePage(apiKey, { ...baseParams, limit: pageSize, offset: page * pageSize });
+      allRaw = allRaw.concat(raw);
+      if (raw.length < pageSize) break; // last page
+      if (allRaw.length >= limit) break;
+    }
+
+    console.log(`✅ Found ${allRaw.length} raw active solicitations from SAM.gov`);
+
+    if (allRaw.length === 0) {
+      // Fallback: relax the rdlfrom filter — some solicitations have no responseDeadLine set
+      console.log('⚠️ No results with rdlfrom filter — falling back to active=Yes only');
+      allRaw = await fetchOnePage(apiKey, {
+        postedFrom: baseParams.postedFrom,
+        postedTo:   baseParams.postedTo,
+        active:     'Yes',
+        ...(naicsCode ? { naicsCode } : {}),
+        limit:  pageSize,
+        offset: 0,
+      });
+      console.log(`✅ Fallback returned ${allRaw.length} records`);
+    }
+
+    if (allRaw.length === 0) {
+      console.log(`ℹ️ No opportunities found for NAICS ${naicsCode || 'any'}`);
       return [];
     }
-    
-    const data = await response.json();
-    
-    if (!data.opportunitiesData || data.opportunitiesData.length === 0) {
-      console.log('⚠️ No opportunities found from SAM.gov');
-      return [];
-    }
-    
-    console.log(`✅ Found ${data.opportunitiesData.length} opportunities from SAM.gov`);
-    
-    // Transform SAM.gov data to our Opportunity model format
-    const opportunities = [];
-    
-    for (const opp of data.opportunitiesData) {
+
+    // Transform opportunities
+    const transformed = [];
+    for (const opp of allRaw) {
       try {
-        // Extract agency from multiple possible fields
-        let agencyValue = 'Unknown Agency';
-        if (opp.departmentOrAgency) {
-          agencyValue = safeString(opp.departmentOrAgency);
-        } else if (opp.department) {
-          agencyValue = safeString(opp.department);
-        } else if (opp.subtier) {
-          agencyValue = safeString(opp.subtier);
-        }
-        
-        // Extract NAICS code
-        let naicsValue = naicsCode || '000000';
-        if (opp.naicsCode) {
-          naicsValue = safeString(opp.naicsCode);
-        } else if (opp.naicsCodes && opp.naicsCodes.length > 0) {
-          naicsValue = safeString(opp.naicsCodes[0]);
-        }
-        
-        // Extract set aside
-        let setAsideValue = '';
-        if (opp.typeOfSetAside) {
-          setAsideValue = safeString(opp.typeOfSetAside);
-        } else if (opp.setAside) {
-          setAsideValue = safeString(opp.setAside);
-        }
-        
-        const opportunity = {
+        // Skip if missing essential fields
+        if (!opp.title && !opp.description) continue;
+
+        const transformedOpp = {
           source: 'sam',
           sourceId: safeString(opp.solicitationNumber) || safeString(opp.noticeId) || `sam_${Date.now()}_${Math.random()}`,
           title: safeString(opp.title) || 'Untitled Opportunity',
-          description: (safeString(opp.description) || 'No description available').substring(0, 5000),
-          agency: agencyValue,
+          description: (safeString(opp.description) || 'No description').substring(0, 5000),
+          agency: safeString(opp.departmentOrAgency) || safeString(opp.department) || 'Federal Agency',
           estimatedValue: opp.estimatedTotalValue || null,
           postedDate: opp.postedDate ? new Date(opp.postedDate) : new Date(),
           dueDate: opp.responseDeadLine ? new Date(opp.responseDeadLine) : null,
-          naicsCode: naicsValue,
+          naicsCode: safeString(opp.naicsCode) || naicsCode || '000000',
           pscCode: safeString(opp.pscCode) || '',
-          setAside: setAsideValue,
+          setAside: safeString(opp.typeOfSetAside) || safeString(opp.setAside) || '',
           placeOfPerformance: {
             city: safeString(opp.placeOfPerformance?.city),
             state: safeString(opp.placeOfPerformance?.state),
             zipCode: safeString(opp.placeOfPerformance?.zipCode)
           },
           contactInfo: {
-            name: safeString(opp.pointOfContact?.name),
+            name: safeString(opp.pointOfContact?.name || opp.pointOfContact?.fullname),
             email: safeString(opp.pointOfContact?.email),
             phone: safeString(opp.pointOfContact?.phone)
           },
-          url: buildSamUrl(opp),  // ← FIXED: Using the proper URL builder
+          url: buildSamUrl(opp) || '#',
+          resourceLinks: (opp.resourceLinks || []).map(r => ({
+            url:  typeof r === 'string' ? r : (r.url || r.uri || ''),
+            name: typeof r === 'string' ? r.split('/').pop() : (r.name || r.text || r.title || 'Document'),
+          })).filter(r => r.url),
           lastFetched: new Date()
         };
-        
-        opportunities.push(opportunity);
-      } catch (itemError) {
-        console.error('Error processing opportunity:', itemError.message);
+        transformed.push(transformedOpp);
+      } catch (itemErr) {
+        console.error('Error transforming opportunity:', itemErr.message);
       }
     }
-    
-    console.log(`📝 Processed ${opportunities.length} opportunities for saving`);
-    
-    // Save to database
+
+    console.log(`📝 Processed ${transformed.length} opportunities for saving`);
+
+    // Save to database — upsert by sourceId (unique key).
+    // $setOnInsert ensures fetchSource:'api' is only written when inserting a brand-new
+    // record; if the nightly bulk already inserted it first, 'bulk' is preserved.
     let savedCount = 0;
-    for (const opp of opportunities) {
-      if (opp.sourceId && !opp.sourceId.includes('undefined')) {
-        try {
-          const result = await Opportunity.findOneAndUpdate(
-            { sourceId: opp.sourceId, source: 'sam' },
-            opp,
-            { upsert: true, new: true }
-          );
-          if (result) savedCount++;
-        } catch (saveError) {
-          console.error(`Error saving opportunity ${opp.sourceId}:`, saveError.message);
+    for (const opp of transformed) {
+      if (!opp.sourceId || opp.sourceId.includes('undefined')) continue;
+      const { sourceId, ...rest } = opp;
+      try {
+        await Opportunity.findOneAndUpdate(
+          { sourceId },
+          {
+            $set:         rest,
+            $setOnInsert: { fetchSource: 'api' },
+          },
+          { upsert: true }
+        );
+        savedCount++;
+      } catch (saveErr) {
+        if (saveErr.code !== 11000) {
+          console.error(`Save error for ${sourceId}:`, saveErr.message);
         }
       }
     }
-    
-    console.log(`💾 Successfully saved ${savedCount} opportunities to database`);
-    return opportunities;
-    
+
+    console.log(`💾 Saved ${savedCount} new/updated opportunities`);
+    return transformed;
+
   } catch (error) {
     console.error('❌ SAM.gov API Error:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+    }
     return [];
   }
 };
 
-/**
- * Search opportunities by keyword
- */
-export const searchSAMOpportunities = async (keyword, limit = 20) => {
+// Bulk fetch for multiple NAICS codes — used by the master-fetch scheduler phase.
+// Each code is fetched sequentially with a delay to respect SAM.gov rate limits.
+export const fetchSAMOpportunitiesBulk = async (naicsCodes = [], limitPerCode = 100, delayMs = 2000) => {
+  const results = [];
+  for (const code of naicsCodes) {
+    const opps = await fetchSAMOpportunities(code, limitPerCode);
+    results.push(...opps);
+    if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
+  }
+  return results;
+};
+
+// Optional: Test function to verify API key works
+export const testSAMApiConnection = async () => {
   try {
     const apiKey = process.env.SAM_API_KEY;
+    if (!apiKey) return { success: false, message: 'No API key' };
+
+    const testUrl = `${SAM_API_URL}?api_key=${apiKey}&limit=1&postedFrom=${formatDate(new Date())}&postedTo=${formatDate(new Date())}`;
+    const response = await axios.get(testUrl, { timeout: 10000 });
     
-    if (!apiKey) {
-      console.error('❌ SAM.gov API key not found');
-      return [];
+    if (response.status === 200) {
+      return { success: true, message: 'API key is valid', data: response.data };
     }
-    
-    const postedFrom = new Date();
-    postedFrom.setDate(postedFrom.getDate() - 30);
-    
-    let url = `${SAM_API_URL}?api_key=${apiKey}`;
-    url += `&keyword=${encodeURIComponent(keyword)}`;
-    url += `&limit=${Math.min(limit, 100)}`;
-    url += `&postedFrom=${formatDate(postedFrom)}`;
-    url += `&postedTo=${formatDate(new Date())}`;
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      console.error(`❌ SAM.gov search error: ${response.status}`);
-      return [];
-    }
-    
-    const data = await response.json();
-    
-    if (!data.opportunitiesData) {
-      return [];
-    }
-    
-    return data.opportunitiesData.map(opp => ({
-      id: safeString(opp.solicitationNumber) || safeString(opp.noticeId),
-      title: safeString(opp.title),
-      agency: safeString(opp.departmentOrAgency) || safeString(opp.department),
-      deadline: opp.responseDeadLine,
-      url: `https://sam.gov/opp/${safeString(opp.solicitationNumber)}/view`
-    }));
-    
+    return { success: false, message: `HTTP ${response.status}` };
   } catch (error) {
-    console.error('SAM.gov search error:', error);
-    return [];
+    return { success: false, message: error.message };
   }
 };

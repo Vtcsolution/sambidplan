@@ -1,4 +1,4 @@
-// frontend/src/components/admin/ActivityFeed.jsx
+﻿// frontend/src/components/admin/ActivityFeed.jsx
 import { useState, useEffect } from 'react';
 import { 
   UserPlus, 
@@ -8,7 +8,7 @@ import {
   Clock,
   RefreshCw
 } from 'lucide-react';
-import { adminAPI } from '../../services/api';
+import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
 
 export default function ActivityFeed() {

@@ -47,12 +47,37 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  // Daily match tracking
+  // Email verification
+  isEmailVerified: {
+    type: Boolean,
+    default: false,
+  },
+  emailVerificationToken: {
+    type: String,
+    default: null,
+    select: false,
+  },
+  emailVerificationExpires: {
+    type: Date,
+    default: null,
+    select: false,
+  },
+
+  // Monthly match tracking (starter/pro/enterprise)
+  monthlyMatchesUsed: {
+    type: Number,
+    default: 0
+  },
+  lastMonthlyReset: {
+    type: Date,
+    default: Date.now
+  },
+  // Daily match tracking (trial/free — 3 per day)
   dailyMatchesUsed: {
     type: Number,
     default: 0
   },
-  lastMatchReset: {
+  lastDailyReset: {
     type: Date,
     default: Date.now
   },
@@ -64,6 +89,11 @@ const userSchema = new mongoose.Schema({
   lastAIReset: {
     type: Date,
     default: Date.now
+  },
+  // Purchased bonus AI credits (admin-approved top-ups, not reset monthly)
+  bonusAICredits: {
+    type: Number,
+    default: 0
   },
   lastTrialReminderSent: {
   type: Date,
@@ -105,18 +135,73 @@ alertFrequency: {
     enum: ['realtime', 'daily', 'weekly'],
     default: 'daily'
   },
+
+  dailyFetchesUsed: {
+  type: Number,
+  default: 0
+},
+lastFetchReset: {
+  type: Date,
+  default: Date.now
+},
+  // Password reset
+  resetPasswordToken: {
+    type: String,
+    default: null
+  },
+  resetPasswordExpires: {
+    type: Date,
+    default: null
+  },
+  // Onboarding
+  onboardingCompleted: {
+    type: Boolean,
+    default: false
+  },
+
+  // ── Referral system ───────────────────────────────────────────────────────
+  referralCode: {
+    type: String,
+    unique: true,
+    sparse: true,   // null rows are excluded from uniqueness
+    default: null,
+  },
+  referredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  // Available balance (can be spent on plans or withdrawn)
+  referralBalance: { type: Number, default: 0 },
+  // Lifetime earnings (never decreases)
+  totalReferralEarnings: { type: Number, default: 0 },
+  // How many of this user's referrals have purchased a paid plan
+  paidReferralCount: { type: Number, default: 0 },
+
+  // ── Two-Factor Authentication ─────────────────────────────────────────────
+  twoFactorEnabled: { type: Boolean, default: false },
+  twoFactorSecret:  { type: String, default: null, select: false },
+  twoFactorBackupCodes: { type: [String], default: [], select: false },
+  // Temp token issued after password-verified login when 2FA is enabled
+  twoFactorTempToken: { type: String, default: null, select: false },
+  twoFactorTempExpires: { type: Date, default: null, select: false },
+
   createdAt: {
     type: Date,
     default: Date.now
   }
-  
+
 });
 
-// Encrypt password before saving
+// Auto-generate a unique referral code on first save
 userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
-    return next();
+  if (!this.referralCode) {
+    // 8-char alphanumeric code derived from ObjectId suffix + random
+    const base = this._id.toString().slice(-4).toUpperCase();
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    this.referralCode = `${base}${rand}`;
   }
+  if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();

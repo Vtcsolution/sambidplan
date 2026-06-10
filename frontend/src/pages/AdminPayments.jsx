@@ -1,4 +1,4 @@
-// frontend/src/pages/AdminPayments.jsx
+﻿// frontend/src/pages/AdminPayments.jsx
 import { useState, useEffect } from 'react';
 import { 
   CheckCircle, 
@@ -13,7 +13,7 @@ import {
   ChevronRight,
   AlertCircle
 } from 'lucide-react';
-import { adminAPI } from '../services/api';
+import { adminPanelAPI as adminAPI } from '../services/adminApi';
 import Card from '../components/Card';
 import Button from '../components/Button';
 
@@ -24,6 +24,7 @@ export default function AdminPayments() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [pagination, setPagination] = useState({ page: 1, total: 0, pages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [processingId, setProcessingId] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -32,7 +33,7 @@ export default function AdminPayments() {
 
   useEffect(() => {
     fetchInvoices();
-  }, [pagination.page, statusFilter]);
+  }, [pagination.page, pageSize, statusFilter]);
 
   const fetchInvoices = async () => {
     setLoading(true);
@@ -41,7 +42,7 @@ export default function AdminPayments() {
       const response = await adminAPI.getInvoices({
         status: statusFilter,
         page: pagination.page,
-        limit: 20
+        limit: pageSize
       });
       if (response.data.success) {
         setInvoices(response.data.data);
@@ -101,6 +102,23 @@ export default function AdminPayments() {
       alert('Failed to verify payment');
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const getMethodBadge = (method) => {
+    switch (method) {
+      case 'paypal':
+        return { label: 'PayPal', color: 'bg-blue-100 text-blue-700' };
+      case 'stripe':
+        return { label: 'Stripe', color: 'bg-indigo-100 text-indigo-700' };
+      case 'payoneer':
+        return { label: 'Payoneer', color: 'bg-orange-100 text-orange-700' };
+      case 'bank_transfer':
+        return { label: 'Bank Transfer', color: 'bg-gray-100 text-gray-700' };
+      case 'manual':
+        return { label: 'Manual', color: 'bg-purple-100 text-purple-700' };
+      default:
+        return { label: method || '—', color: 'bg-gray-100 text-gray-600' };
     }
   };
 
@@ -266,6 +284,7 @@ export default function AdminPayments() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plan</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Billing</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -294,6 +313,11 @@ export default function AdminPayments() {
                         </td>
                         <td className="px-6 py-4 text-sm font-semibold">${invoice.amount}</td>
                         <td className="px-6 py-4 text-sm capitalize">{invoice.billingCycle}</td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${getMethodBadge(invoice.paymentMethod).color}`}>
+                            {getMethodBadge(invoice.paymentMethod).label}
+                          </span>
+                        </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadge(invoice.status).color}`}>
                             <StatusIcon className="w-3 h-3" />
@@ -340,26 +364,43 @@ export default function AdminPayments() {
           )}
         </div>
 
-        {/* Pagination */}
-        {pagination.pages > 1 && (
-          <div className="flex justify-center gap-2 mt-6">
-            <button
-              onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-              disabled={pagination.page === 1}
-              className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="px-4 py-2 text-gray-600">
-              Page {pagination.page} of {pagination.pages}
-            </span>
-            <button
-              onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
-              disabled={pagination.page === pagination.pages}
-              className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+        {/* Pagination + Rows per page */}
+        {pagination.total > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPagination(p => ({ ...p, page: 1 })); }}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+              >
+                {[10, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span className="text-gray-400 hidden sm:inline">
+                Showing {Math.min((pagination.page - 1) * pageSize + 1, pagination.total)}–{Math.min(pagination.page * pageSize, pagination.total)} of {pagination.total}
+              </span>
+            </div>
+            {pagination.pages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                  disabled={pagination.page === 1}
+                  className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="px-4 py-2 text-sm text-gray-600">
+                  Page {pagination.page} of {pagination.pages}
+                </span>
+                <button
+                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
+                  disabled={pagination.page === pagination.pages}
+                  className="p-2 border rounded-lg disabled:opacity-50 hover:bg-gray-50"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -434,10 +475,10 @@ export default function AdminPayments() {
           <h3 className="font-semibold text-blue-800 mb-2">📋 Admin Instructions</h3>
           <p className="text-sm text-blue-700">
             1. User requests upgrade → Invoice created with status "pending"<br />
-            2. User pays via Payoneer → They email payment confirmation<br />
-            3. Admin clicks "Verify Payment" → User plan upgraded automatically<br />
+            2. User pays via <strong>PayPal</strong> / <strong>Stripe</strong> / <strong>Payoneer</strong> → Plan activated automatically on capture<br />
+            3. For manual payments: admin clicks "Verify Payment" → User plan upgraded<br />
             4. Admin can also manually update invoice status from the Actions menu<br />
-            5. User receives confirmation email after payment verification
+            5. The <strong>Method</strong> column shows which gateway was used (PayPal · Stripe · Payoneer · Manual)
           </p>
         </div>
       </div>

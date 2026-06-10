@@ -1,0 +1,22 @@
+{
+  "name": "Sambid — Federal Contract Intelligence",
+  "short_name": "Sambid",
+  "description": "AI-powered government contract discovery platform for small businesses.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "lang": "en-US",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["business", "productivity", "finance"],
+  "screenshots": []
+}

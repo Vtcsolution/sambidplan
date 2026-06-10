@@ -4,19 +4,19 @@ import { TrendingUp, Zap, Clock, AlertTriangle, CheckCircle } from 'lucide-react
 export default function UsageStats({ userProfile }) {
   if (!userProfile) return null;
 
-  const { plan, dailyMatchesUsed, dailyLimit, daysLeft, remainingMatches, totalAvailable } = userProfile;
-  
+  const { plan, monthlyMatchesUsed, monthlyLimit, daysLeft, remainingThisMonth, totalAvailable } = userProfile;
+
   const isTrial = plan === 'trial';
   const isExpired = plan === 'expired';
   const isFree = plan === 'free';
   const isPro = plan === 'pro';
   const isEnterprise = plan === 'enterprise';
-  const isUnlimited = dailyLimit === 'Unlimited' || dailyLimit === 'unlimited';
-  
+  const isUnlimited = monthlyLimit === 'Unlimited' || isEnterprise;
+
   // Calculate percentage for progress bar
   let percentage = 0;
-  if (!isUnlimited && typeof dailyLimit === 'number' && dailyLimit > 0) {
-    percentage = (dailyMatchesUsed / dailyLimit) * 100;
+  if (!isUnlimited && typeof monthlyLimit === 'number' && monthlyLimit > 0) {
+    percentage = ((monthlyMatchesUsed || 0) / monthlyLimit) * 100;
   }
   
   const getPlanColor = () => {
@@ -65,10 +65,10 @@ export default function UsageStats({ userProfile }) {
         )}
       </div>
       
-      {/* Daily Matches */}
+      {/* Monthly Matches */}
       <div className="mb-2">
         <div className="flex justify-between text-xs mb-1">
-          <span className="text-gray-600">Daily Matches</span>
+          <span className="text-gray-600">Monthly Matches</span>
           <span className="font-medium text-gray-900">
             {isUnlimited ? (
               <span className="text-indigo-600 flex items-center gap-1">
@@ -76,22 +76,20 @@ export default function UsageStats({ userProfile }) {
                 Unlimited
               </span>
             ) : (
-              `${dailyMatchesUsed || 0} / ${dailyLimit || 0}`
+              `${monthlyMatchesUsed || 0} / ${monthlyLimit || 0}`
             )}
           </span>
         </div>
-        {!isUnlimited && typeof dailyLimit === 'number' && dailyLimit > 0 && (
+        {!isUnlimited && typeof monthlyLimit === 'number' && monthlyLimit > 0 && (
           <>
             <div className="w-full bg-gray-200 rounded-full h-1.5">
-              <div 
+              <div
                 className={`${getProgressColor()} h-1.5 rounded-full transition-all duration-300`}
                 style={{ width: `${Math.min(percentage, 100)}%` }}
               />
             </div>
-            {remainingMatches > 0 && totalAvailable > remainingMatches && (
-              <p className="text-xs text-gray-500 mt-1">
-                {remainingMatches} of {totalAvailable} matches shown
-              </p>
+            {remainingThisMonth > 0 && (
+              <p className="text-xs text-gray-500 mt-1">{remainingThisMonth} remaining this month</p>
             )}
           </>
         )}

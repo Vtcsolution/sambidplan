@@ -6,7 +6,8 @@ import {
   getSavedOpportunityById,
   unsaveOpportunity,
   updateSavedStatus,
-  checkSaved
+  checkSaved,
+  getPipeline
 } from '../controllers/savedController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -16,6 +17,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/', saveOpportunity);
+router.get('/pipeline', getPipeline);
 router.get('/', getSavedOpportunities);
 router.get('/check/:opportunityId', checkSaved);
 router.get('/:id', getSavedOpportunityById);

@@ -38,7 +38,7 @@ const defaultPlans = [
     displayName: 'Starter',
     description: 'For growing contractors',
     priceMonthly: 29,
-    priceYearly: 290,
+    priceYearly: 278,
     features: [
       { name: '50 Alerts per month', included: true },
       { name: 'Advanced contract search', included: true },
@@ -65,7 +65,7 @@ const defaultPlans = [
     displayName: 'Pro',
     description: 'For established federal contractors',
     priceMonthly: 79,
-    priceYearly: 790,
+    priceYearly: 758,
     features: [
       { name: 'Unlimited alerts', included: true },
       { name: 'Real-time tracking', included: true },
@@ -93,7 +93,7 @@ const defaultPlans = [
     displayName: 'Enterprise',
     description: 'For large organizations',
     priceMonthly: 499,
-    priceYearly: 4990,
+    priceYearly: 4788,
     features: [
       { name: 'Unlimited alerts', included: true },
       { name: 'Real-time tracking', included: true },

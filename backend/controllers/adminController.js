@@ -2,30 +2,50 @@
 import PlanRequest from '../models/PlanRequest.js';
 import User from '../models/User.js';
 import Invoice from '../models/Invoice.js';
+import Ticket from '../models/Ticket.js';
+import Suggestion from '../models/Suggestion.js';
+import ContactInquiry from '../models/ContactInquiry.js';
+import CreditPurchase from '../models/CreditPurchase.js';
 import Plan from '../models/Plan.js';
 import AdminSetting from '../models/admin/AdminSetting.js';
+import { applyGroupedToEnv, writeEnvFile } from '../services/settingsService.js';
+import { resetAIClient } from '../services/geminiService.js';
+import { resetEmailTransporter, sendPaymentInstructionsEmail, sendPlanActivatedEmail } from '../services/emailService.js';
+import { resetStripeClient } from '../services/stripeService.js';
+import { resetPayPalToken } from '../services/paypalService.js';
 import AdminNotification from '../models/admin/AdminNotification.js';
+import SavedOpportunity from '../models/SavedOpportunity.js';
+import Opportunity from '../models/Opportunity.js';
+import UserOpportunity from '../models/UserOpportunity.js';
+import SamCompany from '../models/SamCompany.js';
+import { triggerManualFetch, triggerManualBulk, fetchStats, bulkStats, distributeToUser } from '../services/schedulerService.js';
+import { syncSamEntities, fetchAndSaveCompany, entitySyncStats } from '../services/samEntityService.js';
+import { quotaState, limiterState } from '../services/samRateLimiter.js';
+import { syncUsaSpendingCompanies, usaSpendingSyncStats } from '../services/usaSpendingCompanyService.js';
+import { syncFpdsCompanies, fpdsSyncStats } from '../services/fpdsService.js';
+import { syncSbaCompanies, sbaSyncStats } from '../services/sbaService.js';
+import { getSourceBreakdown } from '../services/companyMergeService.js';
 
 
 export const getPlanRequests = async (req, res) => {
   try {
-    const { status = 'pending', page = 1, limit = 20 } = req.query;
-    
+    const { status = 'pending', page = 1, limit = 20, billingCycle } = req.query;
+
     const query = {};
-    if (status !== 'all') {
-      query.status = status;
-    }
-    
+    if (status !== 'all') query.status = status;
+    if (billingCycle) query.billingCycle = billingCycle;
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+
     const requests = await PlanRequest.find(query)
       .populate('user', 'name email businessName naicsCodes plan')
+      .populate('invoiceId', 'invoiceNumber amount status')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
-    
+
     const total = await PlanRequest.countDocuments(query);
-    
+
     res.json({
       success: true,
       data: requests,
@@ -121,6 +141,55 @@ export const getUserPlanRequests = async (req, res) => {
   }
 };
 
+// @desc    User submits payment proof for an approved plan request
+// @route   POST /api/payment/plan-requests/:id/submit-proof
+export const submitPaymentProof = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userPaymentRef, userPaymentNote } = req.body;
+
+    if (!userPaymentRef?.trim()) {
+      return res.status(400).json({ success: false, message: 'Payment reference is required.' });
+    }
+
+    const planRequest = await PlanRequest.findById(id);
+    if (!planRequest) {
+      return res.status(404).json({ success: false, message: 'Plan request not found.' });
+    }
+
+    const reqUserId = req.user._id.toString();
+    const ownerId  = planRequest.user?.toString();
+    if (ownerId !== reqUserId) {
+      return res.status(403).json({ success: false, message: 'Not authorized.' });
+    }
+
+    if (planRequest.status !== 'approved') {
+      return res.status(400).json({ success: false, message: `Cannot submit proof for a ${planRequest.status} request.` });
+    }
+
+    planRequest.userPaymentRef  = userPaymentRef.trim();
+    planRequest.userPaymentNote = (userPaymentNote || '').trim();
+    planRequest.paymentProofAt  = new Date();
+    await planRequest.save();
+
+    await AdminNotification.create({
+      title: 'Payment Proof Submitted',
+      message: `${planRequest.userName || planRequest.userEmail} submitted payment proof for ${planRequest.requestedPlan} plan. Ref: ${userPaymentRef.trim()}`,
+      type: 'payment',
+      actionRequired: true,
+      actionUrl: '/admin/annual-requests',
+      priority: 'high',
+    });
+
+    console.log(`💰 Payment proof submitted by ${planRequest.userEmail}: ${userPaymentRef.trim()}`);
+
+    res.json({ success: true, message: 'Payment proof submitted. Admin will verify and activate your plan shortly.' });
+  } catch (error) {
+    console.error('submitPaymentProof error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Approve plan request and create invoice
 // @route   POST /api/admin/plan-requests/:id/approve
 export const approvePlanRequest = async (req, res) => {
@@ -138,22 +207,31 @@ export const approvePlanRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: `Request already ${planRequest.status}` });
     }
     
+    // Resolve user ID safely (populate may return null if user was deleted)
+    const userId = planRequest.user?._id || planRequest.user;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'User account not found. Cannot approve this request.' });
+    }
+
     // Create invoice for the user
     const plan = await Plan.findOne({ name: planRequest.requestedPlan });
-    if (!plan) {
-      return res.status(404).json({ success: false, message: 'Plan not found' });
-    }
-    
-    const amount = planRequest.billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
-    
+
+    // Fallback prices if plan somehow missing from DB
+    const FALLBACK_PRICES = { free: { monthly: 0, yearly: 0 }, starter: { monthly: 29, yearly: 278 }, pro: { monthly: 79, yearly: 758 }, enterprise: { monthly: 499, yearly: 4788 } };
+    const prices = plan || FALLBACK_PRICES[planRequest.requestedPlan] || { monthly: 0, yearly: 0 };
+    const amount = planRequest.billingCycle === 'yearly' ? (prices.priceYearly ?? prices.yearly) : (prices.priceMonthly ?? prices.monthly);
+
+    // Map credit_card → manual for Invoice enum compatibility
+    const invoicePaymentMethod = planRequest.paymentMethod === 'credit_card' ? 'manual' : (planRequest.paymentMethod || 'manual');
+
     const invoice = new Invoice({
-      user: planRequest.user._id,
+      user: userId,
       plan: planRequest.requestedPlan,
-      billingCycle: planRequest.billingCycle,
+      billingCycle: planRequest.billingCycle || 'yearly',
       amount,
       currency: 'USD',
       status: 'pending',
-      paymentMethod: planRequest.paymentMethod
+      paymentMethod: invoicePaymentMethod,
     });
     
     await invoice.save();
@@ -243,26 +321,58 @@ export const getInvoiceById = async (req, res) => {
 // @route   POST /api/admin/email/test
 export const testEmail = async (req, res) => {
   try {
-    const { email } = req.body;
-    
+    const { email, type = 'noreply' } = req.body;
+
+    const port = parseInt(process.env.SMTP_PORT || process.env.EMAIL_PORT || '465');
     const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      secure: process.env.EMAIL_PORT === '465',
+      host:   process.env.SMTP_HOST   || process.env.EMAIL_HOST || 'smtp.hostinger.com',
+      port,
+      secure: (process.env.SMTP_SECURE || 'true') === 'true' || port === 465,
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
+        user: process.env.SMTP_USER || process.env.EMAIL_USER,
+        pass: process.env.SMTP_PASS || process.env.EMAIL_PASS,
+      },
     });
-    
+
+    const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+    const FROM_MAP = {
+      noreply: `"Sambid" <${process.env.EMAIL_NOREPLY || smtpUser}>`,
+      support: `"Sambid Support" <${process.env.EMAIL_SUPPORT || smtpUser}>`,
+      billing: `"Sambid Billing" <${process.env.EMAIL_BILLING || smtpUser}>`,
+    };
+    const LABEL_MAP = { noreply: 'System / No-Reply', support: 'Support', billing: 'Billing' };
+
+    const from  = FROM_MAP[type]  || FROM_MAP.noreply;
+    const label = LABEL_MAP[type] || type;
+
     await transporter.sendMail({
-      from: `"Sambid" <${process.env.EMAIL_USER}>`,
+      from,
       to: email,
-      subject: 'Test Email from Sambid',
-      html: '<h1>Test Email</h1><p>Your email configuration is working correctly!</p>'
+      subject: `[Sambid] Test email — ${label} sender`,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+          <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;padding:24px;text-align:center;color:white;">
+            <h1 style="margin:0;font-size:22px;">Sambid</h1>
+            <p style="margin:6px 0 0;opacity:.85;font-size:13px;">Federal Contract Intelligence</p>
+          </div>
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;margin-top:16px;padding:28px;">
+            <h2 style="color:#1f2937;margin-top:0;">SMTP Test Successful</h2>
+            <p style="color:#4b5563;line-height:1.6;">
+              This test email was sent from the <strong>${label}</strong> sender address via your Hostinger SMTP configuration.
+            </p>
+            <table style="width:100%;border-collapse:collapse;margin-top:20px;font-size:14px;">
+              <tr><td style="padding:8px;color:#6b7280;width:40%;">From address</td><td style="padding:8px;color:#111827;font-family:monospace;">${from}</td></tr>
+              <tr style="background:#f9fafb;"><td style="padding:8px;color:#6b7280;">SMTP host</td><td style="padding:8px;color:#111827;font-family:monospace;">${process.env.SMTP_HOST || 'smtp.hostinger.com'}</td></tr>
+              <tr><td style="padding:8px;color:#6b7280;">Port</td><td style="padding:8px;color:#111827;font-family:monospace;">${port}</td></tr>
+              <tr style="background:#f9fafb;"><td style="padding:8px;color:#6b7280;">Secure (TLS)</td><td style="padding:8px;color:#111827;font-family:monospace;">${process.env.SMTP_SECURE || 'true'}</td></tr>
+            </table>
+          </div>
+          <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:16px;">Sent from Sambid Admin Panel</p>
+        </div>
+      `,
     });
-    
-    res.json({ success: true, message: 'Test email sent successfully' });
+
+    res.json({ success: true, message: `Test email sent from ${label} (${from})` });
   } catch (error) {
     console.error('Test email error:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -364,7 +474,7 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-// @desc    Get user by ID
+// @desc    Get user by ID with complete profile data
 // @route   GET /api/admin/users/:id
 export const getUserById = async (req, res) => {
   try {
@@ -372,7 +482,28 @@ export const getUserById = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    res.json({ success: true, data: user });
+
+    // Fetch related data in parallel
+    const [invoices, savedCount, planRequests] = await Promise.all([
+      Invoice.find({ user: user._id }).sort({ createdAt: -1 }).limit(10),
+      SavedOpportunity.countDocuments({ user: user._id }),
+      PlanRequest.find({ user: user._id }).sort({ createdAt: -1 }).limit(5),
+    ]);
+
+    const totalSpend = invoices
+      .filter(i => i.status === 'paid')
+      .reduce((sum, i) => sum + (i.amount || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        ...user.toObject(),
+        invoices,
+        savedCount,
+        planRequests,
+        totalSpend,
+      },
+    });
   } catch (error) {
     console.error('Get user by ID error:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -408,7 +539,17 @@ export const updateUserPlan = async (req, res) => {
     }
     
     await user.save();
-    
+
+    // Immediately repopulate feed when upgrading to a paid plan
+    if (['starter', 'pro', 'enterprise'].includes(plan)) {
+      try {
+        await distributeToUser(user);
+        console.log(`✅ Feed immediately repopulated for ${user.email} after admin plan update`);
+      } catch (e) {
+        console.error('Feed repopulation error (non-fatal):', e.message);
+      }
+    }
+
     // Create notification
     await AdminNotification.create({
       title: 'Plan Updated by Admin',
@@ -636,10 +777,16 @@ export const markRequestAsPaid = async (req, res) => {
     }
     
     // Upgrade user plan
-    const user = await User.findById(planRequest.user._id);
+    const resolvedUserId = planRequest.user?._id || planRequest.user;
+    const user = await User.findById(resolvedUserId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User account not found. Cannot activate plan.' });
+    }
     const oldPlan = user.plan;
     user.plan = planRequest.requestedPlan;
-    
+    user.isTrialActive = false;
+    user.dailyMatchesUsed = 0;
+
     const duration = planRequest.billingCycle === 'yearly' ? 365 : 30;
     user.planExpiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
     await user.save();
@@ -660,6 +807,27 @@ export const markRequestAsPaid = async (req, res) => {
       createdBy: req.user._id
     });
     
+    // Send activation email to user
+    try {
+      await sendPlanActivatedEmail({
+        name:        user.name || user.email,
+        email:       user.email,
+        planName:    planRequest.requestedPlan,
+        planExpires: user.planExpiresAt,
+        frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+      });
+    } catch (emailErr) {
+      console.error('Activation email failed (non-fatal):', emailErr.message);
+    }
+
+    // Immediately repopulate feed with plan-appropriate opportunities
+    try {
+      await distributeToUser(user);
+      console.log(`✅ Feed immediately repopulated for ${user.email} after plan activation`);
+    } catch (e) {
+      console.error('Feed repopulation error (non-fatal):', e.message);
+    }
+
     console.log('\n' + '='.repeat(70));
     console.log('🎉 USER PLAN UPGRADED');
     console.log('='.repeat(70));
@@ -668,7 +836,7 @@ export const markRequestAsPaid = async (req, res) => {
     console.log(`💰 Amount: $${invoice?.amount || 'N/A'}`);
     console.log(`📄 Invoice: ${invoice?.invoiceNumber || 'N/A'}`);
     console.log('='.repeat(70) + '\n');
-    
+
     res.json({
       success: true,
       message: `User ${user.email} upgraded to ${planRequest.requestedPlan} plan successfully.`
@@ -708,66 +876,163 @@ export const rejectPlanRequest = async (req, res) => {
   }
 };
 
+// @desc    Send payment instructions email to user for annual plan request
+// @route   POST /api/admin/plan-requests/:id/send-instructions
+export const sendPlanPaymentInstructions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { method, accountInfo, reference, customMessage } = req.body;
+
+    if (!method || !accountInfo) {
+      return res.status(400).json({ success: false, message: 'Payment method and account info are required.' });
+    }
+
+    const planRequest = await PlanRequest.findById(id).populate('user');
+    if (!planRequest) {
+      return res.status(404).json({ success: false, message: 'Plan request not found.' });
+    }
+
+    const userName  = planRequest.user?.name  || planRequest.userName  || 'there';
+    const userEmail = planRequest.userEmail   || planRequest.user?.email;
+    if (!userEmail) {
+      return res.status(400).json({ success: false, message: 'No email address found for this request.' });
+    }
+
+    const plan = await Plan.findOne({ name: planRequest.requestedPlan });
+    const FALLBACK_PRICES = { starter: { monthly: 29, yearly: 278 }, pro: { monthly: 79, yearly: 758 }, enterprise: { monthly: 499, yearly: 4788 } };
+    const prices = plan || FALLBACK_PRICES[planRequest.requestedPlan] || { monthly: 0, yearly: 0 };
+    const amount = planRequest.billingCycle === 'yearly' ? (prices.priceYearly ?? prices.yearly) : (prices.priceMonthly ?? prices.monthly);
+
+    // Auto-approve the request if it is still pending (creates invoice so user sees the right status)
+    if (planRequest.status === 'pending') {
+      const userId = planRequest.user?._id || planRequest.user;
+      const invoicePaymentMethod = planRequest.paymentMethod === 'credit_card' ? 'manual' : (planRequest.paymentMethod || 'manual');
+      const invoice = new Invoice({
+        user: userId,
+        plan: planRequest.requestedPlan,
+        billingCycle: planRequest.billingCycle || 'yearly',
+        amount,
+        currency: 'USD',
+        status: 'pending',
+        paymentMethod: invoicePaymentMethod,
+      });
+      await invoice.save();
+      planRequest.status = 'approved';
+      planRequest.approvedAt = new Date();
+      planRequest.invoiceId = invoice._id;
+      console.log(`✅ Auto-approved plan request ${planRequest._id} on instructions send`);
+    }
+
+    planRequest.instructionsSentAt = new Date();
+    await planRequest.save();
+
+    const ref = reference || planRequest._id.toString().slice(-8).toUpperCase();
+
+    await sendPaymentInstructionsEmail({
+      to:            userEmail,
+      userName,
+      planName:      planRequest.requestedPlan,
+      billingCycle:  planRequest.billingCycle || 'yearly',
+      amount,
+      method,
+      accountInfo,
+      reference:     ref,
+      customMessage: customMessage || '',
+    });
+
+    console.log(`📧 Payment instructions sent by admin to ${userEmail}`);
+    res.json({ success: true, message: `Payment instructions sent to ${userEmail}.` });
+  } catch (error) {
+    console.error('sendPlanPaymentInstructions error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // backend/controllers/adminController.js - Update getAdminStats function
 
 // @desc    Get dashboard stats for admin
 // @route   GET /api/admin/stats
 export const getAdminStats = async (req, res) => {
   try {
-    // Get counts from PlanRequest
-    const pendingRequests = await PlanRequest.countDocuments({ status: 'pending' });
-    const approvedRequests = await PlanRequest.countDocuments({ status: 'approved' });
-    const completedRequests = await PlanRequest.countDocuments({ status: 'completed' });
-    
-    // Get user counts
-    const totalUsers = await User.countDocuments();
-    const proUsers = await User.countDocuments({ plan: 'pro' });
-    const enterpriseUsers = await User.countDocuments({ plan: 'enterprise' });
-    const starterUsers = await User.countDocuments({ plan: 'starter' });
-    const freeUsers = await User.countDocuments({ plan: 'free' });
-    
-    // Calculate monthly revenue from invoices (last 30 days - from invoices table)
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    // Get all paid invoices in last 30 days
-    const paidInvoices = await Invoice.find({
-      status: 'paid',
-      paidAt: { $gte: thirtyDaysAgo }
-    });
-    
-    const monthlyRevenue = paidInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
-    
-    // Get total revenue all time
-    const allPaidInvoices = await Invoice.find({ status: 'paid' });
-    const totalRevenue = allPaidInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
-    
-    // Get recent invoices for display
+
+    // ── Plan requests ──────────────────────────────────────────────────────────
+    const [pendingRequests, approvedRequests, completedRequests] = await Promise.all([
+      PlanRequest.countDocuments({ status: 'pending' }),
+      PlanRequest.countDocuments({ status: 'approved' }),
+      PlanRequest.countDocuments({ status: 'completed' }),
+    ]);
+
+    // ── User counts ────────────────────────────────────────────────────────────
+    const [totalUsers, proUsers, enterpriseUsers, starterUsers, freeUsers, trialUsers] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ plan: 'pro' }),
+      User.countDocuments({ plan: 'enterprise' }),
+      User.countDocuments({ plan: 'starter' }),
+      User.countDocuments({ plan: 'free' }),
+      User.countDocuments({ plan: 'trial' }),
+    ]);
+
+    // ── Revenue ────────────────────────────────────────────────────────────────
+    const paidInvoices30d = await Invoice.find({ status: 'paid', paidAt: { $gte: thirtyDaysAgo } });
+    const allPaidInvoices  = await Invoice.find({ status: 'paid' });
+    const monthlyRevenue   = paidInvoices30d.reduce((s, i) => s + (i.amount || 0), 0);
+    const totalRevenue     = allPaidInvoices.reduce((s, i)  => s + (i.amount || 0), 0);
+
+    // ── Saved Opportunities ────────────────────────────────────────────────────
+    const [totalSavedLifetime, dailySaved] = await Promise.all([
+      SavedOpportunity.countDocuments(),
+      SavedOpportunity.countDocuments({ savedAt: { $gte: todayStart } }),
+    ]);
+
+    // ── Opportunity store stats ────────────────────────────────────────────────
+    const [masterOpportunityCount, userOpportunityCount, todayFetchedCount] = await Promise.all([
+      Opportunity.countDocuments(),
+      UserOpportunity.countDocuments(),
+      Opportunity.countDocuments({ lastFetched: { $gte: todayStart } }),
+    ]);
+
+    // ── Recent invoices (for table) ────────────────────────────────────────────
     const recentInvoices = await Invoice.find()
       .populate('user', 'name email')
       .sort({ createdAt: -1 })
       .limit(10);
-    
-    console.log('📊 Admin Stats Summary:');
-    console.log(`   Total Users: ${totalUsers}`);
-    console.log(`   Monthly Revenue: $${monthlyRevenue}`);
-    console.log(`   Total Revenue: $${totalRevenue}`);
-    console.log(`   Paid Invoices (30 days): ${paidInvoices.length}`);
-    
+
     res.json({
       success: true,
       data: {
-        pendingRequests,
-        approvedRequests,
-        completedRequests,
-        totalUsers,
-        proUsers,
-        enterpriseUsers,
-        starterUsers,
-        freeUsers,
-        monthlyRevenue,
-        totalRevenue,
-        recentInvoices
+        // Plan requests
+        pendingRequests, approvedRequests, completedRequests,
+        // Users
+        totalUsers, proUsers, enterpriseUsers, starterUsers, freeUsers, trialUsers,
+        // Revenue
+        monthlyRevenue, totalRevenue,
+        // Saved opportunities
+        totalSavedLifetime, dailySaved,
+        // Opportunity store
+        masterOpportunityCount, userOpportunityCount, todayFetchedCount,
+        // SAM.gov API fetch status (in-memory)
+        samFetch: {
+          lastFetchAt:          fetchStats.lastMasterFetchAt,
+          lastFetchCount:       fetchStats.lastMasterFetchCount,
+          lastDistributionAt:   fetchStats.lastDistributionAt,
+          lastDistributionCount:fetchStats.lastDistributionCount,
+          totalFetchRuns:       fetchStats.totalFetchRuns,
+          isFetching:           fetchStats.isFetching,
+        },
+        // Nightly bulk download status (in-memory)
+        bulkFetch: {
+          lastRunAt:    bulkStats.lastRunAt,
+          lastRunCount: bulkStats.lastRunCount,
+          lastRunPages: bulkStats.lastRunPages,
+          isRunning:    bulkStats.isRunning,
+        },
+        // Invoices table
+        recentInvoices,
       }
     });
   } catch (error) {
@@ -775,86 +1040,127 @@ export const getAdminStats = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// @desc    Manually trigger SAM.gov API master fetch + distribution
+// @route   POST /api/admin/trigger-fetch
+export const triggerSAMFetch = async (req, res) => {
+  try {
+    if (fetchStats.isFetching) {
+      return res.json({ success: false, message: 'API fetch already in progress. Please wait.' });
+    }
+    console.log(`🔧 Admin ${req.user.email} triggered manual API fetch`);
+    triggerManualFetch().catch(err => console.error('Manual API fetch error:', err.message));
+    res.json({ success: true, message: 'SAM.gov API fetch started. Stats will update shortly.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Manually trigger nightly bulk download
+// @route   POST /api/admin/trigger-bulk
+export const triggerBulkFetch = async (req, res) => {
+  try {
+    if (bulkStats.isRunning) {
+      return res.json({ success: false, message: 'Bulk download already in progress. Please wait.' });
+    }
+    console.log(`🔧 Admin ${req.user.email} triggered manual bulk download`);
+    triggerManualBulk().catch(err => console.error('Manual bulk error:', err.message));
+    res.json({ success: true, message: 'Bulk download started. This may take a few minutes.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get all opportunities with fetchSource breakdown for admin hybrid view
+// @route   GET /api/admin/hybrid-opportunities
+export const getHybridOpportunities = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, fetchSource, search, naicsCode } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const filter = {};
+    if (fetchSource && fetchSource !== 'all') filter.fetchSource = fetchSource;
+    if (naicsCode) filter.naicsCode = naicsCode;
+    if (search) {
+      filter.$or = [
+        { title:   { $regex: search, $options: 'i' } },
+        { agency:  { $regex: search, $options: 'i' } },
+        { naicsCode: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const [opportunities, total, apiCount, bulkCount, totalCount] = await Promise.all([
+      Opportunity.find(filter).sort({ lastFetched: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+      Opportunity.countDocuments(filter),
+      Opportunity.countDocuments({ fetchSource: 'api' }),
+      Opportunity.countDocuments({ fetchSource: 'bulk' }),
+      Opportunity.countDocuments(),
+    ]);
+
+    // Today's new fetches
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const [todayApi, todayBulk] = await Promise.all([
+      Opportunity.countDocuments({ fetchSource: 'api',  lastFetched: { $gte: todayStart } }),
+      Opportunity.countDocuments({ fetchSource: 'bulk', lastFetched: { $gte: todayStart } }),
+    ]);
+
+    res.json({
+      success: true,
+      data: opportunities,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+      breakdown: {
+        totalUnique: totalCount,
+        fromApi:     apiCount,
+        fromBulk:    bulkCount,
+        todayApi,
+        todayBulk,
+        // Live scheduler status
+        apiFetch: {
+          isFetching:   fetchStats.isFetching,
+          lastRunAt:    fetchStats.lastMasterFetchAt,
+          lastRunCount: fetchStats.lastMasterFetchCount,
+          totalRuns:    fetchStats.totalFetchRuns,
+        },
+        bulkFetch: {
+          isRunning:    bulkStats.isRunning,
+          lastRunAt:    bulkStats.lastRunAt,
+          lastRunCount: bulkStats.lastRunCount,
+          lastRunPages: bulkStats.lastRunPages,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Hybrid opportunities error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // ==================== SETTINGS CONTROLLERS ====================
 
 // @desc    Get all settings
 // @route   GET /api/admin/settings
 export const getSettings = async (req, res) => {
   try {
-    const settings = await AdminSetting.find().sort({ group: 1, key: 1 });
-    
-    // Group settings by category
-    const groupedSettings = {
-      general: {},
-      email: {},
-      payment: {},
-      api: {},
-      limits: {},
-      notifications: {}
-    };
-    
-    settings.forEach(setting => {
-      if (groupedSettings[setting.group]) {
-        groupedSettings[setting.group][setting.key] = setting.value;
+    const rows = await AdminSetting.find().sort({ group: 1, key: 1 });
+
+    const grouped = { general: {}, email: {}, payment: {}, api: {}, limits: {}, notifications: {} };
+    rows.forEach(s => {
+      if (grouped[s.group] !== undefined) grouped[s.group][s.key] = s.value;
+    });
+
+    // Fall back to process.env for any group that has no DB records yet
+    const { ENV_MAP } = await import('../services/settingsService.js');
+    for (const [settingKey, envKey] of Object.entries(ENV_MAP)) {
+      const [group, key] = settingKey.split('.');
+      if (grouped[group] !== undefined && grouped[group][key] === undefined) {
+        const val = process.env[envKey];
+        if (val !== undefined && String(val).trim() !== '') {
+          grouped[group][key] = val;
+        }
       }
-    });
-    
-    // Set default values if not found
-    if (Object.keys(groupedSettings.general).length === 0) {
-      groupedSettings.general = {
-        siteName: 'Sambid',
-        siteUrl: 'https://sambid.co',
-        supportEmail: 'support@sambid.co',
-        contactEmail: 'contact@sambid.co'
-      };
     }
-    
-    if (Object.keys(groupedSettings.email).length === 0) {
-      groupedSettings.email = {
-        smtpHost: 'smtp.hostinger.com',
-        smtpPort: '465',
-        smtpUser: '',
-        smtpPass: '',
-        fromEmail: 'noreply@sambid.co',
-        fromName: 'Sambid'
-      };
-    }
-    
-    if (Object.keys(groupedSettings.payment).length === 0) {
-      groupedSettings.payment = {
-        payoneerApiUrl: 'https://api.sandbox.payoneer.com/v4',
-        payoneerClientId: '',
-        payoneerClientSecret: '',
-        payoneerPartnerId: '',
-        currency: 'USD'
-      };
-    }
-    
-    if (Object.keys(groupedSettings.api).length === 0) {
-      groupedSettings.api = {
-        geminiApiKey: '',
-        samApiKey: '',
-        samApiUrl: 'https://api.sam.gov/opportunities/v2/search'
-      };
-    }
-    
-    if (Object.keys(groupedSettings.limits).length === 0) {
-      groupedSettings.limits = {
-        freePlanMaxSaved: 10,
-        freePlanMaxAlerts: 5,
-        starterPlanMaxSaved: 100,
-        starterPlanMaxAlerts: 50,
-        proPlanMaxSaved: -1,
-        proPlanMaxAlerts: -1
-      };
-    }
-    
-    console.log('📋 Admin settings retrieved');
-    
-    res.json({
-      success: true,
-      data: groupedSettings
-    });
+
+    res.json({ success: true, data: grouped });
   } catch (error) {
     console.error('Get settings error:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -886,10 +1192,22 @@ export const updateSettings = async (req, res) => {
     }
     
     console.log(`✅ Updated ${updatedSettings.length} settings`);
-    
+
+    // Apply to process.env immediately so services pick up new values
+    applyGroupedToEnv(updates);
+
+    // Write back to .env file so changes survive server restart
+    writeEnvFile(updates);
+
+    // Reset cached service clients so they re-initialize with new keys
+    resetAIClient();
+    resetEmailTransporter();
+    resetStripeClient();
+    resetPayPalToken();
+
     res.json({
       success: true,
-      message: 'Settings updated successfully',
+      message: 'Settings saved — DB, .env file, and all services updated.',
       data: updatedSettings
     });
   } catch (error) {
@@ -905,26 +1223,40 @@ export const updateSettings = async (req, res) => {
 export const getNotifications = async (req, res) => {
   try {
     const { limit = 50, page = 1, type, read } = req.query;
-    
+    const adminId = req.user._id;
+
     const query = {};
     if (type && type !== 'all') query.type = type;
-    if (read !== undefined) query.read = read === 'true';
-    
+    // Per-admin read filter: check readBy array, not global read flag
+    if (read !== undefined) {
+      if (read === 'true') {
+        query['readBy.user'] = adminId;
+      } else {
+        query['readBy.user'] = { $ne: adminId };
+      }
+    }
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+
     const notifications = await AdminNotification.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .populate('createdBy', 'name email');
-    
+
     const total = await AdminNotification.countDocuments(query);
-    
-    console.log(`📋 Retrieved ${notifications.length} notifications`);
-    
+
+    // Override `read` field with per-admin status so frontend works correctly
+    const adminIdStr = adminId.toString();
+    const data = notifications.map(n => {
+      const obj = n.toObject();
+      obj.read = n.readBy.some(r => r.user?.toString() === adminIdStr);
+      return obj;
+    });
+
     res.json({
       success: true,
-      data: notifications,
+      data,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -981,20 +1313,11 @@ export const markNotificationAsRead = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Notification not found' });
     }
     
-    // Check if already read by this user
+    // Per-admin tracking: only add to readBy if not already there
     const alreadyRead = notification.readBy.some(r => r.user && r.user.toString() === req.user._id.toString());
-    
+
     if (!alreadyRead) {
-      notification.readBy.push({
-        user: req.user._id,
-        readAt: new Date()
-      });
-      
-      // If this is the first reader, mark as read
-      if (!notification.read) {
-        notification.read = true;
-      }
-      
+      notification.readBy.push({ user: req.user._id, readAt: new Date() });
       await notification.save();
     }
     
@@ -1096,11 +1419,11 @@ export const sendBroadcastEmail = async (req, res) => {
 // @route   GET /api/admin/notifications/unread/count
 export const getUnreadNotificationsCount = async (req, res) => {
   try {
-    const count = await AdminNotification.countDocuments({ 
-      read: false,
+    // Count notifications the current admin has NOT read yet (per-admin tracking)
+    const count = await AdminNotification.countDocuments({
       'readBy.user': { $ne: req.user._id }
     });
-    
+
     res.json({
       success: true,
       data: { count }
@@ -1108,5 +1431,399 @@ export const getUnreadNotificationsCount = async (req, res) => {
   } catch (error) {
     console.error('Get unread count error:', error);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==================== REFERRAL ADMIN CONTROLLERS ====================
+
+import Referral from '../models/Referral.js';
+import Withdrawal from '../models/Withdrawal.js';
+
+// @desc    Get all referrals
+// @route   GET /api/admin/referrals
+export const getAllReferrals = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    const query = status && status !== 'all' ? { status } : {};
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [referrals, total] = await Promise.all([
+      Referral.find(query)
+        .populate('referrer', 'name email plan referralBalance paidReferralCount totalReferralEarnings')
+        .populate('referee',  'name email plan createdAt')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Referral.countDocuments(query),
+    ]);
+
+    const totalCommission = await Referral.aggregate([
+      { $match: { status: 'rewarded' } },
+      { $group: { _id: null, total: { $sum: '$commissionAmount' } } },
+    ]);
+
+    res.json({
+      success: true,
+      data: referrals,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+      totalCommissionPaid: totalCommission[0]?.total || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc    Get all withdrawal requests
+// @route   GET /api/admin/withdrawals
+export const getAllWithdrawals = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    const query = status && status !== 'all' ? { status } : {};
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [withdrawals, total] = await Promise.all([
+      Withdrawal.find(query)
+        .populate('user', 'name email plan referralBalance totalReferralEarnings paidReferralCount')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Withdrawal.countDocuments(query),
+    ]);
+
+    res.json({
+      success: true,
+      data: withdrawals,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc    Approve or reject a withdrawal
+// @route   PUT /api/admin/withdrawals/:id
+export const processWithdrawal = async (req, res) => {
+  try {
+    const { status, adminNote } = req.body;
+    if (!['approved', 'rejected', 'paid'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status.' });
+    }
+
+    const withdrawal = await Withdrawal.findById(req.params.id).populate('user');
+    if (!withdrawal) return res.status(404).json({ success: false, message: 'Withdrawal not found.' });
+    if (withdrawal.status !== 'pending' && status !== 'paid') {
+      return res.status(400).json({ success: false, message: 'Withdrawal already processed.' });
+    }
+
+    // If rejected — refund the balance that was frozen on request
+    if (status === 'rejected') {
+      await User.findByIdAndUpdate(withdrawal.user._id, {
+        $inc: { referralBalance: withdrawal.amount },
+      });
+    }
+
+    withdrawal.status      = status;
+    withdrawal.adminNote   = adminNote || '';
+    withdrawal.processedAt = new Date();
+    withdrawal.processedBy = req.admin?._id || req.user._id;
+    await withdrawal.save();
+
+    res.json({ success: true, message: `Withdrawal ${status}.`, data: withdrawal });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── SAM Company Directory ────────────────────────────────────────────────────
+
+// GET /api/admin/companies
+export const getSamCompanies = async (req, res) => {
+  try {
+    const {
+      page     = 1,
+      limit    = 50,
+      search   = '',
+      naics    = '',
+      state    = '',
+      priority = '',
+      source   = '',
+      sortBy   = 'legalBusinessName',
+      sortDir  = 'asc',
+    } = req.query;
+
+    const query = {};
+
+    if (search && search.trim()) {
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(escaped, 'i');
+      query.$or = [
+        { legalBusinessName: re },
+        { dbaName:           re },
+        { ueiSAM:            re },
+        { cageCode:          re },
+        { contactEmail:      re },
+        { 'physicalAddress.city': re },
+      ];
+    }
+
+    if (naics && naics.trim()) {
+      query['naicsCodes.code'] = naics.trim();
+    }
+
+    if (state && state.trim()) {
+      query['physicalAddress.stateOrProvinceCode'] = state.trim().toUpperCase();
+    }
+
+    if (priority && ['high', 'medium', 'low'].includes(priority)) {
+      query.priority = priority;
+    }
+
+    if (source && source.trim()) {
+      query['sources.name'] = source.trim().toLowerCase();
+    }
+
+    const skip   = (parseInt(page) - 1) * parseInt(limit);
+    const sortObj = { [sortBy]: sortDir === 'desc' ? -1 : 1 };
+
+    const [companies, total] = await Promise.all([
+      SamCompany.find(query).sort(sortObj).skip(skip).limit(parseInt(limit)).lean(),
+      SamCompany.countDocuments(query),
+    ]);
+
+    res.json({
+      success: true,
+      data:    companies,
+      pagination: {
+        page:  parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    console.error('getSamCompanies error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/admin/companies/stats
+export const getSamSyncStats = async (req, res) => {
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [totalCompanies, newToday] = await Promise.all([
+      SamCompany.countDocuments(),
+      SamCompany.countDocuments({ firstSeenAt: { $gte: todayStart } }),
+    ]);
+
+    const quota = quotaState();
+    const anySourceSyncing = entitySyncStats.isSyncing || usaSpendingSyncStats.isSyncing
+      || fpdsSyncStats.isSyncing || sbaSyncStats.isSyncing;
+
+    res.json({
+      success: true,
+      data: {
+        totalCompanies,
+        newToday,
+        lastSyncAt:        entitySyncStats.lastSyncAt || usaSpendingSyncStats.lastSyncAt,
+        lastSyncDuration:  entitySyncStats.lastSyncDuration,
+        isSyncing:         anySourceSyncing,
+        // SAM.gov-specific progress fields
+        samIsSyncing:      entitySyncStats.isSyncing,
+        currentPage:       entitySyncStats.currentPage,
+        totalPages:        entitySyncStats.totalPages,
+        savedSoFar:        entitySyncStats.savedSoFar + (usaSpendingSyncStats.isSyncing ? usaSpendingSyncStats.savedCount : 0),
+        status:            entitySyncStats.status,
+        rateLimitedUntil:  entitySyncStats.rateLimitedUntil,
+        lastError:         entitySyncStats.lastError,
+        quota: {
+          used:      quota.used,
+          remaining: quota.remaining,
+          limit:     quota.limit,
+          exhausted: quota.exhausted,
+          resetsAt:  quota.exhausted ? 'midnight UTC' : null,
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin/companies/sync  — triggers SAM.gov sync (auto-calc pages from quota); falls back to USASpending
+export const triggerCompanySync = async (req, res) => {
+  if (entitySyncStats.isSyncing) {
+    return res.json({ success: false, message: 'SAM.gov sync already in progress' });
+  }
+
+  const quota = quotaState();
+  if (quota.exhausted) {
+    if (usaSpendingSyncStats.isSyncing) {
+      return res.json({ success: false, message: 'SAM.gov quota exhausted and USASpending sync is already running' });
+    }
+    res.json({
+      success: true,
+      message: 'SAM.gov daily quota exhausted — syncing from USASpending.gov instead (free, no quota)',
+      source: 'usaspending',
+    });
+    syncUsaSpendingCompanies(100).catch(err => console.error('Background USASpending sync error:', err));
+    return;
+  }
+
+  // Auto-calculate maxPages from remaining quota (keep 20 requests as buffer for other API calls)
+  const maxByQuota = Math.max(1, quota.remaining - 20);
+  const maxPages   = Math.min(parseInt(req.body?.maxPages) || 500, maxByQuota);
+
+  res.json({
+    success: true,
+    message: `SAM.gov sync started — fetching up to ${maxPages} pages (~${maxPages * 100} companies with full contact details)`,
+  });
+
+  // Run SAM.gov sync; after it finishes, run USASpending to enrich with contract data
+  syncSamEntities(maxPages)
+    .then(() => {
+      if (!usaSpendingSyncStats.isSyncing) {
+        console.log('\n📊 SAM.gov sync done — starting USASpending to add contract data…');
+        return syncUsaSpendingCompanies(100);
+      }
+    })
+    .catch(err => console.error('Sync chain error:', err));
+};
+
+// POST /api/admin/companies/clear  — delete all companies (with confirmation)
+export const clearAllCompanies = async (req, res) => {
+  try {
+    const { confirmed } = req.body;
+    if (!confirmed) {
+      return res.status(400).json({ success: false, message: 'Set confirmed:true in request body to confirm deletion' });
+    }
+    const result = await SamCompany.deleteMany({});
+    console.log(`🗑️  Admin cleared company database: ${result.deletedCount} records deleted`);
+    res.json({ success: true, message: `Deleted ${result.deletedCount} companies`, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin/companies/fetch-one  — fetch & upsert a single company by UEI
+export const fetchOneCompany = async (req, res) => {
+  try {
+    const { ueiSAM } = req.body;
+    if (!ueiSAM || !ueiSAM.trim()) {
+      return res.status(400).json({ success: false, message: 'ueiSAM is required' });
+    }
+    const result = await fetchAndSaveCompany(ueiSAM.trim());
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── Multi-source Company Controllers ────────────────────────────────────────
+
+// GET /api/admin/companies/source-stats
+export const getCompanySourceStats = async (req, res) => {
+  try {
+    const breakdown = await getSourceBreakdown();
+    res.json({
+      success: true,
+      data: {
+        breakdown,
+        sources: {
+          usaspending: {
+            isSyncing:  usaSpendingSyncStats.isSyncing,
+            lastSyncAt: usaSpendingSyncStats.lastSyncAt,
+            savedCount: usaSpendingSyncStats.savedCount,
+            newCount:   usaSpendingSyncStats.newCount,
+            lastError:  usaSpendingSyncStats.lastError,
+            currentPage: usaSpendingSyncStats.currentPage,
+          },
+          fpds: {
+            isSyncing:  fpdsSyncStats.isSyncing,
+            lastSyncAt: fpdsSyncStats.lastSyncAt,
+            savedCount: fpdsSyncStats.savedCount,
+            newCount:   fpdsSyncStats.newCount,
+            lastError:  fpdsSyncStats.lastError,
+            currentPage: fpdsSyncStats.currentPage,
+          },
+          sba: {
+            isSyncing:  sbaSyncStats.isSyncing,
+            lastSyncAt: sbaSyncStats.lastSyncAt,
+            savedCount: sbaSyncStats.savedCount,
+            newCount:   sbaSyncStats.newCount,
+            lastError:  sbaSyncStats.lastError,
+            currentPage: sbaSyncStats.currentPage,
+          },
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin/companies/sync-usaspending
+export const syncUsaSpendingSource = async (req, res) => {
+  if (usaSpendingSyncStats.isSyncing) {
+    return res.json({ success: false, message: 'USASpending sync already in progress' });
+  }
+  const maxPages = parseInt(req.body?.maxPages) || 50;
+  res.json({ success: true, message: `USASpending sync started (up to ${maxPages} pages)` });
+  syncUsaSpendingCompanies(maxPages).catch(err => console.error('USASpending bg sync error:', err));
+};
+
+// POST /api/admin/companies/sync-fpds
+export const syncFpdsSource = async (req, res) => {
+  if (fpdsSyncStats.isSyncing) {
+    return res.json({ success: false, message: 'FPDS sync already in progress' });
+  }
+  const maxPages = parseInt(req.body?.maxPages) || 30;
+  res.json({ success: true, message: `FPDS sync started (up to ${maxPages} pages)` });
+  syncFpdsCompanies(maxPages).catch(err => console.error('FPDS bg sync error:', err));
+};
+
+// POST /api/admin/companies/sync-sba
+export const syncSbaSource = async (req, res) => {
+  if (sbaSyncStats.isSyncing) {
+    return res.json({ success: false, message: 'SBA sync already in progress' });
+  }
+  const maxPages = parseInt(req.body?.maxPages) || 30;
+  res.json({ success: true, message: `SBA sync started (up to ${maxPages} pages)` });
+  syncSbaCompanies(maxPages).catch(err => console.error('SBA bg sync error:', err));
+};
+
+// GET /api/admin/pending-counts
+// Returns badge counts for sidebar items — all in one round-trip
+export const getPendingCounts = async (req, res) => {
+  try {
+    const [
+      planRequests,
+      annualRequests,
+      creditRequests,
+      contactInquiries,
+      tickets,
+      suggestions,
+      notifications,
+    ] = await Promise.all([
+      PlanRequest.countDocuments({ status: 'pending', billingCycle: 'monthly' }),
+      PlanRequest.countDocuments({ status: 'pending', billingCycle: 'yearly' }),
+      CreditPurchase.countDocuments({ status: 'pending' }),
+      ContactInquiry.countDocuments({ status: 'new' }),
+      Ticket.countDocuments({ status: { $in: ['open', 'in_progress'] } }),
+      Suggestion.countDocuments({ status: 'pending' }),
+      AdminNotification.countDocuments({ read: false }),
+    ]);
+
+    res.json({
+      success: true,
+      data: { planRequests, annualRequests, creditRequests, contactInquiries, tickets, suggestions, notifications },
+    });
+  } catch (err) {
+    console.error('getPendingCounts error:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 };

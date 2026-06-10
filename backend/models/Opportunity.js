@@ -12,6 +12,12 @@ const opportunitySchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  // Tracks which pipeline first ingested this record — for monitoring only, not for deduplication
+  fetchSource: {
+    type: String,
+    enum: ['api', 'bulk'],
+    default: 'api',
+  },
   title: {
     type: String,
     required: true
@@ -34,7 +40,7 @@ const opportunitySchema = new mongoose.Schema({
   },
   dueDate: {
     type: Date,
-    required: true
+    default: null
   },
   naicsCode: {
     type: String,
@@ -64,6 +70,10 @@ const opportunitySchema = new mongoose.Schema({
   aiSummary: {
     type: String
   },
+  resourceLinks: [{
+    url:  { type: String },
+    name: { type: String },
+  }],
   lastFetched: {
     type: Date,
     default: Date.now

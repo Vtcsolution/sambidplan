@@ -3,104 +3,197 @@ import { useNavigate, Link } from 'react-router-dom';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Card from '../components/Card';
-import { authAPI } from '../services/api';
+import { authAPI, clearAuthStorage } from '../services/api';
+import { ShieldCheck, Loader2 } from 'lucide-react';
 
+// ── Two-Factor verification step ─────────────────────────────────────────────
+function TwoFactorStep({ tempToken, rememberMe, onSuccess, onCancel }) {
+  const [otp,       setOtp]       = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState('');
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    if (!otp.trim()) { setError('Please enter your authenticator code.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await authAPI.verifyLogin2FA({ tempToken, otp: otp.trim() });
+      if (res.data.success) {
+        onSuccess(res.data, rememberMe);
+      } else {
+        setError(res.data.message || 'Verification failed.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Invalid code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-indigo-50 py-10 px-4">
+      <div className="max-w-md w-full">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center gap-2 mb-3">
+            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-xl flex items-center justify-center shadow-md">
+              <span className="text-white font-bold text-base">S</span>
+            </div>
+            <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
+              Sambid Notify
+            </span>
+          </div>
+          <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <ShieldCheck className="w-7 h-7 text-indigo-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Two-Factor Verification</h1>
+          <p className="text-sm text-gray-500">Enter the 6-digit code from your authenticator app</p>
+        </div>
+
+        <Card className="shadow-xl">
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
+              <p className="text-red-600 text-sm">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleVerify} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Authenticator Code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoFocus
+                value={otp}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, '').substring(0, 8))}
+                placeholder="000000"
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-center text-2xl font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-400 mt-1.5 text-center">
+                Or enter a backup code if you lost your device
+              </p>
+            </div>
+
+            <Button type="submit" variant="primary" className="w-full" disabled={loading}>
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />Verifying…
+                </span>
+              ) : 'Verify & Sign In'}
+            </Button>
+          </form>
+
+          <div className="mt-4 text-center">
+            <button onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+              ← Back to login
+            </button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Login page ───────────────────────────────────────────────────────────
 export default function Login({ setIsAuthenticated, setUser }) {
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
-  const [errors, setErrors] = useState({});
+  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [errors,   setErrors]   = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  
+  const [twoFactorPending, setTwoFactorPending] = useState(false);
+  const [tempToken, setTempToken] = useState('');
+
   const navigate = useNavigate();
 
   const validateForm = () => {
-    const newErrors = {};
-    if (!formData.email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+    const errs = {};
+    if (!formData.email.trim()) errs.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) errs.email = 'Please enter a valid email address';
+    if (!formData.password) errs.password = 'Password is required';
+    return errs;
+  };
+
+  const finalizeLogin = async (data, remember) => {
+    const { token, name, email, _id, plan, role } = data.data || data;
+    clearAuthStorage();
+
+    const store = remember ? localStorage : sessionStorage;
+    store.setItem('authToken',  token);
+    store.setItem('userEmail',  email);
+    store.setItem('userName',   name);
+    store.setItem('userId',     _id);
+    store.setItem('userPlan',   plan);
+    store.setItem('userRole',   role || 'user');
+
+    setIsAuthenticated(true);
+    setUser({ email, name, id: _id, plan, role });
+
+    if (role === 'admin') {
+      window.location.href = '/admin/dashboard';
+    } else {
+      try {
+        const profileRes = await authAPI.getProfile();
+        const needsOnboarding = !profileRes.data.data?.onboardingCompleted;
+        navigate(needsOnboarding ? '/onboarding' : '/dashboard');
+      } catch {
+        navigate('/dashboard');
+      }
     }
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    }
-    return newErrors;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const validationErrors = validateForm();
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
-    
+    if (Object.keys(validationErrors).length > 0) { setErrors(validationErrors); return; }
+
     setIsLoading(true);
     setErrors({});
-    
+
     try {
-      const response = await authAPI.login({
-        email: formData.email,
-        password: formData.password
-      });
-      
-      console.log('Login response:', response.data);
-      
+      const response = await authAPI.login({ email: formData.email, password: formData.password });
+
       if (response.data.success) {
-        const { token, name, email, _id, plan, role } = response.data.data;
-        
-        // Store token based on remember me
-        if (rememberMe) {
-          localStorage.setItem('authToken', token);
-          localStorage.setItem('userEmail', email);
-          localStorage.setItem('userName', name);
-          localStorage.setItem('userId', _id);
-          localStorage.setItem('userPlan', plan);
-          localStorage.setItem('userRole', role || 'user');
+        if (response.data.requiresTwoFactor) {
+          setTempToken(response.data.tempToken);
+          setTwoFactorPending(true);
         } else {
-          sessionStorage.setItem('authToken', token);
-          sessionStorage.setItem('userEmail', email);
-          sessionStorage.setItem('userName', name);
-          sessionStorage.setItem('userId', _id);
-          sessionStorage.setItem('userPlan', plan);
-          sessionStorage.setItem('userRole', role || 'user');
-        }
-        
-        console.log('User role saved:', role);
-        console.log('Redirecting to:', role === 'admin' ? '/admin/dashboard' : '/dashboard');
-        
-        setIsAuthenticated(true);
-        setUser({ email, name, id: _id, plan, role });
-        
-        // Redirect based on role - IMPORTANT: Use window.location for full page reload
-        if (role === 'admin') {
-          window.location.href = '/admin/dashboard';
-        } else {
-          navigate('/dashboard');
+          await finalizeLogin(response.data, rememberMe);
         }
       } else {
         setErrors({ general: response.data.message || 'Login failed' });
       }
     } catch (error) {
-      console.error('Login error:', error);
-      if (error.response?.data?.message) {
-        setErrors({ general: error.response.data.message });
-      } else {
-        setErrors({ general: 'Login failed. Please check your credentials.' });
-      }
+      setErrors({ general: error.response?.data?.message || 'Login failed. Please check your credentials.' });
     } finally {
       setIsLoading(false);
     }
   };
 
+  if (twoFactorPending) {
+    return (
+      <TwoFactorStep
+        tempToken={tempToken}
+        rememberMe={rememberMe}
+        onSuccess={(data) => finalizeLogin(data, rememberMe)}
+        onCancel={() => { setTwoFactorPending(false); setTempToken(''); }}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-indigo-50 py-10 sm:py-12 px-4">
       <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-indigo-600 mb-2">FedVantage Solutions</h1>
-          <p className="text-gray-600">Welcome back! Please login to your account</p>
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="inline-flex items-center gap-2 mb-3">
+            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-xl flex items-center justify-center shadow-md">
+              <span className="text-white font-bold text-base">S</span>
+            </div>
+            <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
+              Sambid Notify
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Welcome back</h1>
+          <p className="text-sm sm:text-base text-gray-500">Sign in to your account to continue</p>
         </div>
 
         <Card className="shadow-xl">
@@ -115,17 +208,17 @@ export default function Login({ setIsAuthenticated, setUser }) {
               label="Email Address"
               type="email"
               value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              onChange={(e) => { setFormData({...formData, email: e.target.value}); setErrors(p => ({...p, email: '', general: ''})); }}
               error={errors.email}
               required
             />
-            
+
             <Input
               label="Password"
               type="password"
               showPasswordToggle
               value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
+              onChange={(e) => { setFormData({...formData, password: e.target.value}); setErrors(p => ({...p, password: '', general: ''})); }}
               error={errors.password}
               required
             />
@@ -146,7 +239,7 @@ export default function Login({ setIsAuthenticated, setUser }) {
             </div>
 
             <Button type="submit" variant="primary" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Signing in...' : 'Sign In'}
+              {isLoading ? 'Signing in…' : 'Sign In'}
             </Button>
           </form>
 

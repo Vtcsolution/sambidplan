@@ -1,0 +1,380 @@
+﻿{
+  "info": {
+    "name": "Sambid Notify â€” Admin API",
+    "description": "Complete admin API collection for Sambid Notify. Run 'Seed Admins' first, then 'Login' and copy the token to the collection variable.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",    "value": "http://localhost:8000/api", "type": "string" },
+    { "key": "admin_token", "value": "",                           "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "ðŸ” Auth",
+      "item": [
+        {
+          "name": "Seed First Super Admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin-auth/seed", "host": ["{{base_url}}"], "path": ["admin-auth", "seed"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rana Zia\",\n  \"email\": \"ranazia943@gmail.com\",\n  \"password\": \"112233\"\n}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["if (pm.response.code === 201) {\n  const r = pm.response.json();\n  if (r.token) pm.collectionVariables.set('admin_token', r.token);\n  console.log('âœ… Super admin seeded. Token saved.');\n}"] } }]
+        },
+        {
+          "name": "Login â€” Super Admin (Rana Zia)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin-auth/login", "host": ["{{base_url}}"], "path": ["admin-auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ranazia943@gmail.com\",\n  \"password\": \"112233\"\n}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const r = pm.response.json();\nif (r.token) {\n  pm.collectionVariables.set('admin_token', r.token);\n  console.log('âœ… Token saved:', r.token.slice(0, 30) + '...');\n}"] } }]
+        },
+        {
+          "name": "Login â€” Operations Admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin-auth/login", "host": ["{{base_url}}"], "path": ["admin-auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@sambid.co\",\n  \"password\": \"112233\"\n}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const r = pm.response.json();\nif (r.token) pm.collectionVariables.set('admin_token', r.token);"] } }]
+        },
+        {
+          "name": "Login â€” Support Agent",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin-auth/login", "host": ["{{base_url}}"], "path": ["admin-auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"support@sambid.co\",\n  \"password\": \"112233\"\n}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const r = pm.response.json();\nif (r.token) pm.collectionVariables.set('admin_token', r.token);"] } }]
+        },
+        {
+          "name": "Get My Admin Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin-auth/profile", "host": ["{{base_url}}"], "path": ["admin-auth", "profile"] }
+          }
+        },
+        {
+          "name": "Create â€” Regular Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-auth/create", "host": ["{{base_url}}"], "path": ["admin-auth", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Operations Admin\",\n  \"email\": \"admin@sambid.co\",\n  \"password\": \"112233\",\n  \"role\": \"admin\",\n  \"permissions\": {\n    \"users\": true,\n    \"payments\": true,\n    \"content\": true,\n    \"settings\": false,\n    \"aiTools\": true,\n    \"campaigns\": true\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Create â€” Support Staff",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-auth/create", "host": ["{{base_url}}"], "path": ["admin-auth", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Support Agent\",\n  \"email\": \"support@sambid.co\",\n  \"password\": \"112233\",\n  \"role\": \"support\",\n  \"permissions\": {\n    \"users\": true,\n    \"payments\": false,\n    \"content\": true,\n    \"settings\": false,\n    \"aiTools\": false,\n    \"campaigns\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Create â€” Co Founder (Super Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-auth/create", "host": ["{{base_url}}"], "path": ["admin-auth", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Co Founder\",\n  \"email\": \"founder@sambid.co\",\n  \"password\": \"112233\",\n  \"role\": \"super_admin\",\n  \"permissions\": {\n    \"users\": true,\n    \"payments\": true,\n    \"content\": true,\n    \"settings\": true,\n    \"aiTools\": true,\n    \"campaigns\": true\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "List All Admins",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin-auth/list", "host": ["{{base_url}}"], "path": ["admin-auth", "list"] }
+          }
+        },
+        {
+          "name": "Change Admin Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-auth/change-password", "host": ["{{base_url}}"], "path": ["admin-auth", "change-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"112233\",\n  \"newPassword\": \"NewSecure@2024\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ðŸ“Š AI & Insights",
+      "item": [
+        {
+          "name": "Get Platform AI Insights",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin-ai/insights", "host": ["{{base_url}}"], "path": ["admin-ai", "insights"] }
+          }
+        },
+        {
+          "name": "Get User Segments",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin-ai/segments", "host": ["{{base_url}}"], "path": ["admin-ai", "segments"] }
+          }
+        },
+        {
+          "name": "Churn Prediction",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin-ai/churn-prediction", "host": ["{{base_url}}"], "path": ["admin-ai", "churn-prediction"] }
+          }
+        },
+        {
+          "name": "Platform Health Check",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin-ai/platform-health", "host": ["{{base_url}}"], "path": ["admin-ai", "platform-health"] }
+          }
+        },
+        {
+          "name": "Revenue Forecast",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin-ai/revenue-forecast", "host": ["{{base_url}}"], "path": ["admin-ai", "revenue-forecast"] }
+          }
+        },
+        {
+          "name": "Generate Content â€” Email Subjects",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-ai/generate-content", "host": ["{{base_url}}"], "path": ["admin-ai", "generate-content"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"email_subject\",\n  \"context\": \"Re-engage trial users who haven't used the platform in 5 days\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Generate Content â€” Email Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-ai/generate-content", "host": ["{{base_url}}"], "path": ["admin-ai", "generate-content"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"email_body\",\n  \"context\": \"Upgrade campaign for free plan users to move to Starter plan\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Generate Content â€” Push Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-ai/generate-content", "host": ["{{base_url}}"], "path": ["admin-ai", "generate-content"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"push_notification\",\n  \"context\": \"New federal contracts matched today for IT and cybersecurity NAICS codes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Send Campaign â€” Trial Users",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-ai/send-campaign", "host": ["{{base_url}}"], "path": ["admin-ai", "send-campaign"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segment\": \"trial\",\n  \"subject\": \"Your free trial ends soon â€” upgrade to keep matching\",\n  \"body\": \"Hi there,\\n\\nYour free trial is ending in 3 days. Don't lose access to your federal contract matches!\\n\\nUpgrade now at http://localhost:5173/pricing\\n\\nBest,\\nSambid Notify Team\",\n  \"fromName\": \"Sambid Notify\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Send Campaign â€” At-Risk Users",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin-ai/send-campaign", "host": ["{{base_url}}"], "path": ["admin-ai", "send-campaign"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segment\": \"at_risk\",\n  \"subject\": \"We miss you â€” new contracts matched while you were away\",\n  \"body\": \"Hi there,\\n\\nNew federal contracts have been matched to your NAICS codes while you've been away. Log back in to see them!\\n\\nhttp://localhost:5173/dashboard\\n\\nBest,\\nSambid Notify Team\",\n  \"fromName\": \"Sambid Notify\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ðŸ‘¥ Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/users", "host": ["{{base_url}}"], "path": ["admin", "users"] }
+          }
+        },
+        {
+          "name": "Update User Plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/admin/users/:id/plan", "host": ["{{base_url}}"], "path": ["admin", "users", ":id", "plan"], "variable": [{ "key": "id", "value": "USER_ID_HERE" }] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"enterprise\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/users/:id", "host": ["{{base_url}}"], "path": ["admin", "users", ":id"], "variable": [{ "key": "id", "value": "USER_ID_HERE" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ðŸ’° Payments",
+      "item": [
+        {
+          "name": "Get All Invoices",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/invoices", "host": ["{{base_url}}"], "path": ["admin", "invoices"] }
+          }
+        },
+        {
+          "name": "Get Plan Requests",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/plan-requests", "host": ["{{base_url}}"], "path": ["admin", "plan-requests"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ðŸ“Š Dashboard",
+      "item": [
+        {
+          "name": "Get Admin Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/stats", "host": ["{{base_url}}"], "path": ["admin", "stats"] }
+          }
+        },
+        {
+          "name": "Get Recent Activity",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/recent-activity", "host": ["{{base_url}}"], "path": ["admin", "recent-activity"] }
+          }
+        },
+        {
+          "name": "Trigger SAM.gov Fetch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/admin/trigger-fetch", "host": ["{{base_url}}"], "path": ["admin", "trigger-fetch"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ðŸ“¬ Contact Inquiries",
+      "item": [
+        {
+          "name": "Get All Inquiries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": { "raw": "{{base_url}}/contact", "host": ["{{base_url}}"], "path": ["contact"] }
+          }
+        },
+        {
+          "name": "Activate Plan from Inquiry",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/contact/:id/activate-plan", "host": ["{{base_url}}"], "path": ["contact", ":id", "activate-plan"], "variable": [{ "key": "id", "value": "INQUIRY_ID_HERE" }] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billingCycle\": \"monthly\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

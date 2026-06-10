@@ -1,152 +1,186 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-  ArrowRight, 
-  Bell, 
-  Search, 
-  Brain, 
-  TrendingUp, 
-  Shield, 
-  Clock, 
-  CheckCircle,
-  Star,
-  Users,
-  Award,
-  Zap
+import { useAuth } from '../hooks/useAuth';
+import {
+  ArrowRight, Bell, Search, Brain, TrendingUp, Shield, Clock,
+  CheckCircle, Star, Users, Award, Zap, Target, FileText, BarChart2
 } from 'lucide-react';
 
-export default function Home() {
-  const fadeInUp = {
-    initial: { opacity: 0, y: 30 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.6 }
-  };
+const fadeInUp = {
+  initial: { opacity: 0, y: 30 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.6 },
+};
 
-  const staggerContainer = {
-    animate: { transition: { staggerChildren: 0.1 } }
-  };
+const staggerContainer = {
+  animate: { transition: { staggerChildren: 0.1 } },
+};
+
+export default function Home() {
+  const { isAuthenticated } = useAuth();
+  const ctaTo = isAuthenticated ? '/dashboard' : '/signup';
+  const ctaLabel = isAuthenticated ? 'Go to Dashboard' : 'Start Free Trial';
 
   return (
     <div className="overflow-hidden">
-      {/* Hero Section */}
+
+      {/* ── Hero ── */}
       <section className="relative bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 text-white">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3')] bg-cover bg-center opacity-10"></div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32">
-          <motion.div 
+        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3')] bg-cover bg-center opacity-10" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 md:py-32">
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
             className="text-center max-w-4xl mx-auto"
           >
-            <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm mb-6">
-              <Zap className="w-4 h-4 mr-2 text-yellow-400" />
-              <span className="text-sm">AI-Powered Contract Discovery</span>
+            <div className="inline-flex items-center px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm mb-5 sm:mb-6">
+              <Zap className="w-4 h-4 mr-2 text-yellow-400 shrink-0" />
+              <span className="text-xs sm:text-sm font-medium">SAM.gov Contracts · Matched to Your NAICS Codes</span>
             </div>
-            <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-white to-indigo-200 bg-clip-text text-transparent">
-              Never Miss a Federal Contract Again
+
+            <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-5 sm:mb-6 bg-gradient-to-r from-white to-indigo-200 bg-clip-text text-transparent leading-tight">
+              Federal Contracts,<br />Found For You
             </h1>
-            <p className="text-xl md:text-2xl text-indigo-100 mb-8 leading-relaxed">
-              AI-powered platform helping federal contractors discover, track, and win opportunities worth billions.
+
+            <p className="text-base sm:text-xl md:text-2xl text-indigo-100 mb-7 sm:mb-8 leading-relaxed max-w-2xl mx-auto px-2">
+              Sambid scans SAM.gov daily and delivers matching federal contract opportunities straight to your dashboard — filtered by your NAICS codes, set-asides, and agency preferences.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link 
-                to="/signup" 
-                className="inline-flex items-center px-8 py-4 bg-indigo-600 hover:bg-indigo-700 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105"
+
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center px-4 sm:px-0">
+              <Link
+                to={ctaTo}
+                className="inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 bg-indigo-600 hover:bg-indigo-700 rounded-xl font-semibold transition-all duration-200 hover:scale-105 text-sm sm:text-base"
               >
-                Start Free Trial
+                {ctaLabel}
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Link>
-              <Link 
-                to="/how-it-works" 
-                className="inline-flex items-center px-8 py-4 bg-white/10 backdrop-blur-sm hover:bg-white/20 rounded-xl font-semibold transition-all duration-200 border border-white/20"
+              <Link
+                to="/how-it-works"
+                className="inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 bg-white/10 backdrop-blur-sm hover:bg-white/20 rounded-xl font-semibold transition-all duration-200 border border-white/20 text-sm sm:text-base"
               >
-                Watch Demo
+                See How It Works
               </Link>
             </div>
-            <p className="mt-6 text-indigo-200 text-sm">No credit card required • Free forever plan available</p>
+
+            <p className="mt-5 text-indigo-300 text-xs sm:text-sm">
+              3-day free trial · 15 contract matches included · No credit card required
+            </p>
           </motion.div>
         </div>
       </section>
 
-      {/* Trusted By Section */}
-      <section className="py-12 bg-white border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-gray-500 text-sm uppercase tracking-wide mb-6">Trusted by leading federal contractors</p>
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12 opacity-60">
-            <span className="text-xl font-semibold text-gray-400">BAE Systems</span>
-            <span className="text-xl font-semibold text-gray-400">Lockheed Martin</span>
-            <span className="text-xl font-semibold text-gray-400">Northrop Grumman</span>
-            <span className="text-xl font-semibold text-gray-400">Boeing</span>
-            <span className="text-xl font-semibold text-gray-400">Raytheon</span>
+      {/* ── How the platform works — quick visual ── */}
+      <section className="py-12 sm:py-16 bg-white border-b border-gray-100">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-center text-gray-400 text-xs uppercase tracking-widest mb-8">
+            How Sambid works
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+            {[
+              { icon: Users,    step: '1', label: 'Create account',        sub: 'Add your NAICS codes' },
+              { icon: Search,   step: '2', label: 'Get matched contracts',  sub: 'From SAM.gov daily' },
+              { icon: Bell,     step: '3', label: 'Set smart alerts',       sub: 'Never miss a bid' },
+              { icon: TrendingUp, step: '4', label: 'Track & win',          sub: 'Save, analyze, propose' },
+            ].map((item, i) => (
+              <div key={i} className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                  <item.icon className="w-6 h-6 text-indigo-600" />
+                </div>
+                <div className="text-xs font-bold text-indigo-500">Step {item.step}</div>
+                <div className="text-sm font-semibold text-gray-900">{item.label}</div>
+                <div className="text-xs text-gray-500">{item.sub}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-16 bg-gray-50">
+      {/* ── Stats ── */}
+      <section className="py-12 sm:py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div 
+          <motion.div
             variants={staggerContainer}
             initial="initial"
             whileInView="animate"
             viewport={{ once: true }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-8"
+            className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8"
           >
             {[
-              { value: "10,000+", label: "Contracts Tracked", icon: TrendingUp },
-              { value: "$2.5B+", label: "Contract Value", icon: Award },
-              { value: "500+", label: "Active Contractors", icon: Users },
-              { value: "98%", label: "Match Accuracy", icon: CheckCircle }
+              { value: '$160B+', label: 'Federal contracts awarded annually to small businesses', icon: Award },
+              { value: 'SAM.gov', label: 'Official source — live contract data, updated daily',    icon: Shield },
+              { value: 'NAICS',  label: 'Matched to your industry codes — no irrelevant noise',    icon: Target },
+              { value: '3 days', label: 'Free trial — see real matches for your business today',   icon: Clock },
             ].map((stat, idx) => (
-              <motion.div key={idx} variants={fadeInUp} className="text-center">
-                <div className="flex justify-center mb-3">
-                  <stat.icon className="w-8 h-8 text-indigo-600" />
+              <motion.div key={idx} variants={fadeInUp} className="text-center px-2">
+                <div className="flex justify-center mb-2 sm:mb-3">
+                  <stat.icon className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
                 </div>
-                <div className="text-3xl md:text-4xl font-bold text-gray-900 mb-1">{stat.value}</div>
-                <div className="text-gray-600">{stat.label}</div>
+                <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-1">
+                  {stat.value}
+                </div>
+                <div className="text-xs sm:text-sm text-gray-600">{stat.label}</div>
               </motion.div>
             ))}
           </motion.div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="py-24 bg-white">
+      {/* ── Features ── */}
+      <section className="py-16 sm:py-20 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-16"
+            className="text-center mb-10 sm:mb-14 md:mb-16"
           >
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Powerful Features for Federal Contractors
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
+              Everything You Need to Win Federal Contracts
             </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Everything you need to discover, track, and win federal contracts
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 max-w-3xl mx-auto px-2">
+              One platform from discovery to proposal — built specifically for federal contractors
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
             {[
               {
-                icon: Bell,
-                title: "Smart Alerts",
-                description: "Real-time notifications for matching opportunities based on your NAICS codes and past performance",
-                features: ["Instant email alerts", "SMS notifications", "Slack integration"]
+                icon: Search,
+                title: 'NAICS-Based Matching',
+                description: 'Enter your NAICS codes once. Sambid scans SAM.gov and delivers contracts that match your industry every day.',
+                features: ['Live SAM.gov data', 'Set-aside filtering (8a, WOSB, HUBZone…)', 'Agency & value range filters'],
               },
               {
-                icon: Search,
-                title: "Contract Discovery",
-                description: "Comprehensive search across SAM.gov, FedBizOpps, and agency-specific portals",
-                features: ["Daily updates", "Advanced filters", "Historical data"]
+                icon: Bell,
+                title: 'Smart Alerts',
+                description: 'Create keyword and criteria-based alerts so the moment a relevant contract is posted, you know about it.',
+                features: ['Email notifications', 'Daily or real-time frequency', 'Never miss a deadline'],
               },
               {
                 icon: Brain,
-                title: "AI Matching",
-                description: "Smart recommendations using machine learning to find your best-fit opportunities",
-                features: ["98% accuracy", "Competitive analysis", "Win probability"]
-              }
+                title: 'AI Proposal Tools',
+                description: 'Use built-in AI to generate proposal drafts, analyze RFPs, and assess Go/No-Go decisions in seconds.',
+                features: ['Proposal builder', 'RFP analyzer', 'Go/No-Go scoring'],
+              },
+              {
+                icon: BarChart2,
+                title: 'Winning Bids Analysis',
+                description: 'See who\'s winning contracts in your NAICS codes, what they\'re charging, and what incumbent patterns look like.',
+                features: ['Award amounts by agency', 'Incumbent contractor data', 'Market intelligence'],
+              },
+              {
+                icon: FileText,
+                title: 'Capability Statement',
+                description: 'Generate a professional federal capability statement from your profile in one click — ready to attach to bids.',
+                features: ['Auto-filled from your profile', 'PDF export', 'Agency-ready format'],
+              },
+              {
+                icon: TrendingUp,
+                title: 'Bid Pipeline',
+                description: 'Track every opportunity you\'re pursuing from discovery through submission with a visual pipeline board.',
+                features: ['Stage tracking', 'Deadline calendar', 'Saved opportunities'],
+              },
             ].map((feature, idx) => (
               <motion.div
                 key={idx}
@@ -154,17 +188,17 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="group bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 p-8 border border-gray-100"
+                className="group bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 sm:p-8 border border-gray-100"
               >
-                <div className="w-14 h-14 bg-indigo-100 rounded-xl flex items-center justify-center mb-6 group-hover:bg-indigo-600 transition-colors duration-300">
-                  <feature.icon className="w-7 h-7 text-indigo-600 group-hover:text-white transition-colors duration-300" />
+                <div className="w-12 h-12 sm:w-14 sm:h-14 bg-indigo-100 rounded-xl flex items-center justify-center mb-5 sm:mb-6 group-hover:bg-indigo-600 transition-colors duration-300">
+                  <feature.icon className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600 group-hover:text-white transition-colors duration-300" />
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">{feature.title}</h3>
-                <p className="text-gray-600 mb-4">{feature.description}</p>
-                <ul className="space-y-2">
+                <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2 sm:mb-3">{feature.title}</h3>
+                <p className="text-sm sm:text-base text-gray-600 mb-4">{feature.description}</p>
+                <ul className="space-y-1.5 sm:space-y-2">
                   {feature.features.map((feat, i) => (
-                    <li key={i} className="flex items-center text-sm text-gray-500">
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    <li key={i} className="flex items-center text-xs sm:text-sm text-gray-500">
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2 shrink-0" />
                       {feat}
                     </li>
                   ))}
@@ -175,80 +209,83 @@ export default function Home() {
         </div>
       </section>
 
-      {/* How It Works Preview */}
-      <section className="py-24 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Simple Three-Step Process
+      {/* ── Plan overview ── */}
+      <section className="py-16 sm:py-20 bg-gray-50">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10 sm:mb-12">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
+              Simple, Transparent Pricing
             </h2>
-            <p className="text-xl text-gray-600">
-              Get started in minutes, start winning contracts
+            <p className="text-base sm:text-lg text-gray-600">
+              Start with a free trial. Upgrade when you're ready.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {[
-              { step: "01", title: "Create Profile", description: "Set up your company profile with NAICS codes and capabilities" },
-              { step: "02", title: "Set Alerts", description: "Configure smart alerts for your target opportunities" },
-              { step: "03", title: "Win Contracts", description: "Get matched and submit winning proposals" }
-            ].map((item, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, scale: 0.9 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1 }}
-                className="text-center"
-              >
-                <div className="text-6xl font-bold text-indigo-200 mb-4">{item.step}</div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">{item.title}</h3>
-                <p className="text-gray-600">{item.description}</p>
-              </motion.div>
+              { name: 'Trial',      price: 'Free',  period: '3 days',  matches: '15 matches',  color: 'border-gray-200',   badge: null },
+              { name: 'Starter',    price: '$29',   period: '/month',  matches: '500/month',   color: 'border-blue-200',   badge: null },
+              { name: 'Pro',        price: '$49',   period: '/month',  matches: '3,000/month', color: 'border-indigo-400', badge: 'Most Popular' },
+              { name: 'Enterprise', price: '$99',   period: '/month',  matches: 'Unlimited',   color: 'border-amber-300',  badge: null },
+            ].map((plan, i) => (
+              <div key={i} className={`bg-white rounded-2xl border-2 ${plan.color} p-5 relative`}>
+                {plan.badge && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">
+                    {plan.badge}
+                  </span>
+                )}
+                <p className="text-sm font-semibold text-gray-500 mb-1">{plan.name}</p>
+                <p className="text-3xl font-bold text-gray-900">{plan.price}<span className="text-sm font-normal text-gray-500">{plan.period}</span></p>
+                <p className="text-sm text-indigo-600 font-medium mt-2">{plan.matches}</p>
+                <p className="text-xs text-gray-500 mt-1">SAM.gov contract matches</p>
+              </div>
             ))}
           </div>
 
-          <div className="text-center mt-12">
-            <Link to="/how-it-works" className="inline-flex items-center text-indigo-600 font-semibold hover:text-indigo-700">
-              Learn more about how it works
-              <ArrowRight className="ml-2 w-5 h-5" />
+          <div className="text-center mt-8">
+            <Link
+              to="/pricing"
+              className="inline-flex items-center text-indigo-600 font-semibold hover:text-indigo-700 text-sm sm:text-base"
+            >
+              See full pricing details
+              <ArrowRight className="ml-2 w-4 h-4" />
             </Link>
           </div>
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section className="py-24 bg-white">
+      {/* ── Testimonials ── */}
+      <section className="py-16 sm:py-20 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+          <div className="text-center mb-10 sm:mb-14 md:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
               What Contractors Say
             </h2>
-            <p className="text-xl text-gray-600">
-              Join hundreds of successful federal contractors
+            <p className="text-base sm:text-lg md:text-xl text-gray-600">
+              Small businesses finding and winning federal contracts with Sambid
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
             {[
               {
-                name: "Sarah Johnson",
-                role: "CEO, Tech Solutions Inc.",
-                content: "FedContractNotify helped us discover a $2.5M contract we would have missed. The AI matching is incredible!",
-                rating: 5
+                name: 'Sarah Johnson',
+                role: 'CEO, Tech Solutions LLC',
+                content: 'Before Sambid I was spending hours on SAM.gov every morning. Now the matches come to me — filtered to exactly what we qualify for.',
+                rating: 5,
               },
               {
-                name: "Michael Chen",
-                role: "President, Chen Consulting",
-                content: "The alerts are instant and relevant. We've increased our win rate by 40% since using this platform.",
-                rating: 5
+                name: 'Michael Chen',
+                role: 'Owner, Chen IT Consulting',
+                content: 'The NAICS filtering is spot-on. I stopped seeing irrelevant contracts and started actually responding to bids we could win.',
+                rating: 5,
               },
               {
-                name: "David Williams",
-                role: "Director, Williams Group",
-                content: "Best investment we've made. The time savings alone are worth every penny.",
-                rating: 5
-              }
+                name: 'David Williams',
+                role: 'Director, Williams Engineering Group',
+                content: 'The AI proposal builder cut our response time in half. We went from 2 bids a month to 6. Worth every penny.',
+                rating: 5,
+              },
             ].map((testimonial, idx) => (
               <motion.div
                 key={idx}
@@ -256,17 +293,19 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-gray-50 rounded-2xl p-8 hover:shadow-lg transition-shadow"
+                className="bg-gray-50 rounded-2xl p-6 sm:p-8 hover:shadow-lg transition-shadow"
               >
-                <div className="flex mb-4">
+                <div className="flex mb-3 sm:mb-4">
                   {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />
+                    <Star key={i} className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400 fill-current" />
                   ))}
                 </div>
-                <p className="text-gray-700 mb-6 italic">"{testimonial.content}"</p>
+                <p className="text-sm sm:text-base text-gray-700 mb-5 sm:mb-6 italic leading-relaxed">
+                  "{testimonial.content}"
+                </p>
                 <div>
-                  <p className="font-semibold text-gray-900">{testimonial.name}</p>
-                  <p className="text-sm text-gray-500">{testimonial.role}</p>
+                  <p className="font-semibold text-gray-900 text-sm sm:text-base">{testimonial.name}</p>
+                  <p className="text-xs sm:text-sm text-gray-500">{testimonial.role}</p>
                 </div>
               </motion.div>
             ))}
@@ -274,24 +313,26 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="relative bg-gradient-to-r from-indigo-600 to-indigo-800 py-20">
-        <div className="absolute inset-0 bg-black opacity-20"></div>
+      {/* ── CTA ── */}
+      <section className="relative bg-gradient-to-r from-indigo-600 to-indigo-800 py-16 sm:py-20">
+        <div className="absolute inset-0 bg-black opacity-20" />
         <div className="relative max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Ready to Transform Your Federal Contracting Success?
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3 sm:mb-4">
+            Start Finding Federal Contracts Today
           </h2>
-          <p className="text-xl text-indigo-100 mb-8">
-            Join thousands of contractors already winning with FedContractNotify
+          <p className="text-base sm:text-lg md:text-xl text-indigo-100 mb-7 sm:mb-8">
+            3-day free trial. 15 real contract matches from SAM.gov. No credit card needed.
           </p>
-          <Link 
-            to="/signup" 
-            className="inline-flex items-center px-8 py-4 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-gray-100 transition-all duration-200 transform hover:scale-105"
+          <Link
+            to={ctaTo}
+            className="inline-flex items-center px-7 sm:px-8 py-3.5 sm:py-4 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-gray-100 transition-all duration-200 hover:scale-105 text-sm sm:text-base"
           >
-            Get Started Free
+            {isAuthenticated ? 'Go to Dashboard' : 'Get Started Free'}
             <ArrowRight className="ml-2 w-5 h-5" />
           </Link>
-          <p className="mt-4 text-indigo-200 text-sm">Free plan includes 5 alerts/month • No credit card required</p>
+          <p className="mt-4 text-indigo-200 text-xs sm:text-sm">
+            No credit card required · Cancel anytime
+          </p>
         </div>
       </section>
     </div>

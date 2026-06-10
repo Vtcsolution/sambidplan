@@ -1,6 +1,6 @@
 // backend/routes/adminRoutes.js
 import express from 'express';
-import { protect, adminOnly } from '../middleware/authMiddleware.js';
+import { flexAdmin } from '../middleware/flexAdminMiddleware.js';
 import {
   // Plan Request Controllers
   getPlanRequests,
@@ -9,7 +9,11 @@ import {
   approvePlanRequest,
   markRequestAsPaid,
   rejectPlanRequest,
+  sendPlanPaymentInstructions,
   getAdminStats,
+  triggerSAMFetch,
+  triggerBulkFetch,
+  getHybridOpportunities,
   // Settings Controllers
   getSettings,
   updateSettings,
@@ -32,24 +36,38 @@ import {
   deleteUser,
   testEmail,
   // Dashboard
-  getRecentActivity
+  getRecentActivity,
+  // Referral management
+  getAllReferrals,
+  getAllWithdrawals,
+  processWithdrawal,
+  // SAM Company Directory
+  getSamCompanies,
+  getSamSyncStats,
+  triggerCompanySync,
+  fetchOneCompany,
+  // Multi-source
+  getCompanySourceStats,
+  syncUsaSpendingSource,
+  syncFpdsSource,
+  syncSbaSource,
+  clearAllCompanies,
+  getPendingCounts,
 } from '../controllers/adminController.js';
+import { reconcileReferralCommissions } from '../controllers/referralController.js';
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(protect);
-
-// ==================== USER ROUTES (Anyone logged in) ====================
-router.post('/plan-requests', createPlanRequest);
-router.get('/my-requests', getUserPlanRequests);
-
-// ==================== ADMIN ONLY ROUTES ====================
-router.use(adminOnly);
+// All routes require either adminToken or user+admin role
+router.use(flexAdmin);
 
 // Dashboard & Stats
-router.get('/stats', getAdminStats);
-router.get('/recent-activity', getRecentActivity);
+router.get('/stats',                  getAdminStats);
+router.get('/pending-counts',         getPendingCounts);
+router.post('/trigger-fetch',         triggerSAMFetch);
+router.post('/trigger-bulk',          triggerBulkFetch);
+router.get('/hybrid-opportunities',   getHybridOpportunities);
+router.get('/recent-activity',        getRecentActivity);
 
 // Settings
 router.get('/settings', getSettings);
@@ -68,6 +86,7 @@ router.get('/plan-requests', getPlanRequests);
 router.post('/plan-requests/:id/approve', approvePlanRequest);
 router.post('/plan-requests/:id/mark-paid', markRequestAsPaid);
 router.post('/plan-requests/:id/reject', rejectPlanRequest);
+router.post('/plan-requests/:id/send-instructions', sendPlanPaymentInstructions);
 
 // Invoice Management
 router.get('/invoices', getAllInvoices);
@@ -81,5 +100,25 @@ router.get('/users/:id', getUserById);
 router.put('/users/:id/plan', updateUserPlan);
 router.put('/users/:id/role', updateUserRole);
 router.delete('/users/:id', deleteUser);
+
+// Referral management
+router.get('/referrals',               getAllReferrals);
+router.get('/withdrawals',             getAllWithdrawals);
+router.put('/withdrawals/:id',         processWithdrawal);
+router.post('/referrals/reconcile',    async (req, res) => {
+  const result = await reconcileReferralCommissions();
+  res.json({ success: true, ...result });
+});
+
+// SAM Company Directory
+router.get('/companies',                    getSamCompanies);
+router.get('/companies/stats',              getSamSyncStats);
+router.get('/companies/source-stats',       getCompanySourceStats);
+router.post('/companies/sync',              triggerCompanySync);
+router.post('/companies/fetch-one',         fetchOneCompany);
+router.post('/companies/sync-usaspending',  syncUsaSpendingSource);
+router.post('/companies/sync-fpds',         syncFpdsSource);
+router.post('/companies/sync-sba',          syncSbaSource);
+router.post('/companies/clear',             clearAllCompanies);
 
 export default router;

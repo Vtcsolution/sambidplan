@@ -42,7 +42,7 @@ export const sendTrialReminder = async (user, daysLeft) => {
         </div>
         
         <div style="background: #e0e7ff; padding: 20px; border-radius: 8px; text-align: center;">
-          <h3 style="margin: 0 0 10px; color: #4338ca;">Upgrade to Pro - $29/month</h3>
+          <h3 style="margin: 0 0 10px; color: #4338ca;">Upgrade to Pro - $79/month</h3>
           <p style="margin: 0 0 15px; color: #3730a3;">Get unlimited daily matches + AI proposal generation</p>
           <a href="${process.env.FRONTEND_URL}/pricing" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
             Upgrade Now →
@@ -82,8 +82,8 @@ export const sendTrialExpiredNotification = async (user) => {
         
         <div style="background: #e0e7ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
           <h3 style="margin: 0 0 10px; color: #4338ca;">Choose a plan to continue:</h3>
-          <p style="margin: 5px 0;"><strong>Pro - $29/month</strong> - Unlimited matches + AI proposals</p>
-          <p style="margin: 5px 0;"><strong>Enterprise - $99/month</strong> - Real-time alerts + team access</p>
+          <p style="margin: 5px 0;"><strong>Pro - $79/month</strong> - Unlimited matches + AI proposals</p>
+          <p style="margin: 5px 0;"><strong>Enterprise - $499/month</strong> (or $4,788/year, save 20%) - Real-time alerts + dedicated support</p>
           <a href="${process.env.FRONTEND_URL}/pricing" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 15px;">
             View Plans →
           </a>

@@ -157,7 +157,6 @@ export default function AIPanel({ opportunityId, userPlan }) {
         <div className="flex items-center gap-2">
           <Zap className="w-5 h-5 text-indigo-500" />
           <h2 className="text-xl font-bold text-gray-900">AI Assistant</h2>
-          <span className="text-xs bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-2 py-0.5 rounded-full">Powered by Gemini</span>
         </div>
         {expanded ? <ChevronUp className="w-5 h-5 text-gray-500" /> : <ChevronDown className="w-5 h-5 text-gray-500" />}
       </button>

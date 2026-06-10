@@ -1,7 +1,8 @@
-// frontend/src/pages/admin/AdminEmailSettings.jsx
+﻿// frontend/src/pages/admin/AdminEmailSettings.jsx
 import { useState, useEffect } from 'react';
-import { Mail, Save, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
-import { adminAPI } from '../../services/api';
+import PermissionGuard from '../../components/admin/PermissionGuard';
+import { Mail, Save, RefreshCw, AlertCircle, CheckCircle, Send } from 'lucide-react';
+import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import Input from '../../components/Input';
@@ -10,6 +11,8 @@ export default function AdminEmailSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
+  const [testAddr, setTestAddr] = useState('');
+  const [testStatus, setTestStatus] = useState({}); // { noreply, support, billing } → { sending, ok, err }
   const [settings, setSettings] = useState({
     smtpHost: '',
     smtpPort: '465',
@@ -63,18 +66,21 @@ export default function AdminEmailSettings() {
     }
   };
 
-  const handleTestEmail = async () => {
-    const testEmail = prompt('Enter email address to send test email:', 'admin@sambid.co');
-    if (!testEmail) return;
-    
+  const sendTestEmail = async (type) => {
+    if (!testAddr) return;
+    setTestStatus(prev => ({ ...prev, [type]: { sending: true } }));
     try {
-      const response = await adminAPI.testEmail({ email: testEmail });
+      const response = await adminAPI.testEmail({ email: testAddr, type });
       if (response.data.success) {
-        alert('Test email sent successfully!');
+        setTestStatus(prev => ({ ...prev, [type]: { ok: true } }));
+      } else {
+        setTestStatus(prev => ({ ...prev, [type]: { err: response.data.message || 'Failed' } }));
       }
     } catch (error) {
-      alert('Failed to send test email');
+      const msg = error?.response?.data?.message || error.message || 'Failed';
+      setTestStatus(prev => ({ ...prev, [type]: { err: msg } }));
     }
+    setTimeout(() => setTestStatus(prev => ({ ...prev, [type]: {} })), 5000);
   };
 
   if (loading) {
@@ -87,18 +93,11 @@ export default function AdminEmailSettings() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Email Settings</h1>
-          <p className="text-gray-600 mt-1">Configure email delivery settings</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Email Settings</h1>
+          <p className="text-gray-600 mt-1 text-sm">Configure email delivery settings</p>
         </div>
-        <button
-          onClick={handleTestEmail}
-          className="flex items-center gap-2 px-4 py-2 text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50"
-        >
-          <Mail className="w-4 h-4" />
-          Test Email
-        </button>
       </div>
 
       {message.text && (
@@ -192,6 +191,55 @@ export default function AdminEmailSettings() {
               <Save className="w-4 h-4" />
               {saving ? 'Saving...' : 'Save Settings'}
             </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* SMTP Test */}
+      <Card className="mt-6">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Send className="w-4 h-4 text-indigo-500" />
+            <h2 className="font-semibold text-gray-900">Test SMTP Configuration</h2>
+          </div>
+          <p className="text-sm text-gray-500">Send a test email from each sender address to verify your Hostinger SMTP is working.</p>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={testAddr}
+              onChange={e => setTestAddr(e.target.value)}
+              placeholder="your@email.com"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { type: 'noreply', label: 'System / No-Reply', addr: 'noreply@sambid.co', idle: 'border-indigo-200 hover:bg-indigo-50 text-indigo-700' },
+              { type: 'support', label: 'Support',           addr: 'support@sambid.co', idle: 'border-blue-200 hover:bg-blue-50 text-blue-700'       },
+              { type: 'billing', label: 'Billing',           addr: 'billing@sambid.co', idle: 'border-green-200 hover:bg-green-50 text-green-700'     },
+            ].map(({ type, label, addr, idle }) => {
+              const s = testStatus[type] || {};
+              const cls = s.ok  ? 'border-green-300 bg-green-50 text-green-700'
+                        : s.err ? 'border-red-300 bg-red-50 text-red-700'
+                        : idle;
+              return (
+                <button
+                  key={type}
+                  onClick={() => sendTestEmail(type)}
+                  disabled={!testAddr || s.sending}
+                  className={`flex flex-col items-start gap-1 px-4 py-3 border rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${cls}`}
+                >
+                  <div className="flex items-center gap-2 font-medium">
+                    {s.sending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
+                     s.ok      ? <CheckCircle className="w-3.5 h-3.5" />            :
+                     s.err     ? <AlertCircle className="w-3.5 h-3.5" />            :
+                                 <Mail className="w-3.5 h-3.5" />}
+                    {label}
+                  </div>
+                  <span className="text-xs opacity-70">{s.ok ? 'Sent!' : s.err ? s.err.slice(0, 40) : addr}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </Card>

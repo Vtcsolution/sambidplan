@@ -1,4 +1,4 @@
-// frontend/src/pages/admin/AdminPlans.jsx
+﻿// frontend/src/pages/admin/AdminPlans.jsx
 import { useState, useEffect } from 'react';
 import { 
   Plus, 
@@ -14,7 +14,7 @@ import {
   RefreshCw,
   AlertTriangle
 } from 'lucide-react';
-import { adminAPI } from '../../services/api';
+import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 

@@ -1,207 +1,420 @@
-import { motion } from 'framer-motion';
-import { UserPlus, Bell, Search, FileText, TrendingUp, Award, CheckCircle, ArrowRight, Clock } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Building2, Mail, Phone, Users, MessageSquare,
+  CheckCircle, Loader2, ArrowRight, Clock, AlertCircle, RefreshCw
+} from 'lucide-react';
+import { contactAPI } from '../services/api';
 
-export default function HowItWorks() {
-  const steps = [
-    {
-      number: "01",
-      title: "Create Your Profile",
-      description: "Set up your company profile with detailed capabilities and preferences",
-      icon: UserPlus,
-      details: [
-        "Add your NAICS codes and business size",
-        "Upload past performance examples",
-        "Set your target agencies and contract types",
-        "Define your competitive advantages"
-      ],
-      color: "bg-blue-100",
-      iconColor: "text-blue-600"
-    },
-    {
-      number: "02",
-      title: "Configure Smart Alerts",
-      description: "Set up intelligent alerts to never miss relevant opportunities",
-      icon: Bell,
-      details: [
-        "Choose keywords and search phrases",
-        "Set budget ranges and locations",
-        "Select set-aside preferences (8a, WOSB, etc.)",
-        "Configure notification channels (email, SMS, Slack)"
-      ],
-      color: "bg-green-100",
-      iconColor: "text-green-600"
-    },
-    {
-      number: "03",
-      title: "AI-Powered Matching",
-      description: "Our AI scans thousands of contracts to find your best matches",
-      icon: Search,
-      details: [
-        "Real-time scanning of SAM.gov and other portals",
-        "98% accurate matching algorithm",
-        "Priority scoring based on your profile",
-        "Competitive analysis and win probability"
-      ],
-      color: "bg-purple-100",
-      iconColor: "text-purple-600"
-    },
-    {
-      number: "04",
-      title: "Track & Win",
-      description: "Monitor opportunities and submit winning proposals",
-      icon: TrendingUp,
-      details: [
-        "Save and organize favorite opportunities",
-        "Track deadlines and requirements",
-        "Download RFP documents and attachments",
-        "Access proposal templates and resources"
-      ],
-      color: "bg-orange-100",
-      iconColor: "text-orange-600"
-    }
-  ];
+const EMPLOYEE_OPTIONS = ['1-10', '11-50', '51-200', '201-500', '500+'];
+
+// Only $499+ plans — Starter/Pro are purchased directly on the Pricing page
+const PLAN_OPTIONS = [
+  { value: 'enterprise', label: 'Enterprise — $499/mo (or $4,788/yr)' },
+  { value: 'custom',     label: 'Custom / Enterprise Plus — Custom pricing' },
+];
+
+const PREMIUM_PLANS = [
+  {
+    value: 'enterprise',
+    name:  'Enterprise',
+    price: '$499',
+    period: '/mo',
+    badge: 'Most Popular',
+    badgeColor: 'bg-indigo-600',
+    ring: 'ring-2 ring-indigo-500',
+    features: [
+      '10,000 daily contract matches',
+      'Dedicated account manager',
+      'AI proposal generation',
+      'Full API access',
+      '24/7 priority support',
+      'Custom integrations',
+      'Unlimited saved opportunities',
+      'Advanced competitive analysis',
+    ],
+  },
+  {
+    value: 'custom',
+    name:  'Custom / Enterprise Plus',
+    price: 'Custom',
+    period: 'pricing',
+    badge: 'For Large Teams',
+    badgeColor: 'bg-purple-600',
+    ring: 'ring-2 ring-purple-400',
+    features: [
+      'Unlimited contract matches',
+      'Multiple user seats',
+      'White-label options',
+      'Custom NAICS & agency filters',
+      'Dedicated engineering support',
+      'SLA guarantee',
+      'On-premise / private cloud',
+      'Custom data exports & integrations',
+    ],
+  },
+];
+
+const STATUS_CONFIG = {
+  new:         { label: 'Received',    color: 'bg-blue-100 text-blue-700 border-blue-200',   icon: Clock,         desc: 'Your inquiry is in the queue. We\'ll be in touch shortly.' },
+  in_progress: { label: 'In Progress', color: 'bg-yellow-100 text-yellow-700 border-yellow-200', icon: RefreshCw, desc: 'Our team is reviewing your request and will contact you soon.' },
+  resolved:    { label: 'Resolved',    color: 'bg-green-100 text-green-700 border-green-200', icon: CheckCircle,  desc: 'Your inquiry has been resolved. Check your email for details.' },
+  closed:      { label: 'Closed',      color: 'bg-gray-100 text-gray-600 border-gray-200',   icon: AlertCircle,  desc: 'This inquiry was closed. Submit a new one if you need help.' },
+};
+
+function InquiryStatusCard({ inquiry, onNewInquiry }) {
+  const cfg = STATUS_CONFIG[inquiry.status] || STATUS_CONFIG.new;
+  const Icon = cfg.icon;
 
   return (
-    <div className="bg-white">
-      {/* Hero Section */}
-      <section className="relative bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-4xl md:text-5xl font-bold mb-4"
-          >
-            How FedContractNotify Works
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="text-xl text-indigo-100 max-w-3xl mx-auto"
-          >
-            Your step-by-step guide to winning more federal contracts with AI-powered technology
-          </motion.p>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center px-4 py-16">
+      <div className="bg-white rounded-2xl shadow-lg p-8 max-w-lg w-full">
+        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-semibold mb-6 ${cfg.color}`}>
+          <Icon className="w-4 h-4" />
+          {cfg.label}
         </div>
-      </section>
 
-      {/* Steps Section */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {steps.map((step, idx) => (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 50 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: idx * 0.2 }}
-              className={`flex flex-col ${idx % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'} gap-12 items-center mb-20 last:mb-0`}
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">Your Inquiry Status</h2>
+        <p className="text-gray-500 text-sm mb-6">{cfg.desc}</p>
+
+        <div className="bg-gray-50 rounded-xl p-5 space-y-3 mb-6 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Plan requested</span>
+            <span className="font-medium capitalize">{inquiry.planInterest}</span>
+          </div>
+          {inquiry.company && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Company</span>
+              <span className="font-medium">{inquiry.company}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-gray-500">Submitted</span>
+            <span className="font-medium">{new Date(inquiry.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Last updated</span>
+            <span className="font-medium">{new Date(inquiry.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+        </div>
+
+        {/* Admin notes visible to user (if any) */}
+        {inquiry.adminNotes && (
+          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6">
+            <p className="text-xs font-semibold text-indigo-600 uppercase mb-1">Message from our team</p>
+            <p className="text-sm text-indigo-900">{inquiry.adminNotes}</p>
+          </div>
+        )}
+
+        {/* Status steps */}
+        <div className="flex items-center gap-2 mb-6">
+          {['new', 'in_progress', 'resolved'].map((s, i) => {
+            const steps = ['new', 'in_progress', 'resolved'];
+            const currentIndex = steps.indexOf(inquiry.status);
+            const isActive  = i <= currentIndex;
+            const isCurrent = i === currentIndex;
+            return (
+              <div key={s} className="flex items-center gap-2 flex-1 last:flex-none">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  isActive ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-400'
+                } ${isCurrent ? 'ring-2 ring-indigo-300 ring-offset-1' : ''}`}>
+                  {i + 1}
+                </div>
+                <span className={`text-xs ${isActive ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
+                  {s === 'new' ? 'Received' : s === 'in_progress' ? 'In Review' : 'Done'}
+                </span>
+                {i < 2 && <div className={`flex-1 h-px ${isActive && i < currentIndex ? 'bg-indigo-600' : 'bg-gray-200'}`} />}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-3">
+          <a
+            href={`mailto:${inquiry.email}`}
+            className="flex-1 text-center py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
+            Contact Support
+          </a>
+          {['resolved', 'closed'].includes(inquiry.status) && (
+            <button
+              onClick={onNewInquiry}
+              className="flex-1 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
             >
-              {/* Icon & Number */}
-              <div className="md:w-1/3 flex justify-center">
-                <div className="relative">
-                  <div className="w-40 h-40 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-3xl flex items-center justify-center">
-                    <step.icon className="w-16 h-16 text-indigo-600" />
-                  </div>
-                  <div className="absolute -top-4 -right-4 w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-xl">
-                    {step.number}
-                  </div>
+              Submit New Inquiry
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Contact() {
+  const navigate = useNavigate();
+  const isLoggedIn = !!(localStorage.getItem('authToken') || sessionStorage.getItem('authToken'));
+
+  const [existingInquiry, setExistingInquiry] = useState(null);
+  const [checkingInquiry, setCheckingInquiry] = useState(isLoggedIn);
+  const [forceNew, setForceNew] = useState(false);
+
+  const [form, setForm] = useState({
+    name:        localStorage.getItem('userName') || '',
+    email:       localStorage.getItem('userEmail') || sessionStorage.getItem('userEmail') || '',
+    company:     '',
+    phone:       '',
+    employees:   '',
+    planInterest:'enterprise',
+    message:     '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted,  setSubmitted]  = useState(false);
+  const [error,      setError]      = useState('');
+
+  // Check if the logged-in user already has an open inquiry
+  useEffect(() => {
+    if (!isLoggedIn) { setCheckingInquiry(false); return; }
+    contactAPI.myInquiries()
+      .then(res => {
+        const open = res.data.data?.find(i => !['closed'].includes(i.status));
+        if (open) setExistingInquiry(open);
+      })
+      .catch(() => {})
+      .finally(() => setCheckingInquiry(false));
+  }, []);
+
+  const handleChange = (e) => {
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    setError('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) { setError('Your name is required.'); return; }
+    if (!form.email.trim()) { setError('Email address is required.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { setError('Please enter a valid email address.'); return; }
+    if (!form.message.trim()) { setError('Message is required.'); return; }
+    if (form.message.trim().length < 10) { setError('Please write at least 10 characters in your message.'); return; }
+    setSubmitting(true);
+    setError('');
+    try {
+      await contactAPI.submit(form);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to submit. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Loading state while checking existing inquiry
+  if (checkingInquiry) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  // Show existing inquiry status (unless user explicitly wants a new one)
+  if (existingInquiry && !forceNew) {
+    return <InquiryStatusCard inquiry={existingInquiry} onNewInquiry={() => setForceNew(true)} />;
+  }
+
+  // Success state after submit
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-9 h-9 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Received!</h2>
+          <p className="text-gray-600 mb-2">
+            Thank you! We have received your <strong>{form.planInterest === 'custom' ? 'Custom Enterprise' : 'Enterprise ($499/mo · $4,788/yr)'}</strong> plan request.
+            Our team will contact you within <strong>1 business day</strong> to activate your plan.
+          </p>
+          <p className="text-sm text-gray-400 mb-6">A confirmation email has been sent to <strong>{form.email}</strong>.</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition"
+          >
+            Go to Dashboard <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 py-10 sm:py-16 px-4">
+      <div className="max-w-2xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-7 sm:mb-10">
+          <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs sm:text-sm font-semibold mb-3">
+            Enterprise Plans — $499/mo (or $4,788/yr, save 20%)
+          </span>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3">Request an Enterprise Plan</h1>
+          <p className="text-gray-600 text-sm sm:text-base md:text-lg">
+            Fill in your details below. Our team reviews every request and activates your plan within <strong>1 business day</strong>.
+          </p>
+          <p className="text-xs sm:text-sm text-gray-400 mt-2">
+            Looking for Starter or Pro? <a href="/pricing" className="text-indigo-600 hover:underline">Purchase directly on the Pricing page →</a>
+          </p>
+        </div>
+
+        {/* Two premium plan cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          {PREMIUM_PLANS.map(plan => (
+            <button
+              key={plan.value}
+              type="button"
+              onClick={() => setForm(f => ({ ...f, planInterest: plan.value }))}
+              className={`text-left bg-white rounded-2xl p-5 border-2 transition-all cursor-pointer ${
+                form.planInterest === plan.value
+                  ? 'border-indigo-500 shadow-lg shadow-indigo-100'
+                  : 'border-gray-200 hover:border-indigo-300'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <span className={`inline-block text-xs font-bold text-white px-2 py-0.5 rounded-full mb-1 ${plan.badgeColor}`}>
+                    {plan.badge}
+                  </span>
+                  <h3 className="text-lg font-bold text-gray-900">{plan.name}</h3>
+                  <p className="text-2xl font-bold text-indigo-600">
+                    {plan.price}<span className="text-sm font-normal text-gray-500">{plan.period}</span>
+                  </p>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 mt-1 flex items-center justify-center shrink-0 ${
+                  form.planInterest === plan.value ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'
+                }`}>
+                  {form.planInterest === plan.value && (
+                    <div className="w-2 h-2 rounded-full bg-white" />
+                  )}
                 </div>
               </div>
-
-              {/* Content */}
-              <div className="md:w-2/3">
-                <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">{step.title}</h2>
-                <p className="text-lg text-gray-600 mb-6">{step.description}</p>
-                <ul className="grid md:grid-cols-2 gap-3">
-                  {step.details.map((detail, i) => (
-                    <li key={i} className="flex items-center text-gray-700">
-                      <CheckCircle className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" />
-                      {detail}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </motion.div>
+              <ul className="space-y-1.5">
+                {plan.features.map(f => (
+                  <li key={f} className="flex items-center gap-2 text-xs text-gray-600">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </button>
           ))}
         </div>
-      </section>
 
-      {/* Benefits Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Key Benefits</h2>
-            <p className="text-xl text-gray-600">Why thousands of contractors choose FedContractNotify</p>
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm p-5 sm:p-8 space-y-5">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Contact Us</h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+              <input
+                type="text" name="name" value={form.name} onChange={handleChange}
+                placeholder="John Smith"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Work Email *</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="email" name="email" value={form.email} onChange={handleChange}
+                  placeholder="john@company.com"
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+            </div>
           </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { icon: Award, title: "Increase Win Rate", description: "Our AI helps you focus on opportunities you're most likely to win" },
-              { icon: Clock, title: "Save Time", description: "Stop manually searching multiple websites. Get relevant matches instantly" },
-              { icon: TrendingUp, title: "Grow Revenue", description: "Access higher-value contracts and expand your federal portfolio" }
-            ].map((benefit, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1 }}
-                className="bg-white rounded-2xl p-8 text-center shadow-sm hover:shadow-md transition-shadow"
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text" name="company" value={form.company} onChange={handleChange}
+                  placeholder="Acme Corp"
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="tel" name="phone" value={form.phone} onChange={handleChange}
+                  placeholder="+1 (555) 000-0000"
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Number of Employees</label>
+              <div className="relative">
+                <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <select
+                  name="employees" value={form.employees} onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white"
+                >
+                  <option value="">Select range</option>
+                  {EMPLOYEE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Plan of Interest</label>
+              <select
+                name="planInterest" value={form.planInterest} onChange={handleChange}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
               >
-                <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <benefit.icon className="w-8 h-8 text-indigo-600" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">{benefit.title}</h3>
-                <p className="text-gray-600">{benefit.description}</p>
-              </motion.div>
-            ))}
+                {PLAN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
           </div>
-        </div>
-      </section>
 
-      {/* FAQ Preview */}
-      <section className="py-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Frequently Asked Questions</h2>
-            <p className="text-xl text-gray-600">Quick answers to common questions</p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tell us about your needs</label>
+            <div className="relative">
+              <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <textarea
+                name="message" value={form.message} onChange={handleChange}
+                rows={4}
+                placeholder="Describe your use case, NAICS codes, contract types you target..."
+                className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              />
+            </div>
           </div>
-          <div className="space-y-4">
-            {[
-              { q: "How does the AI matching work?", a: "Our AI analyzes your profile, past performance, and preferences to match you with relevant contracts from SAM.gov and other sources with 98% accuracy." },
-              { q: "What sources do you track?", a: "We track SAM.gov, FedBizOpps, agency-specific portals, and hundreds of other sources daily." },
-              { q: "Can I try it for free?", a: "Yes! Our free plan includes 5 alerts per month with no credit card required." }
-            ].map((faq, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1 }}
-                className="bg-gray-50 rounded-xl p-6"
-              >
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{faq.q}</h3>
-                <p className="text-gray-600">{faq.a}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* CTA Section */}
-      <section className="bg-gradient-to-r from-indigo-600 to-purple-600 py-16">
-        <div className="max-w-4xl mx-auto text-center px-4">
-          <h2 className="text-3xl font-bold text-white mb-4">Ready to Get Started?</h2>
-          <p className="text-xl text-indigo-100 mb-8">Join thousands of successful federal contractors</p>
-          <Link 
-            to="/signup" 
-            className="inline-flex items-center px-8 py-3 bg-white text-indigo-600 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+
+          <button
+            type="submit" disabled={submitting}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
           >
-            Start Your Free Trial
-            <ArrowRight className="ml-2 w-5 h-5" />
-          </Link>
-        </div>
-      </section>
+            {submitting
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
+              : <>Submit Inquiry <ArrowRight className="w-4 h-4" /></>}
+          </button>
+
+          <p className="text-xs text-center text-gray-400">
+            We respond within 1 business day. A confirmation email will be sent to you.
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

@@ -9,11 +9,16 @@ export default function PlanRequestModal({ isOpen, onClose, selectedPlan, onSucc
   const [notes, setNotes] = useState('');
   const [error, setError] = useState(null);
 
+  const PLAN_PRICES = {
+    starter:    { monthly: 29,  yearly: 278   },
+    pro:        { monthly: 79,  yearly: 758   },
+    enterprise: { monthly: 499, yearly: 4788  },
+  };
   const getPlanPrice = () => {
-    if (selectedPlan === 'starter') return billingCycle === 'monthly' ? '$29' : '$290';
-    if (selectedPlan === 'pro') return billingCycle === 'monthly' ? '$79' : '$790';
-    if (selectedPlan === 'enterprise') return billingCycle === 'monthly' ? '$499' : '$4,990';
-    return '';
+    const prices = PLAN_PRICES[selectedPlan];
+    if (!prices) return '';
+    const amt = billingCycle === 'monthly' ? prices.monthly : prices.yearly;
+    return `$${amt.toLocaleString()}`;
   };
 
   const handleSubmit = async (e) => {

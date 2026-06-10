@@ -18,12 +18,24 @@ const savedOpportunitySchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['saved', 'applied', 'won', 'lost'],
+    enum: ['saved', 'researching', 'proposal_draft', 'submitted', 'won', 'lost'],
     default: 'saved'
+  },
+  pipelineNotes: {
+    type: String,
+    default: ''
+  },
+  movedAt: {
+    type: Date,
+    default: Date.now
   },
   savedAt: {
     type: Date,
     default: Date.now
+  },
+  deadlineReminderSent: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   }
 });
 
