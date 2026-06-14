@@ -35,10 +35,20 @@ export const getPlanRequests = async (req, res) => {
     if (status !== 'all') query.status = status;
     if (billingCycle) query.billingCycle = billingCycle;
 
+    // Support members only see requests from users they referred
+    if (req.admin?.role === 'support') {
+      const referredUsers = await User.find({ supportReferredBy: req.admin._id }).select('_id');
+      query.user = { $in: referredUsers.map(u => u._id) };
+    }
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const requests = await PlanRequest.find(query)
-      .populate('user', 'name email businessName naicsCodes plan')
+      .populate({
+        path: 'user',
+        select: 'name email businessName naicsCodes plan supportReferredBy',
+        populate: { path: 'supportReferredBy', select: 'name email referralCode' },
+      })
       .populate('invoiceId', 'invoiceNumber amount status')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -928,7 +938,10 @@ export const sendPlanPaymentInstructions = async (req, res) => {
 
     const ref = reference || planRequest._id.toString().slice(-8).toUpperCase();
 
-    await sendPaymentInstructionsEmail({
+    res.json({ success: true, message: `Payment instructions sent to ${userEmail}.` });
+
+    // Fire after responding — never block on SMTP
+    sendPaymentInstructionsEmail({
       to:            userEmail,
       userName,
       planName:      planRequest.requestedPlan,
@@ -938,10 +951,8 @@ export const sendPlanPaymentInstructions = async (req, res) => {
       accountInfo,
       reference:     ref,
       customMessage: customMessage || '',
-    });
-
-    console.log(`📧 Payment instructions sent by admin to ${userEmail}`);
-    res.json({ success: true, message: `Payment instructions sent to ${userEmail}.` });
+    }).catch(err => console.error(`Payment instructions email failed (${userEmail}):`, err.message));
+    console.log(`📧 Payment instructions queued for ${userEmail}`);
   } catch (error) {
     console.error('sendPlanPaymentInstructions error:', error);
     res.status(500).json({ success: false, message: error.message });

@@ -42,9 +42,11 @@ const invoiceSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['payoneer', 'bank_transfer', 'manual', 'credit_card', 'stripe', 'paypal'],
+    enum: ['payoneer', 'bank_transfer', 'manual', 'credit_card', 'stripe', 'paypal', 'referral_balance'],
     default: 'payoneer'
   },
+  supportDiscount: { type: Number, default: 0 },
+  supportMember:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   paidAt: {
     type: Date
   },

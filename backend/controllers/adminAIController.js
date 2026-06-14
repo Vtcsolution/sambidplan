@@ -383,29 +383,8 @@ export const sendCampaign = async (req, res) => {
       });
     }
 
-    let sent = 0;
-    const errors = [];
-    const errorDetails = [];
-    const recipients = [];
-    for (const user of users) {
-      try {
-        await sendBroadcastEmailToSegment(user, subject, body, fromName || 'Sambid Notify');
-        sent++;
-        recipients.push({ name: user.name || '', email: user.email, delivered: true });
-        await new Promise(r => setTimeout(r, 200));
-      } catch (e) {
-        console.error(`❌ Campaign email failed for ${user.email}:`, e.message);
-        errors.push(user.email);
-        errorDetails.push({ email: user.email, error: e.message });
-        recipients.push({ name: user.name || '', email: user.email, delivered: false });
-      }
-    }
-
-    // Determine campaign status
-    const status = sent === users.length ? 'success' : sent > 0 ? 'partial' : 'failed';
-
-    // Save to campaign log
-    await CampaignLog.create({
+    // Pre-create log with "sending" status, respond immediately
+    const log = await CampaignLog.create({
       segment,
       subject,
       bodyPreview:  body.slice(0, 200),
@@ -413,26 +392,55 @@ export const sendCampaign = async (req, res) => {
       targetUserId: targetUserId || null,
       targetEmail:  targetUserId ? users[0]?.email : null,
       totalUsers:   users.length,
-      sent,
-      failed:       errors.length,
-      recipients,
-      failedEmails: errors,
-      status,
+      sent:         0,
+      failed:       0,
+      recipients:   [],
+      failedEmails: [],
+      status:       'sending',
     });
 
-    await AdminNotification.create({
-      title:   `📧 Campaign Sent — ${segment}`,
-      message: `"${subject}" sent to ${sent}/${users.length} ${targetUserId ? 'user' : `users in segment: ${segment}`}`,
-      type:    'system',
-      actionRequired: false,
-      priority: 'medium',
+    res.json({
+      success: true,
+      message: `Campaign queued for ${users.length} user${users.length !== 1 ? 's' : ''}. Results will appear in Campaign History shortly.`,
+      data: { queued: users.length, total: users.length },
     });
 
-    const message = sent === 0 && errors.length > 0
-      ? `All ${errors.length} emails failed. First error: ${errorDetails[0]?.error || 'unknown'}`
-      : `Campaign sent to ${sent} user${sent !== 1 ? 's' : ''}.${errors.length ? ` (${errors.length} failed)` : ''}`;
+    // Send emails in background after response
+    (async () => {
+      let sent = 0;
+      const errors = [];
+      const errorDetails = [];
+      const recipients = [];
+      for (const user of users) {
+        try {
+          await sendBroadcastEmailToSegment(user, subject, body, fromName || 'Sambid Notify');
+          sent++;
+          recipients.push({ name: user.name || '', email: user.email, delivered: true });
+          await new Promise(r => setTimeout(r, 200));
+        } catch (e) {
+          console.error(`❌ Campaign email failed for ${user.email}:`, e.message);
+          errors.push(user.email);
+          errorDetails.push({ email: user.email, error: e.message });
+          recipients.push({ name: user.name || '', email: user.email, delivered: false });
+        }
+      }
 
-    res.json({ success: sent > 0, message, data: { sent, total: users.length, errors, errorDetails } });
+      const status = sent === users.length ? 'success' : sent > 0 ? 'partial' : 'failed';
+
+      await CampaignLog.findByIdAndUpdate(log._id, {
+        sent, failed: errors.length, recipients, failedEmails: errors, status,
+      });
+
+      await AdminNotification.create({
+        title:   `📧 Campaign ${status} — ${segment}`,
+        message: `"${subject}" sent to ${sent}/${users.length} ${targetUserId ? 'user' : `users in segment: ${segment}`}`,
+        type:    'system',
+        actionRequired: false,
+        priority: 'medium',
+      });
+
+      console.log(`📧 Campaign complete: ${sent}/${users.length} sent, ${errors.length} failed`);
+    })().catch(err => console.error('Campaign background error:', err.message));
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

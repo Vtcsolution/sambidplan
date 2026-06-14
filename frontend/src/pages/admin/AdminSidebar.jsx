@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, CreditCard, Settings, LogOut, Bell,
   Shield, ShieldCheck, FileText, Mail, MessageSquare, Sparkles, BarChart3,
-  TrendingUp, Activity, Send, Cpu, DollarSign, UserCheck, Heart, Layers, Ticket, Lightbulb, Building2, Zap
+  TrendingUp, Activity, Send, Cpu, DollarSign, UserCheck, Heart, Layers, Ticket, Lightbulb, Building2, Zap, Wallet
 } from 'lucide-react';
 import { useAdminPermission } from '../../hooks/useAdminPermission';
 import { adminPanelAPI } from '../../services/adminApi';
@@ -50,11 +50,18 @@ const ALL_NAV = [
     ],
   },
   {
+    section: 'My Earnings',
+    items: [
+      { path: '/admin/my-earnings', label: 'Referral Earnings', icon: Wallet, roles: ['support'] },
+    ],
+  },
+  {
     section: 'System',
     items: [
       { path: '/admin/notifications',     label: 'Notifications',     icon: Bell,        roles: ['super_admin','admin','support'] },
       { path: '/admin/opportunities',     label: 'Opportunities',     icon: FileText,    roles: ['super_admin','admin'] },
       { path: '/admin/hybrid-fetch',      label: 'Hybrid Pipeline',   icon: Layers,      roles: ['super_admin'] },
+      { path: '/admin/marketing-panel',    label: 'Marketing Panel',   icon: TrendingUp,  roles: ['super_admin'] },
       { path: '/admin/admin-management',  label: 'Admin Accounts',    icon: ShieldCheck, roles: ['super_admin'] },
       { path: '/admin/settings',          label: 'Settings',          icon: Settings,    roles: ['super_admin'] },
       { path: '/admin/email-settings',    label: 'Email Settings',    icon: Mail,        roles: ['super_admin'] },

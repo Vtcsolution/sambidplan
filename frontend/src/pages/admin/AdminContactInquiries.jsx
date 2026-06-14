@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MessageSquare, Mail, Phone, Building2, Users, Clock, ChevronDown, ChevronUp, Loader2, RefreshCw, Zap, AlertCircle, DollarSign, CheckCircle, ShieldAlert } from 'lucide-react';
 import { adminPanelAPI } from '../../services/adminApi';
+import ConfirmModal from '../../components/ConfirmModal';
 const contactAPI = {
   getAll:          (params) => adminPanelAPI.getContactInquiries(params),
   update:          (id, data) => adminPanelAPI.updateContactInquiry(id, data),
@@ -55,6 +56,7 @@ function InquiryRow({ inquiry: initialInquiry, onUpdate }) {
   const [activating, setActivating]     = useState(false);
   const [activateError, setActivateError] = useState('');
   const [activated, setActivated]       = useState(false);
+  const [confirmDlg,   setConfirmDlg]   = useState(null);
   const [billingCycle, setBillingCycle] = useState('monthly');
 
   const handleSave = async () => {
@@ -90,12 +92,21 @@ function InquiryRow({ inquiry: initialInquiry, onUpdate }) {
     }
   };
 
-  const handleActivatePlan = async () => {
+  const handleActivatePlan = () => {
     if (!payConfirmed) {
       setActivateError('Confirm payment first before activating the plan.');
       return;
     }
-    if (!window.confirm(`Activate ${inquiry.planInterest} plan for ${inquiry.email}?\n\nPayment confirmed ✓\nThis will upgrade their account and send an activation email.`)) return;
+    setConfirmDlg({
+      title:        `Activate ${inquiry.planInterest} Plan?`,
+      message:      `Payment confirmed. This will upgrade ${inquiry.email}'s account and send them an activation email.`,
+      confirmLabel: 'Activate Plan',
+      variant:      'primary',
+    });
+  };
+
+  const doActivatePlan = async () => {
+    setConfirmDlg(null);
     setActivating(true);
     setActivateError('');
     try {
@@ -112,6 +123,15 @@ function InquiryRow({ inquiry: initialInquiry, onUpdate }) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <ConfirmModal
+        isOpen={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message}
+        confirmLabel={confirmDlg?.confirmLabel}
+        variant={confirmDlg?.variant || 'primary'}
+        onConfirm={doActivatePlan}
+        onCancel={() => setConfirmDlg(null)}
+      />
       {/* Summary Row */}
       <button
         onClick={() => setExpanded(v => !v)}

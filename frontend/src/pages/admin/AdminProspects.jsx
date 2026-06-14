@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { adminProspectAPI } from '../../services/adminApi';
 import ProspectEmailModal from '../../components/admin/ProspectEmailModal';
+import ConfirmModal from '../../components/ConfirmModal';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PRIORITY_CFG = {
@@ -200,6 +201,7 @@ export default function AdminProspects() {
   const [filters, setFilters]         = useState(EMPTY_FILTERS);
   const [currentPage, setCurrentPage] = useState(1);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [confirmDlg,     setConfirmDlg]     = useState(null);
 
   const syncPollRef = useRef(null);
   const aiPollRef   = useRef(null);
@@ -282,9 +284,16 @@ export default function AdminProspects() {
   const handleCollectOnly  = async () => { try { await adminProspectAPI.collectOnly(); loadStats(); } catch (e) { alert(e.response?.data?.message || e.message); } };
   const handleEnrichOnly   = async () => { try { await adminProspectAPI.enrichOnly();  loadStats(); } catch (e) { alert(e.response?.data?.message || e.message); } };
   const handleStopSync     = async () => { try { await adminProspectAPI.stopSync(); setTimeout(loadStats, 1000); } catch (e) { alert(e.message); } };
-  const handleClearAll     = async () => {
-    if (!window.confirm('Delete ALL prospects? This cannot be undone.')) return;
-    try { await adminProspectAPI.clearAll(); loadStats(); loadProspects(1); } catch (e) { alert(e.message); }
+  const handleClearAll = () => {
+    setConfirmDlg({
+      title:        'Delete ALL Prospects?',
+      message:      'This will permanently delete every prospect in the database. This action cannot be undone.',
+      confirmLabel: 'Delete All',
+      onConfirm:    async () => {
+        setConfirmDlg(null);
+        try { await adminProspectAPI.clearAll(); loadStats(); loadProspects(1); } catch (e) { alert(e.message); }
+      },
+    });
   };
 
   // ── AI finder ───────────────────────────────────────────────────────────────
@@ -311,9 +320,16 @@ export default function AdminProspects() {
     try { await adminProspectAPI.bulkMarkContacted({ ids: [...selected], contactedBy: 'Admin' }); setSelected(new Set()); loadProspects(currentPage); } catch (e) { alert(e.message); }
   };
   const handleStatus = async (id, status) => { try { await adminProspectAPI.updateStatus(id, { status }); loadProspects(currentPage); } catch { /* */ } };
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this prospect?')) return;
-    try { await adminProspectAPI.deleteOne(id); loadProspects(currentPage); loadStats(); } catch { /* */ }
+  const handleDelete = (id) => {
+    setConfirmDlg({
+      title:        'Delete Prospect?',
+      message:      'This prospect record will be permanently removed.',
+      confirmLabel: 'Delete',
+      onConfirm:    async () => {
+        setConfirmDlg(null);
+        try { await adminProspectAPI.deleteOne(id); loadProspects(currentPage); loadStats(); } catch { /* */ }
+      },
+    });
   };
 
   // ── Selection ───────────────────────────────────────────────────────────────
@@ -325,6 +341,15 @@ export default function AdminProspects() {
 
   return (
     <div className="p-6 max-w-full">
+      <ConfirmModal
+        isOpen={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message}
+        confirmLabel={confirmDlg?.confirmLabel}
+        variant="danger"
+        onConfirm={() => confirmDlg?.onConfirm?.()}
+        onCancel={() => setConfirmDlg(null)}
+      />
 
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">

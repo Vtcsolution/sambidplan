@@ -32,6 +32,9 @@ import AdminOpportunities from './pages/admin/AdminOpportunities';
 import AdminHybridFetch   from './pages/admin/AdminHybridFetch';
 import AdminContactInquiries from './pages/admin/AdminContactInquiries';
 import AdminLogin            from './pages/admin/AdminLogin';
+import AdminSupportEarnings  from './pages/admin/AdminSupportEarnings';
+import AdminMarketingPanel   from './pages/admin/AdminMarketingPanel';
+import BecomePartner         from './pages/BecomePartner';
 import AdminAIInsights       from './pages/admin/AdminAIInsights';
 import AdminUserSegments     from './pages/admin/AdminUserSegments';
 import AdminCampaigns        from './pages/admin/AdminCampaigns';
@@ -171,6 +174,8 @@ function App() {
           <Route path="prospects"             element={<AdminProspects />} />
           <Route path="prospect-outreach"     element={<AdminProspectOutreach />} />
           <Route path="admin-management"      element={<AdminManagement />} />
+          <Route path="my-earnings"           element={<AdminSupportEarnings />} />
+          <Route path="marketing-panel"       element={<AdminMarketingPanel />} />
         </Route>
       </Routes>
     );
@@ -219,6 +224,7 @@ function App() {
           <Route path="/how-it-works" element={<HowItWorks />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/annual-plan-request" element={<AnnualPlanRequest />} />
+          <Route path="/become-partner"     element={<BecomePartner />} />
 
           {/* Protected Routes (Dashboard area) */}
           <Route path="/dashboard" element={<Dashboard />} />

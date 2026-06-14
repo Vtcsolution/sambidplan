@@ -58,11 +58,12 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
   };
 
   const publicLinks = [
-    { path: '/',            label: 'Home',         icon: Home },
-    { path: '/how-it-works',label: 'How It Works', icon: HelpCircle },
-    { path: '/pricing',     label: 'Pricing',      icon: DollarSign },
-    { path: '/about',       label: 'About',        icon: Info },
-    { path: '/contact',     label: 'Contact',      icon: Phone },
+    { path: '/',                label: 'Home',           icon: Home },
+    { path: '/how-it-works',    label: 'How It Works',   icon: HelpCircle },
+    { path: '/pricing',         label: 'Pricing',        icon: DollarSign },
+    { path: '/about',           label: 'About',          icon: Info },
+    { path: '/contact',         label: 'Contact',        icon: Phone },
+    { path: '/become-partner',  label: 'Become Partner', icon: Gift },
   ];
 
   const isActive = (path) => location.pathname === path;

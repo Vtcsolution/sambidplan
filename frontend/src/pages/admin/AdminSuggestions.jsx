@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { adminSuggestionAPI } from '../../services/adminApi';
 import { getSocket } from '../../hooks/useSocket';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const CATEGORIES = {
   feature_request: { label: 'Feature Request', color: 'bg-indigo-100 text-indigo-700' },
@@ -42,8 +43,9 @@ function SuggestionRow({ suggestion: initial, onDeleted }) {
   const [editStatus, setES] = useState(initial.status);
   const [note, setNote]     = useState(initial.adminResponse?.note || '');
   const [saving, setSaving] = useState(false);
-  const [deleting, setDel]  = useState(false);
-  const [saved, setSaved]   = useState(false);
+  const [deleting, setDel]   = useState(false);
+  const [saved, setSaved]    = useState(false);
+  const [confirmDlg, setConfirmDlg] = useState(false);
 
   const cat = CATEGORIES[s.category] || CATEGORIES.general;
 
@@ -66,8 +68,10 @@ function SuggestionRow({ suggestion: initial, onDeleted }) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm(`Delete suggestion ${s.suggestionNumber}?`)) return;
+  const handleDelete = () => setConfirmDlg(true);
+
+  const confirmDelete = async () => {
+    setConfirmDlg(false);
     setDel(true);
     try {
       await adminSuggestionAPI.delete(s._id);
@@ -79,6 +83,13 @@ function SuggestionRow({ suggestion: initial, onDeleted }) {
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden mb-3">
+      <ConfirmModal
+        isOpen={confirmDlg}
+        title={`Delete Suggestion #${s.suggestionNumber}?`}
+        message="This suggestion and all its data will be permanently removed."
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmDlg(false)}
+      />
       {/* Row header */}
       <button
         type="button"

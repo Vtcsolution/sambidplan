@@ -26,11 +26,14 @@ const transporter = {
 // Called by settingsService after admin updates SMTP credentials
 export const resetEmailTransporter = () => { _transporter = null; };
 
+// Export transporter so other controllers can send mail via the same SMTP config
+export { transporter };
+
 // Sender addresses — all authenticated via SMTP_USER credentials.
 // noreply: automated system emails  |  support: tickets/suggestions/enterprise
 // billing: payments/invoices/plan activation
 const _smtpUser = () => process.env.SMTP_USER || process.env.EMAIL_USER;
-const FROM = {
+export const FROM = {
   noreply: () => `"Sambid" <${process.env.EMAIL_NOREPLY || _smtpUser()}>`,
   support: () => `"Sambid Support" <${process.env.EMAIL_SUPPORT || _smtpUser()}>`,
   billing: () => `"Sambid Billing" <${process.env.EMAIL_BILLING || _smtpUser()}>`,

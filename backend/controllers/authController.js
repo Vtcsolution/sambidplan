@@ -5,6 +5,8 @@ import crypto from 'crypto';
 import speakeasy from 'speakeasy';
 import AdminNotification from '../models/admin/AdminNotification.js';
 import Referral from '../models/Referral.js';
+import Admin from '../models/Admin.js';
+import SupportReferral from '../models/SupportReferral.js';
 import SavedOpportunity from '../models/SavedOpportunity.js';
 import Alert from '../models/Alert.js';
 import AlertNotification from '../models/AlertNotification.js';
@@ -32,7 +34,7 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, businessName, naicsCodes, businessType, referralCode } = req.body;
+    const { name, email, password, businessName, naicsCodes, businessType, referralCode, supportRef } = req.body;
 
     console.log('📝 Registration attempt:', { name, email, businessName });
 
@@ -63,12 +65,21 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // Resolve referral code → referrer user
+    // Resolve user referral code → referrer user
     let referredByUser = null;
     if (referralCode) {
       referredByUser = await User.findOne({ referralCode: referralCode.trim().toUpperCase() });
       if (!referredByUser) {
         console.log(`⚠️  Referral code "${referralCode}" not found — ignoring`);
+      }
+    }
+
+    // Resolve support member referral code
+    let supportMember = null;
+    if (supportRef) {
+      supportMember = await Admin.findOne({ referralCode: supportRef.trim().toUpperCase(), role: 'support', isActive: true });
+      if (!supportMember) {
+        console.log(`⚠️  Support ref "${supportRef}" not found — ignoring`);
       }
     }
 
@@ -81,12 +92,19 @@ export const registerUser = async (req, res) => {
       naicsCodes: naicsCodes || [],
       businessType: businessType || 'other',
       referredBy: referredByUser?._id || null,
+      supportReferredBy: supportMember?._id || null,
     });
 
-    // Track the referral relationship
+    // Track user referral relationship
     if (referredByUser) {
       await Referral.create({ referrer: referredByUser._id, referee: user._id });
       console.log(`🔗 Referral tracked: ${referredByUser.email} → ${user.email}`);
+    }
+
+    // Track support referral relationship
+    if (supportMember) {
+      await SupportReferral.create({ supportMember: supportMember._id, user: user._id });
+      console.log(`🔗 Support referral tracked: ${supportMember.email} → ${user.email}`);
     }
     
     console.log(`✅ User created: ${email}`);
@@ -467,9 +485,12 @@ export const resendVerificationEmail = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${rawToken}`;
-    await sendEmailVerificationEmail(user, verifyUrl);
 
     res.json({ success: true, message: 'Verification email sent! Please check your inbox.' });
+
+    // Fire after responding
+    sendEmailVerificationEmail(user, verifyUrl)
+      .catch(err => console.error('Resend verification email failed:', err.message));
   } catch (error) {
     console.error('Resend verification error:', error);
     res.status(500).json({ success: false, message: error.message });

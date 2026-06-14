@@ -16,6 +16,7 @@ import {
 import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function AdminNotifications() {
   const [notifications, setNotifications] = useState([]);
@@ -27,7 +28,8 @@ export default function AdminNotifications() {
     recipientType: 'all',
     customEmails: ''
   });
-  const [markingRead, setMarkingRead] = useState(null);
+  const [markingRead,  setMarkingRead]  = useState(null);
+  const [confirmDlg,   setConfirmDlg]  = useState(null);
 
   useEffect(() => {
     fetchNotifications();
@@ -85,15 +87,21 @@ export default function AdminNotifications() {
     alert(`Marked ${unreadIds.length} notifications as read`);
   };
 
-  const handleDeleteNotification = async (id) => {
-    if (window.confirm('Delete this notification?')) {
-      try {
-        await adminAPI.deleteNotification(id);
-        setNotifications(prev => prev.filter(n => n._id !== id));
-      } catch (error) {
-        console.error('Error deleting notification:', error);
-        alert('Failed to delete notification');
-      }
+  const handleDeleteNotification = (id) => {
+    setConfirmDlg({
+      id,
+      title:   'Delete Notification?',
+      message: 'This notification will be permanently removed.',
+    });
+  };
+
+  const confirmDeleteNotification = async (id) => {
+    setConfirmDlg(null);
+    try {
+      await adminAPI.deleteNotification(id);
+      setNotifications(prev => prev.filter(n => n._id !== id));
+    } catch (error) {
+      console.error('Error deleting notification:', error);
     }
   };
 
@@ -154,6 +162,14 @@ export default function AdminNotifications() {
 
   return (
    <div className="min-h-screen bg-gray-50 py-8">
+      <ConfirmModal
+        isOpen={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message}
+        variant="danger"
+        onConfirm={() => confirmDeleteNotification(confirmDlg?.id)}
+        onCancel={() => setConfirmDlg(null)}
+      />
       <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>

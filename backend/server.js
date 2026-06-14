@@ -32,6 +32,8 @@ import adminSuggestionRoutes  from './routes/adminSuggestionRoutes.js';
 import prospectRoutes          from './routes/prospectRoutes.js';
 import trackingRoutes          from './routes/trackingRoutes.js';
 import pastPerformanceRoutes   from './routes/pastPerformanceRoutes.js';
+import supportRoutes           from './routes/supportRoutes.js';
+import partnerRoutes           from './routes/partnerRoutes.js';
 import { reconcileReferralCommissions } from './controllers/referralController.js';
 import { startScheduler } from './services/schedulerService.js';
 import { startEmailScheduler } from './services/emailSchedulerService.js';
@@ -122,6 +124,8 @@ app.use('/api/contact',      apiLimiter, contactRoutes);
 app.use('/api/admin-auth',   adminAuthRoutes); // login limiter applied per-route inside adminAuthRoutes
 app.use('/api/admin-ai',     apiLimiter, adminAIRoutes);
 app.use('/api/referral',      apiLimiter, referralRoutes);
+app.use('/api/support',       apiLimiter, supportRoutes);
+app.use('/api/partner',       apiLimiter, partnerRoutes);
 app.use('/api/predictions',   apiLimiter, predictionRoutes);
 app.use('/api/tickets',            apiLimiter, ticketRoutes);
 app.use('/api/admin/tickets',      apiLimiter, adminTicketRoutes);

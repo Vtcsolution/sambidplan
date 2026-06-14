@@ -4,9 +4,10 @@ import { Link } from 'react-router-dom';
 import {
   Users, TrendingUp, Clock, CreditCard, FileText, DollarSign,
   Eye, RefreshCw, Bookmark, BookmarkCheck, Database,
-  Activity, Download, CheckCircle, AlertCircle, Loader2, Zap
+  Activity, Download, CheckCircle, AlertCircle, Loader2, Zap,
+  Wallet, Copy, CheckCheck, Gift, Star, ArrowUpRight, CreditCard as CardIcon
 } from 'lucide-react';
-import { adminPanelAPI as adminAPI } from '../../services/adminApi';
+import { adminPanelAPI as adminAPI, supportAPI } from '../../services/adminApi';
 
 const StatCard = ({ title, value, sub, icon: Icon, color, border }) => (
   <div className={`bg-white rounded-xl shadow-sm p-4 sm:p-5 border-l-4 ${border}`}>
@@ -53,7 +54,275 @@ const timeSince = (date) => {
   return `${Math.floor(mins / 1440)}d ago`;
 };
 
-export default function AdminDashboard() {
+// ── Support Member Dashboard ──────────────────────────────────────────────────
+const PLAN_COLORS = {
+  starter:    'bg-blue-100 text-blue-700',
+  pro:        'bg-purple-100 text-purple-700',
+  enterprise: 'bg-amber-100 text-amber-800',
+  free:       'bg-gray-100 text-gray-500',
+};
+
+function SupportDashboard() {
+  const adminName = localStorage.getItem('adminName') || 'Support Member';
+  const [data,    setData]    = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState('');
+  const [copied,  setCopied]  = useState(false);
+
+  useEffect(() => { fetchStats(); }, []);
+
+  const fetchStats = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await supportAPI.getStats();
+      setData(res.data.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load your dashboard.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(data.referralLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
+    </div>
+  );
+
+  if (error) return (
+    <div className="flex flex-col items-center justify-center h-64 gap-3">
+      <AlertCircle className="w-8 h-8 text-red-400" />
+      <p className="text-gray-600 text-sm">{error}</p>
+      <button onClick={fetchStats} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Retry</button>
+    </div>
+  );
+
+  const {
+    referralLink, referralCode, referralBalance, totalCommissionEarned,
+    totalSignups, minWithdrawal, canWithdraw, referrals = [], recentWithdrawals = [],
+  } = data;
+
+  const paidRefs     = referrals.filter(r => r.status === 'rewarded');
+  const pendingRefs  = referrals.filter(r => r.status !== 'rewarded');
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">My Dashboard</h1>
+            <p className="text-sm text-gray-500 mt-1">Welcome back, {adminName} — here's your referral overview.</p>
+          </div>
+          <button onClick={fetchStats}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 shadow-sm shrink-0 self-start sm:self-auto">
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </button>
+        </div>
+
+        {/* Referral link banner */}
+        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-5 text-white">
+          <div className="flex items-center gap-2 mb-1">
+            <Gift className="w-4 h-4 text-indigo-200" />
+            <p className="text-sm font-semibold">Your Referral Link</p>
+          </div>
+          <p className="text-xs text-indigo-200 mb-3">
+            Companies who sign up via your link get <strong>20% off</strong> their plan.
+            You earn <strong>20% commission</strong> on every payment they make.
+          </p>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 bg-white/20 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono truncate">{referralLink}</div>
+            <button onClick={copyLink}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-white text-indigo-700 rounded-xl text-sm font-semibold hover:bg-indigo-50 transition">
+              {copied ? <><CheckCheck className="w-4 h-4 text-green-600" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy</>}
+            </button>
+          </div>
+          <p className="text-xs text-indigo-200 mt-2">
+            Code: <span className="font-mono font-bold text-white">{referralCode}</span>
+          </p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Available Balance',  value: `$${(referralBalance || 0).toFixed(2)}`,       icon: Wallet,    border: 'border-emerald-500', iconBg: 'bg-emerald-500', sub: canWithdraw ? 'Ready to withdraw' : `$${Math.max(0, minWithdrawal - referralBalance).toFixed(2)} more to unlock` },
+            { label: 'Total Earned',        value: `$${(totalCommissionEarned || 0).toFixed(2)}`, icon: TrendingUp, border: 'border-blue-500',    iconBg: 'bg-blue-500',    sub: 'All-time commissions' },
+            { label: 'Total Signups',       value: totalSignups || 0,                             icon: Users,     border: 'border-purple-500',  iconBg: 'bg-purple-500',  sub: 'Via your referral link' },
+            { label: 'Paying Companies',    value: paidRefs.length,                               icon: Star,      border: 'border-amber-500',   iconBg: 'bg-amber-500',   sub: `${pendingRefs.length} signed up, not yet paid` },
+          ].map(({ label, value, icon: Icon, border, iconBg, sub }) => (
+            <div key={label} className={`bg-white rounded-xl shadow-sm p-4 sm:p-5 border-l-4 ${border}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide truncate">{label}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{value}</p>
+                  {sub && <p className="text-xs text-gray-400 mt-1 truncate">{sub}</p>}
+                </div>
+                <div className={`${iconBg} p-2.5 sm:p-3 rounded-xl shrink-0`}>
+                  <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick actions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Link to="/admin/my-earnings"
+            className="flex items-center gap-4 bg-white rounded-xl shadow-sm p-5 border border-gray-100 hover:border-indigo-300 hover:shadow-md transition group">
+            <div className="w-11 h-11 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-indigo-600 transition">
+              <Wallet className="w-5 h-5 text-indigo-600 group-hover:text-white transition" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-gray-900">Referral Earnings</p>
+              <p className="text-xs text-gray-500">Full stats, withdrawal history &amp; request payout</p>
+            </div>
+            <ArrowUpRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-500 ml-auto shrink-0 transition" />
+          </Link>
+
+          <div className={`flex items-center gap-4 bg-white rounded-xl shadow-sm p-5 border ${canWithdraw ? 'border-emerald-200 bg-emerald-50' : 'border-gray-100'}`}>
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${canWithdraw ? 'bg-emerald-500' : 'bg-gray-100'}`}>
+              <CardIcon className={`w-5 h-5 ${canWithdraw ? 'text-white' : 'text-gray-400'}`} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-gray-900">{canWithdraw ? 'Withdrawal Available!' : 'Keep earning…'}</p>
+              {canWithdraw
+                ? <p className="text-xs text-emerald-700">Balance <strong>${(referralBalance || 0).toFixed(2)}</strong> — go to Referral Earnings to request</p>
+                : (
+                  <div className="mt-1">
+                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden w-full max-w-[180px]">
+                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(100, ((referralBalance || 0) / minWithdrawal) * 100)}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">${(referralBalance || 0).toFixed(2)} / ${minWithdrawal} minimum</p>
+                  </div>
+                )
+              }
+            </div>
+          </div>
+        </div>
+
+        {/* Referred companies table */}
+        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Referred Companies
+              <span className="ml-2 text-sm font-normal text-gray-400">({referrals.length})</span>
+            </h2>
+            {referrals.length > 5 && (
+              <Link to="/admin/my-earnings" className="text-sm text-indigo-600 hover:underline">View all</Link>
+            )}
+          </div>
+
+          {referrals.length === 0 ? (
+            <div className="text-center py-12">
+              <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm font-medium">No companies yet</p>
+              <p className="text-gray-400 text-xs mt-1">Share your referral link to start earning commissions.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <tr>
+                    {['Company', 'Plan', 'Amount Paid', 'Your Commission', 'Status', 'Joined'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {referrals.slice(0, 10).map(r => (
+                    <tr key={r._id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-gray-900">{r.user?.name || '—'}</p>
+                        <p className="text-xs text-gray-400">{r.user?.email || '—'}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.planPurchased
+                          ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${PLAN_COLORS[r.planPurchased] || PLAN_COLORS.free}`}>{r.planPurchased}</span>
+                          : <span className="text-xs text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.paidAmount > 0
+                          ? <div>
+                              <span className="font-medium text-gray-700">${r.paidAmount.toFixed(2)}</span>
+                              {r.discountAmount > 0 && <p className="text-xs text-emerald-600">saved ${r.discountAmount.toFixed(2)}</p>}
+                            </div>
+                          : <span className="text-xs text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.commissionAmount > 0
+                          ? <span className="font-bold text-emerald-600">${r.commissionAmount.toFixed(2)}</span>
+                          : <span className="text-xs text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          r.status === 'rewarded'   ? 'bg-green-100 text-green-700'  :
+                          r.status === 'converted'  ? 'bg-blue-100 text-blue-700'    :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {r.status === 'rewarded' ? 'Paid' : r.status === 'converted' ? 'Upgraded' : 'Signed Up'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400">
+                        {r.user?.createdAt ? new Date(r.user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {paidRefs.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-sm flex-wrap gap-2">
+              <p className="text-gray-500">
+                <strong className="text-gray-900">{paidRefs.length}</strong> paying {paidRefs.length === 1 ? 'company' : 'companies'}
+                {' · '}Total commission: <strong className="text-emerald-600">${paidRefs.reduce((s, r) => s + (r.commissionAmount || 0), 0).toFixed(2)}</strong>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Recent withdrawal history (if any) */}
+        {recentWithdrawals.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Withdrawals</h2>
+            <div className="space-y-2">
+              {recentWithdrawals.slice(0, 5).map(w => (
+                <div key={w._id} className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">${w.amount.toFixed(2)} via {w.method?.replace('_', ' ')}</p>
+                    <p className="text-xs text-gray-400">{new Date(w.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    w.status === 'paid'     ? 'bg-green-100 text-green-700'  :
+                    w.status === 'approved' ? 'bg-blue-100 text-blue-700'    :
+                    w.status === 'rejected' ? 'bg-red-100 text-red-600'      :
+                    'bg-yellow-100 text-yellow-700'
+                  }`}>{w.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ── Admin / Super Admin Dashboard ─────────────────────────────────────────────
+function AdminMainDashboard() {
+  const adminRole = localStorage.getItem('adminRole') || '';
+  const isSuperAdmin = adminRole === 'super_admin';
+
   const [stats, setStats]           = useState(null);
   const [loading, setLoading]       = useState(true);
   const [recentRequests, setRecentRequests] = useState([]);
@@ -147,7 +416,11 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard title="Total Users"        value={stats?.totalUsers || 0}                    sub={`${stats?.trialUsers || 0} on trial`}            icon={Users}         color="bg-blue-500"   border="border-blue-500" />
           <StatCard title="Pending Requests"   value={stats?.pendingRequests || 0}               sub={stats?.pendingRequests > 0 ? 'Action needed' : 'All clear'} icon={Clock} color="bg-yellow-500" border="border-yellow-500" />
-          <StatCard title="Revenue (30 days)"  value={`$${(stats?.monthlyRevenue || 0).toLocaleString()}`} sub={`Total: $${(stats?.totalRevenue || 0).toLocaleString()}`} icon={DollarSign} color="bg-green-500" border="border-green-500" />
+          {isSuperAdmin ? (
+            <StatCard title="Revenue (30 days)"  value={`$${(stats?.monthlyRevenue || 0).toLocaleString()}`} sub={`All-time: $${(stats?.totalRevenue || 0).toLocaleString()}`} icon={DollarSign} color="bg-green-500" border="border-green-500" />
+          ) : (
+            <StatCard title="Active Plans"  value={(stats?.starterUsers || 0) + (stats?.proUsers || 0) + (stats?.enterpriseUsers || 0)} sub="Paid subscribers" icon={DollarSign} color="bg-green-500" border="border-green-500" />
+          )}
           <StatCard title="Pro + Enterprise"   value={(stats?.proUsers || 0) + (stats?.enterpriseUsers || 0)} sub={`${stats?.starterUsers || 0} Starter, ${stats?.freeUsers || 0} Free`} icon={TrendingUp} color="bg-purple-500" border="border-purple-500" />
         </div>
 
@@ -277,8 +550,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* ── Recent Invoices ───────────────────────────────────────────────── */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        {/* ── Recent Invoices — super_admin only ───────────────────────────── */}
+        {isSuperAdmin && <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Recent Invoices</h2>
             <Link to="/admin/invoices" className="text-sm text-indigo-600 hover:underline">View all</Link>
@@ -321,7 +594,7 @@ export default function AdminDashboard() {
               </table>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* ── Recent Activity ───────────────────────────────────────────────── */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -373,4 +646,9 @@ export default function AdminDashboard() {
       </div>
     </div>
   );
+}
+
+export default function AdminDashboard() {
+  const adminRole = localStorage.getItem('adminRole') || '';
+  return adminRole === 'support' ? <SupportDashboard /> : <AdminMainDashboard />;
 }

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   CheckCircle, XCircle, DollarSign, RefreshCw, Clock, AlertTriangle,
-  Mail, X, Send, Loader2, BadgeCheck, ShieldCheck, Eye, ChevronDown, ChevronUp,
+  Mail, X, Send, Loader2, BadgeCheck, ShieldCheck, Eye, ChevronDown, ChevronUp, Headphones,
 } from 'lucide-react';
 import { adminPanelAPI } from '../../services/adminApi';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const STATUS_TABS = ['pending', 'approved', 'completed', 'rejected'];
 
@@ -286,6 +287,9 @@ export default function AdminAnnualRequests() {
   const [verifyModal,    setVerifyModal]   = useState(null);
   const [toast,          setToast]         = useState('');
   const [expandedId,     setExpandedId]    = useState(null);
+  const [rejectDlg,      setRejectDlg]     = useState(null);   // { id }
+  const [rejectReason,   setRejectReason]  = useState('');
+  const [rejectSaving,   setRejectSaving]  = useState(false);
 
   useEffect(() => { fetchRequests(); }, [status]); // eslint-disable-line
 
@@ -317,17 +321,22 @@ export default function AdminAnnualRequests() {
     } finally { setActionLoading(''); }
   };
 
-  const handleReject = async (id) => {
-    const reason = window.prompt('Rejection reason (optional):');
-    if (reason === null) return;
-    setActionLoading(id + '_reject');
+  const handleReject = (id) => {
+    setRejectReason('');
+    setRejectDlg({ id });
+  };
+
+  const submitReject = async () => {
+    if (!rejectDlg) return;
+    setRejectSaving(true);
     try {
-      await adminPanelAPI.rejectPlanRequest(id, { reason });
+      await adminPanelAPI.rejectPlanRequest(rejectDlg.id, { reason: rejectReason });
       showToast('Request rejected.');
+      setRejectDlg(null);
       fetchRequests();
     } catch (err) {
       showToast('Error: ' + (err.response?.data?.message || 'Failed to reject'));
-    } finally { setActionLoading(''); }
+    } finally { setRejectSaving(false); }
   };
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -350,6 +359,35 @@ export default function AdminAnnualRequests() {
 
   return (
     <div className="space-y-6">
+      {/* Reject Modal */}
+      {rejectDlg && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-900">Reject Request</h2>
+              <button onClick={() => setRejectDlg(null)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason <span className="text-gray-400">(optional, shown to user)</span></label>
+                <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                  placeholder="e.g. Insufficient documentation provided."
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-red-400 focus:outline-none" />
+              </div>
+            </div>
+            <div className="px-6 pb-5 flex justify-end gap-3 border-t border-gray-100 pt-4">
+              <button onClick={() => setRejectDlg(null)} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={submitReject} disabled={rejectSaving}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition">
+                {rejectSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Toast */}
       {toast && (
         <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-gray-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg">
@@ -453,6 +491,14 @@ export default function AdminAnnualRequests() {
 
                       <p className="font-semibold text-gray-900">{req.userName || req.user?.name || '—'}</p>
                       <p className="text-sm text-gray-500">{req.userEmail || req.user?.email || '—'}</p>
+
+                      {req.user?.supportReferredBy ? (
+                        <div className="mt-1.5 inline-flex items-center gap-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-medium px-2.5 py-1 rounded-full">
+                          <Headphones className="w-3 h-3 shrink-0" />
+                          Referred by <strong className="ml-0.5">{req.user.supportReferredBy.name}</strong>
+                          <span className="text-teal-500 font-mono ml-0.5">({req.user.supportReferredBy.referralCode})</span>
+                        </div>
+                      ) : null}
 
                       <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-500">
                         <span>Payment: <span className="font-medium text-gray-700">{(req.paymentMethod || '').replace(/_/g, ' ') || '—'}</span></span>

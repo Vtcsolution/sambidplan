@@ -101,6 +101,7 @@ export default function Signup({ setIsAuthenticated, setUser }) {
     confirmPassword: '',
     naicsCodes: '',
     referralCode: searchParams.get('ref') || '',
+    supportRef: searchParams.get('supportRef') || '',
     acceptTerms: false
   });
   const [errors, setErrors] = useState({});
@@ -212,6 +213,7 @@ export default function Signup({ setIsAuthenticated, setUser }) {
         businessName: formData.businessName || '',
         naicsCodes: naicsArray,
         referralCode: formData.referralCode?.trim().toUpperCase() || undefined,
+        supportRef: formData.supportRef?.trim().toUpperCase() || undefined,
       });
       
       console.log('Signup response:', response.data);

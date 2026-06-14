@@ -181,4 +181,19 @@ export const adminCreditAPI = {
   reject:  (id, data)  => adminApi.put(`/credits/admin/${id}/reject`, data),
 };
 
+// ── Support referral routes ───────────────────────────────────────────────────
+export const supportAPI = {
+  getStats:            ()          => adminApi.get('/support/stats'),
+  withdraw:            (data)      => adminApi.post('/support/withdraw', data),
+  adminGetAll:         ()          => adminApi.get('/support/admin/all'),
+  adminGetWithdrawals: ()          => adminApi.get('/support/admin/withdrawals'),
+  adminProcess:        (id, data)  => adminApi.put(`/support/admin/withdrawals/${id}`, data),
+};
+
+// ── Partner application routes ────────────────────────────────────────────────
+export const partnerAPI = {
+  listApplications:  (status) => adminApi.get('/partner/admin/applications', { params: { status } }),
+  processApplication:(id, data) => adminApi.put(`/partner/admin/applications/${id}`, data),
+};
+
 export default adminApi;

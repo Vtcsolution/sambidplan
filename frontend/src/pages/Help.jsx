@@ -7,6 +7,7 @@ import {
   Lightbulb, Sparkles
 } from 'lucide-react';
 import { ticketAPI, suggestionAPI } from '../services/api';
+import ConfirmModal from '../components/ConfirmModal';
 
 const CATEGORIES = [
   { value: 'billing',         label: 'Billing & Payments' },
@@ -206,8 +207,9 @@ function TicketDetail({ ticketId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [files, setFiles] = useState([]);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+  const [sending,     setSending]    = useState(false);
+  const [error,       setError]      = useState('');
+  const [confirmDlg,  setConfirmDlg] = useState(false);
   const fileRef = useRef(null);
   const bottomRef = useRef(null);
 
@@ -275,8 +277,10 @@ function TicketDetail({ ticketId, onBack }) {
     } finally { setSending(false); }
   };
 
-  const handleClose = async () => {
-    if (!window.confirm('Mark this ticket as closed?')) return;
+  const handleClose = () => setConfirmDlg(true);
+
+  const doClose = async () => {
+    setConfirmDlg(false);
     try {
       await ticketAPI.close(ticketId);
       setTicket(prev => ({ ...prev, status: 'closed' }));
@@ -290,6 +294,15 @@ function TicketDetail({ ticketId, onBack }) {
 
   return (
     <div>
+      <ConfirmModal
+        isOpen={confirmDlg}
+        title="Close Ticket?"
+        message="Mark this ticket as closed. You won't be able to reply after closing."
+        confirmLabel="Close Ticket"
+        variant="warning"
+        onConfirm={doClose}
+        onCancel={() => setConfirmDlg(false)}
+      />
       {/* Header */}
       <div className="flex items-start gap-3 mb-5">
         <button onClick={onBack} className="mt-1 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">

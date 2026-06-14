@@ -17,12 +17,14 @@ import {
 import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function PlanRequests() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showModal, setShowModal] = useState(false);
+  const [showModal,    setShowModal]   = useState(false);
+  const [confirmDlg,   setConfirmDlg]  = useState(null);
   const [editingPlan, setEditingPlan] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -154,16 +156,22 @@ export default function PlanRequests() {
     }
   };
 
-  const handleDeletePlan = async (plan) => {
-    if (window.confirm(`Are you sure you want to delete "${plan.displayName}" plan?`)) {
-      try {
-        await adminAPI.deletePlan(plan._id);
-        alert('Plan deleted successfully');
-        fetchPlans();
-      } catch (error) {
-        console.error('Error deleting plan:', error);
-        alert(error.response?.data?.message || 'Failed to delete plan');
-      }
+  const handleDeletePlan = (plan) => {
+    setConfirmDlg({
+      plan,
+      title:   `Delete "${plan.displayName}" plan?`,
+      message: 'This plan will be permanently removed. Users on this plan will not be affected immediately but may lose access on renewal.',
+    });
+  };
+
+  const confirmDeletePlan = async (plan) => {
+    setConfirmDlg(null);
+    try {
+      await adminAPI.deletePlan(plan._id);
+      fetchPlans();
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+      alert(error.response?.data?.message || 'Failed to delete plan');
     }
   };
 
@@ -197,6 +205,15 @@ export default function PlanRequests() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
+      <ConfirmModal
+        isOpen={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message}
+        variant="danger"
+        confirmLabel="Delete Plan"
+        onConfirm={() => confirmDeletePlan(confirmDlg?.plan)}
+        onCancel={() => setConfirmDlg(null)}
+      />
       <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Plan Management</h1>

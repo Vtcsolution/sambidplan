@@ -178,6 +178,13 @@ lastFetchReset: {
   // How many of this user's referrals have purchased a paid plan
   paidReferralCount: { type: Number, default: 0 },
 
+  // ── Support member referral ───────────────────────────────────────────────
+  supportReferredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    default: null,
+  },
+
   // ── Two-Factor Authentication ─────────────────────────────────────────────
   twoFactorEnabled: { type: Boolean, default: false },
   twoFactorSecret:  { type: String, default: null, select: false },

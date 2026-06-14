@@ -16,6 +16,8 @@ import {
 import { distributeToUser } from '../services/schedulerService.js';
 import { sendAdminPaymentAlert, sendPaymentConfirmationEmail } from '../services/emailService.js';
 import { creditReferralCommission } from './referralController.js';
+import { creditSupportCommission } from './supportController.js';
+import { SUPPORT_DISCOUNT_RATE } from '../models/SupportReferral.js';
 import { createUserNotification } from '../services/notificationService.js';
 import { MIN_BALANCE_TO_USE } from '../models/Withdrawal.js';
 
@@ -52,33 +54,44 @@ export const createInvoice = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Plan not found' });
     }
     
-    const amount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
-    
+    let amount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+
+    // Apply 20% support referral discount if user was referred by a support member
+    let supportDiscount = 0;
+    const freshUser = await User.findById(user._id).select('supportReferredBy');
+    if (freshUser.supportReferredBy) {
+      supportDiscount = Math.round(amount * SUPPORT_DISCOUNT_RATE * 100) / 100;
+      amount = Math.round((amount - supportDiscount) * 100) / 100;
+      console.log(`🎁 Support referral discount $${supportDiscount} applied for ${user.email}`);
+    }
+
     const existingInvoice = await Invoice.findOne({
       user: user._id,
       status: 'pending',
       plan: planName
     });
-    
+
     if (existingInvoice) {
       return res.json({
         success: true,
         data: existingInvoice,
+        supportDiscount: existingInvoice.supportDiscount || 0,
         message: 'Existing invoice found. Please complete payment.'
       });
     }
-    
+
     const invoice = new Invoice({
       user: user._id,
       plan: planName,
       billingCycle,
       amount,
       currency: 'USD',
-      status: 'pending'
+      status: 'pending',
+      ...(supportDiscount > 0 && { supportDiscount, supportMember: freshUser.supportReferredBy }),
     });
-    
+
     await invoice.save();
-    console.log(`✅ Invoice created: ${invoice.invoiceNumber}`);
+    console.log(`✅ Invoice created: ${invoice.invoiceNumber}${supportDiscount > 0 ? ` (support discount: $${supportDiscount})` : ''}`);
     
     res.status(201).json({
       success: true,
@@ -177,6 +190,8 @@ export const confirmStripePaymentHandler = async (req, res) => {
       // Credit referral commission to whoever referred this user (fire-and-forget)
       creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
         .catch(e => console.error('Referral commission (stripe):', e.message));
+      creditSupportCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+        .catch(e => console.error('Support commission (stripe):', e.message));
 
       // Create notification for admin about successful payment
       const plan = await Plan.findOne({ name: invoice.plan });
@@ -396,6 +411,8 @@ export const capturePayPalPaymentHandler = async (req, res) => {
     // Credit referral commission (fire-and-forget)
     creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
       .catch(e => console.error('Referral commission (paypal):', e.message));
+    creditSupportCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Support commission (paypal):', e.message));
 
     // ── 7. Immediately distribute today's opportunities for the upgraded plan ─
     try {
@@ -543,6 +560,8 @@ export const adminVerifyPayment = async (req, res) => {
     // Credit referral commission (fire-and-forget)
     creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
       .catch(e => console.error('Referral commission (admin verify):', e.message));
+    creditSupportCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Support commission (admin verify):', e.message));
 
     const plan = await Plan.findOne({ name: invoice.plan });
     
@@ -749,6 +768,8 @@ export const capturePayoneerReturn = async (req, res) => {
     // Referral commission (fire-and-forget)
     creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
       .catch(e => console.error('Referral commission (payoneer):', e.message));
+    creditSupportCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Support commission (payoneer):', e.message));
 
     // Distribute today's opportunities
     try {

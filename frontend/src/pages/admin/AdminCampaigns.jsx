@@ -5,6 +5,7 @@ import {
   Clock, BadgeCheck, Zap, TrendingUp, History, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { adminAIAPI, adminPanelAPI } from '../../services/adminApi';
+import ConfirmModal from '../../components/ConfirmModal';
 
 // ── Segment definitions ───────────────────────────────────────────────────────
 const SEGMENTS = [
@@ -839,6 +840,7 @@ export default function AdminCampaigns() {
   const [body,          setBody]          = useState('');
   const [fromName,      setFromName]      = useState('Sambid Notify');
   const [sending,       setSending]       = useState(false);
+  const [confirmDlg,    setConfirmDlg]    = useState(null);
   const [result,        setResult]        = useState(null);
   const [error,         setError]         = useState('');
   const [aiLoading,     setAILoading]     = useState(false);
@@ -960,15 +962,23 @@ export default function AdminCampaigns() {
     const target = sendMode === 'user' && selectedUser ? selectedUser : null;
     const count = target ? 1 : (segmentCounts[segment] ?? segmentUsers.length);
     const segLabel = SEGMENTS.find(s => s.value === segment)?.label;
-    const confirmMsg = target
-      ? `Send "${subject}" to ${target.name} (${target.email})?`
-      : `Send "${subject}" to all ${count} users in segment: ${segLabel}?\n\nThis will email every matching user.`;
-    if (!window.confirm(confirmMsg)) return;
+    setConfirmDlg({
+      title:        target ? `Send to ${target.name}?` : `Send to ${count} users?`,
+      message:      target
+        ? `"${subject}" will be sent to ${target.email}.`
+        : `"${subject}" will be emailed to all ${count} users in the "${segLabel}" segment.`,
+      confirmLabel: 'Send Campaign',
+      variant:      'primary',
+      target, count,
+    });
+  };
 
+  const executeSend = async (dlg) => {
+    setConfirmDlg(null);
     setSending(true); setError(''); setResult(null);
     try {
       const payload = { segment, subject, body, fromName };
-      if (target) payload.targetUserId = target._id;
+      if (dlg?.target) payload.targetUserId = dlg.target._id;
       const res = await adminAIAPI.sendCampaign(payload);
       if (!res.data.success) {
         setError(res.data.message || 'Campaign failed. Please try again.');
@@ -988,6 +998,15 @@ export default function AdminCampaigns() {
 
   return (
     <div className="space-y-6 max-w-7xl">
+      <ConfirmModal
+        isOpen={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message}
+        confirmLabel={confirmDlg?.confirmLabel}
+        variant={confirmDlg?.variant || 'primary'}
+        onConfirm={() => executeSend(confirmDlg)}
+        onCancel={() => setConfirmDlg(null)}
+      />
 
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-3">

@@ -5,14 +5,16 @@ import { Clock, Trash2, ExternalLink, BookmarkCheck, ChevronRight } from 'lucide
 import { savedAPI } from '../services/api';
 import Card from '../components/Card';
 import ExportButton from '../components/ExportButton';
+import ConfirmModal from '../components/ConfirmModal';
 import { exportSavedCSV, exportSavedPDF } from '../utils/exportUtils';
 
 export default function SavedOpportunities() {
   const [savedOpportunities, setSavedOpportunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [currentPage,  setCurrentPage] = useState(1);
+  const [pageSize,     setPageSize]    = useState(10);
+  const [confirmDlg,   setConfirmDlg]  = useState(null);
 
   useEffect(() => {
     fetchSaved();
@@ -33,16 +35,21 @@ export default function SavedOpportunities() {
     }
   };
 
-  const handleUnsave = async (savedId, title) => {
-    if (window.confirm(`Remove "${title?.substring(0, 50)}..." from saved?`)) {
-      try {
-        await savedAPI.unsave(savedId);
-        setSavedOpportunities(prev => prev.filter(s => s._id !== savedId));
-        alert('Opportunity removed');
-      } catch (error) {
-        alert('Failed to remove');
-      }
-    }
+  const handleUnsave = (savedId, title) => {
+    setConfirmDlg({
+      savedId,
+      title:        'Remove from Saved?',
+      message:      `"${title?.substring(0, 60)}" will be removed from your saved opportunities.`,
+      confirmLabel: 'Remove',
+    });
+  };
+
+  const doUnsave = async (savedId) => {
+    setConfirmDlg(null);
+    try {
+      await savedAPI.unsave(savedId);
+      setSavedOpportunities(prev => prev.filter(s => s._id !== savedId));
+    } catch {}
   };
 
   const handleUpdateStatus = async (savedId, status) => {
@@ -88,6 +95,15 @@ export default function SavedOpportunities() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <ConfirmModal
+        isOpen={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message}
+        confirmLabel={confirmDlg?.confirmLabel}
+        variant="danger"
+        onConfirm={() => doUnsave(confirmDlg?.savedId)}
+        onCancel={() => setConfirmDlg(null)}
+      />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <div className="mb-5 sm:mb-8 flex items-start justify-between gap-3">
           <div>
