@@ -115,6 +115,7 @@ export const paymentAPI = {
   confirmStripePayment: (data) => api.post('/payment/stripe/confirm', data),
   createPayPalOrder: (data) => api.post('/payment/paypal/create-order', data),
   capturePayPalOrder: (data) => api.post('/payment/paypal/capture', data),
+  simulatePayPalCapture: (data) => api.post('/payment/paypal/simulate-capture', data),
   createPayoneerSession: (data) => api.post('/payment/payoneer/create-session', data),
   capturePayoneerPayment: (data) => api.post('/payment/payoneer/capture', data),
   getPlanStatus: () => api.get('/payment/plan-status'),

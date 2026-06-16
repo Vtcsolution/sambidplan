@@ -338,9 +338,9 @@ export default function AdminTickets() {
   const totalOpen = (statusCounts.open || 0) + (statusCounts.in_progress || 0) + (statusCounts.waiting_user || 0);
 
   return (
-    <div>
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Ticket className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 shrink-0" /> Support Tickets

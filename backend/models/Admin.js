@@ -27,6 +27,12 @@ const adminSchema = new mongoose.Schema({
   referralCode:          { type: String, unique: true, sparse: true, default: null },
   referralBalance:       { type: Number, default: 0 },
   totalCommissionEarned: { type: Number, default: 0 },
+
+  // Target tracking — recurring commissions unlock after 100 Pro/Enterprise referrals
+  proEnterpriseReferralCount: { type: Number, default: 0 },
+  recurringUnlocked:          { type: Boolean, default: false },
+  totalOneTimeEarned:         { type: Number, default: 0 },
+  totalRecurringEarned:       { type: Number, default: 0 },
 }, { timestamps: true });
 
 adminSchema.pre('save', async function (next) {

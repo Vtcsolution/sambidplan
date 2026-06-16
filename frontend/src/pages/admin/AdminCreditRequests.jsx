@@ -202,7 +202,7 @@ export default function AdminCreditRequests() {
   const pendingCount = requests.filter(r => r.status === 'pending').length;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="space-y-6">
       {/* Toast */}
       {toast && (
         <div className="fixed top-5 right-5 z-50 bg-gray-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2">

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import SEOHead from '../components/SEOHead';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Card from '../components/Card';
@@ -33,6 +34,12 @@ function TwoFactorStep({ tempToken, rememberMe, onSuccess, onCancel }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-indigo-50 py-10 px-4">
+      <SEOHead
+        title="Log In — Sambid Federal Contract Platform"
+        description="Log in to your Sambid account to view your daily matched federal contract opportunities, manage alerts, and track bids."
+        keywords="login Sambid, federal contracting platform login, SAM.gov alert dashboard login"
+        canonical="https://sambid.co/login"
+      />
       <div className="max-w-md w-full">
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 mb-3">

@@ -207,13 +207,15 @@ export const getOpportunities = async (req, res) => {
     // ── Regular user path ──────────────────────────────────────────────────────
     const access = await checkUserAccess(req.user);
 
-    if (!access.allowed) {
+    // Only hard-block fully expired plans — daily/monthly limits should not hide the feed,
+    // they only gate new distributions (enforced inside distributeToUser).
+    if (access.plan === 'expired') {
       return res.json({
         success: true,
         data: [],
         accessDenied: true,
         message: access.message,
-        userProfile: { plan: access.plan, monthlyLimit: access.monthlyLimit, daysLeft: access.daysLeft, naicsCodes: req.user.naicsCodes || [] },
+        userProfile: { plan: access.plan, monthlyLimit: 0, daysLeft: 0, naicsCodes: req.user.naicsCodes || [] },
         pagination: { page: 1, limit: limitNum, total: 0, pages: 0 }
       });
     }
@@ -306,10 +308,14 @@ export const getOpportunities = async (req, res) => {
       if (masterCount === 0) {
         console.log('📡 Master store empty — fetching from SAM.gov...');
         for (const code of req.user.naicsCodes.slice(0, 3)) {
-          await fetchSAMOpportunities(code, 200);
+          await fetchSAMOpportunities(code, 200).catch(() => {});
         }
-        const afterFetch = await Opportunity.countDocuments({ naicsCode: { $in: req.user.naicsCodes } });
+        const afterFetch = await Opportunity.countDocuments({
+          naicsCode: { $in: req.user.naicsCodes },
+          dueDate: { $gt: now },
+        });
         if (afterFetch === 0) {
+          console.log('🧪 SAM.gov returned nothing — seeding sample opportunities');
           await seedSampleForUser(req.user.naicsCodes.slice(0, 2));
         }
       }
@@ -592,25 +598,46 @@ URL: ${opportunity.url}
 // Safe to call after a plan upgrade to get new quota/window immediately.
 export const refreshUserFeed = async (req, res) => {
   try {
+    // Only block fully-expired plans — daily/monthly limits are enforced by distributeToUser internally.
     const access = await checkUserAccess(req.user);
-    if (!access.allowed) {
-      return res.status(403).json({ success: false, message: access.message });
+    if (access.plan === 'expired') {
+      return res.status(403).json({ success: false, message: access.message || 'Your plan has expired. Please upgrade to continue.' });
+    }
+
+    if (!req.user.naicsCodes?.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No NAICS codes configured. Please update your profile to receive matched opportunities.',
+      });
     }
 
     // Clear existing feed so distributeToUser treats it as fresh
     await UserOpportunity.deleteMany({ user: req.user._id });
 
+    const now = new Date();
+
     // Ensure master store has active candidates for this user's NAICS codes
-    if (req.user.naicsCodes?.length) {
-      const masterCount = await Opportunity.countDocuments({
+    const masterCount = await Opportunity.countDocuments({
+      naicsCode: { $in: req.user.naicsCodes },
+      source: { $ne: 'usaspending' },
+      dueDate: { $gt: now },
+    });
+
+    if (masterCount === 0) {
+      // Try fetching from SAM.gov
+      for (const code of req.user.naicsCodes.slice(0, 3)) {
+        await fetchSAMOpportunities(code, 50).catch(() => {});
+      }
+
+      // If SAM.gov returned nothing (no API data locally), seed sample data so feed isn't empty
+      const afterFetch = await Opportunity.countDocuments({
         naicsCode: { $in: req.user.naicsCodes },
         source: { $ne: 'usaspending' },
-        dueDate: { $gt: new Date() }
+        dueDate: { $gt: now },
       });
-      if (masterCount === 0) {
-        for (const code of req.user.naicsCodes.slice(0, 3)) {
-          await fetchSAMOpportunities(code, 50).catch(() => {});
-        }
+      if (afterFetch === 0) {
+        await seedSampleForUser(req.user.naicsCodes.slice(0, 3));
+        console.log(`🧪 Seeded sample opportunities for ${req.user.email} (no SAM.gov data available)`);
       }
     }
 

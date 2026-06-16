@@ -104,8 +104,8 @@ function SyncProgress({ state }) {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         {[
-          ['Phase 1 Saved',          fmt(state.phase1Saved)],
-          ['Phase 2 Progress',       `${fmt(state.phase2Progress)}/${fmt(state.phase2Total)}`],
+          ['New Unique Companies',    fmt(state.phase1Saved)],
+          ['Contract Records Read',   fmt(state.phase1Processed ?? state.phase1Saved)],
           ['Enriched',               fmt(state.phase2Saved)],
           ['Deleted (no contact)',   fmt(state.phase2Deleted)],
         ].map(([label, val]) => (
@@ -185,13 +185,14 @@ function AIFinderCard({ state, onStart, onStop }) {
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
-const LIMIT = 50;
+const PAGE_SIZE_OPTIONS = [20, 50, 100, 500, 1000];
 
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function AdminProspects() {
   const [stats, setStats]           = useState(null);
   const [prospects, setProspects]   = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: LIMIT, total: 0, pages: 0 });
+  const [limit, setLimit]           = useState(50);
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 0 });
   const [loading, setLoading]       = useState(false);
   const [statsLoading, setStatsLoading] = useState(true);
   const [selected, setSelected]     = useState(new Set());
@@ -228,7 +229,7 @@ export default function AdminProspects() {
   const loadProspects = useCallback(async (pg) => {
     setLoading(true);
     try {
-      const params = { page: pg, limit: LIMIT };
+      const params = { page: pg, limit };
       Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
       const { data } = await adminProspectAPI.getAll(params);
       if (data.success) {
@@ -238,7 +239,7 @@ export default function AdminProspects() {
       }
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, limit]);
 
   // Load on mount
   useEffect(() => {
@@ -340,7 +341,7 @@ export default function AdminProspects() {
   const navigate = useNavigate();
 
   return (
-    <div className="p-6 max-w-full">
+    <div className="w-full">
       <ConfirmModal
         isOpen={!!confirmDlg}
         title={confirmDlg?.title || ''}
@@ -355,7 +356,7 @@ export default function AdminProspects() {
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Federal Prospects</h1>
-          <p className="text-sm text-gray-500 mt-0.5">All active federal contract bidders with contact info</p>
+          <p className="text-sm text-gray-500 mt-0.5">All federal awardees — small, medium &amp; large — from USASpending &amp; SAM.gov</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!isSyncRunning ? (
@@ -623,6 +624,9 @@ export default function AdminProspects() {
                         </div>
                         {Array.isArray(p.dataSource) && p.dataSource.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
+                            {p.isSmallBusiness && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-teal-100 text-teal-700 font-medium">Small Biz</span>
+                            )}
                             {p.dataSource.map(s => {
                               const c = SOURCE_CFG[s];
                               return c ? <span key={s} className={`text-xs px-1.5 py-0.5 rounded ${c.color}`}>{c.label}</span> : null;
@@ -729,26 +733,39 @@ export default function AdminProspects() {
         </div>
 
         {/* Pagination */}
-        {pagination.pages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
-            <span className="text-sm text-gray-500">
-              {fmt((pagination.page-1)*LIMIT+1)}–{fmt(Math.min(pagination.page*LIMIT, pagination.total))} of {fmt(pagination.total)}
-            </span>
+        {pagination.total > 0 && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50">
             <div className="flex items-center gap-2">
-              <button disabled={pagination.page <= 1}
-                onClick={() => loadProspects(pagination.page - 1)}
-                className="p-1.5 text-gray-500 hover:text-indigo-600 disabled:opacity-40 rounded-lg hover:bg-indigo-50 transition">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-sm font-medium text-gray-700">
-                Page {pagination.page} / {pagination.pages}
+              <span className="text-sm text-gray-500">
+                {fmt((pagination.page-1)*limit+1)}–{fmt(Math.min(pagination.page*limit, pagination.total))} of {fmt(pagination.total)}
               </span>
-              <button disabled={pagination.page >= pagination.pages}
-                onClick={() => loadProspects(pagination.page + 1)}
-                className="p-1.5 text-gray-500 hover:text-indigo-600 disabled:opacity-40 rounded-lg hover:bg-indigo-50 transition">
-                <ChevronRight className="w-4 h-4" />
-              </button>
+              <span className="text-gray-300">|</span>
+              <label className="text-xs text-gray-500">Per page:</label>
+              <select
+                value={limit}
+                onChange={e => { setLimit(Number(e.target.value)); loadProspects(1); }}
+                className="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-indigo-500 bg-white"
+              >
+                {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
             </div>
+            {pagination.pages > 1 && (
+              <div className="flex items-center gap-2">
+                <button disabled={pagination.page <= 1}
+                  onClick={() => loadProspects(pagination.page - 1)}
+                  className="p-1.5 text-gray-500 hover:text-indigo-600 disabled:opacity-40 rounded-lg hover:bg-indigo-50 transition">
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-sm font-medium text-gray-700">
+                  Page {pagination.page} / {pagination.pages}
+                </span>
+                <button disabled={pagination.page >= pagination.pages}
+                  onClick={() => loadProspects(pagination.page + 1)}
+                  className="p-1.5 text-gray-500 hover:text-indigo-600 disabled:opacity-40 rounded-lg hover:bg-indigo-50 transition">
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Shield, ArrowLeft } from 'lucide-react';
+import SEOHead from '../components/SEOHead';
 
 const LAST_UPDATED = 'June 1, 2025';
 
@@ -91,6 +92,11 @@ const sections = [
 export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 sm:px-6 lg:px-8">
+      <SEOHead
+        title="Privacy Policy — Sambid"
+        description="Sambid's Privacy Policy explains how we collect, use, and protect your data when you use our federal contract notification platform."
+        canonical="https://sambid.co/privacy"
+      />
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}

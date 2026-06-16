@@ -8,8 +8,10 @@ Allow: /how-it-works
 Allow: /contact
 Allow: /login
 Allow: /signup
+Allow: /terms
+Allow: /privacy
 
-# Block private dashboard and API
+# Block all private dashboard, user tools, and API routes
 Disallow: /dashboard
 Disallow: /opportunities
 Disallow: /opportunity/
@@ -22,6 +24,7 @@ Disallow: /help
 Disallow: /pipeline
 Disallow: /calendar
 Disallow: /referral
+Disallow: /billing
 Disallow: /capability-statement
 Disallow: /rfp-analyzer
 Disallow: /go-no-go
@@ -29,8 +32,18 @@ Disallow: /teaming-finder
 Disallow: /contract-vehicles
 Disallow: /market-research
 Disallow: /winning-bids
-Disallow: /admin
-Disallow: /api/
+Disallow: /proposal-builder
+Disallow: /past-performance
+Disallow: /sources-sought
+Disallow: /ai-predictions
+Disallow: /suggestions
 Disallow: /onboarding
+Disallow: /annual-plan-request
+Disallow: /payment/
+Disallow: /support/
+Disallow: /admin/
+Disallow: /api/
+Disallow: /verify-email/
+Disallow: /reset-password
 
-Sitemap: https://yourdomain.com/sitemap.xml
+Sitemap: https://sambid.co/sitemap.xml

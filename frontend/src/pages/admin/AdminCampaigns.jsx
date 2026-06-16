@@ -864,6 +864,11 @@ export default function AdminCampaigns() {
         setHistoryPages(r.data.data.pages);
         setHistoryTotal(r.data.data.total);
         setHistoryPage(page);
+        // If any log is still 'sending', poll until they resolve
+        const hasSending = r.data.data.logs.some(l => l.status === 'sending');
+        if (hasSending) {
+          setTimeout(() => loadHistory(page), 3000);
+        }
       }
     } catch {}
     finally { setHistoryLoading(false); }
@@ -984,7 +989,8 @@ export default function AdminCampaigns() {
         setError(res.data.message || 'Campaign failed. Please try again.');
       } else {
         setResult(res.data);
-        loadHistory(1);
+        // Short delay so the 'sending' log is persisted before we fetch history
+        setTimeout(() => loadHistory(1), 800);
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Campaign failed. Please try again.');
@@ -997,7 +1003,7 @@ export default function AdminCampaigns() {
   const recipientCount = sendMode === 'user' && selectedUser ? 1 : (segmentCounts[segment] ?? 0);
 
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="space-y-6">
       <ConfirmModal
         isOpen={!!confirmDlg}
         title={confirmDlg?.title || ''}
@@ -1283,13 +1289,14 @@ export default function AdminCampaigns() {
             <div className="divide-y divide-gray-50">
               {history.map(log => {
                 const isExpanded = expandedLog === log._id;
-                const statusColor = log.status === 'success'
-                  ? 'bg-green-100 text-green-700'
-                  : log.status === 'partial'
-                  ? 'bg-amber-100 text-amber-700'
+                const statusColor = log.status === 'success'  ? 'bg-green-100 text-green-700'
+                  : log.status === 'partial'  ? 'bg-amber-100 text-amber-700'
+                  : log.status === 'sending'  ? 'bg-blue-100 text-blue-700'
                   : 'bg-red-100 text-red-700';
                 const statusLabel = log.status === 'success' ? 'Delivered'
-                  : log.status === 'partial' ? 'Partial' : 'Failed';
+                  : log.status === 'partial' ? 'Partial'
+                  : log.status === 'sending' ? 'Sending…'
+                  : 'Failed';
                 const segDef   = SEGMENTS.find(s => s.value === log.segment);
                 const sentDate = new Date(log.createdAt);
                 const dateStr  = sentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -1300,7 +1307,8 @@ export default function AdminCampaigns() {
                     <div className="flex items-start gap-4">
                       <div className={`w-2 h-2 rounded-full mt-2 shrink-0 ${
                         log.status === 'success' ? 'bg-green-500' :
-                        log.status === 'partial' ? 'bg-amber-500' : 'bg-red-500'
+                        log.status === 'partial' ? 'bg-amber-500' :
+                        log.status === 'sending' ? 'bg-blue-500 animate-pulse' : 'bg-red-500'
                       }`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-4 flex-wrap">

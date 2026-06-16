@@ -110,8 +110,8 @@ export default function RFPAnalyzer() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 py-5 sm:py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <AICreditsBar feature="rfp_analyzer" />
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">

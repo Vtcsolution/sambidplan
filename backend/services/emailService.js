@@ -19,6 +19,14 @@ const transporter = {
         },
       });
     }
+    // Auto-inject replyTo so replies route to the correct mailbox
+    // (Hostinger requires from === SMTP_USER, so we use display names to differentiate)
+    if (!options.replyTo) {
+      const from = options.from || '';
+      options.replyTo = from.includes('Billing') ? (process.env.EMAIL_BILLING || process.env.SMTP_USER || process.env.EMAIL_USER)
+                      : from.includes('Support') ? (process.env.EMAIL_SUPPORT || process.env.SMTP_USER || process.env.EMAIL_USER)
+                      : (process.env.EMAIL_NOREPLY || process.env.SMTP_USER || process.env.EMAIL_USER);
+    }
     return _transporter.sendMail(options);
   },
 };
@@ -29,15 +37,22 @@ export const resetEmailTransporter = () => { _transporter = null; };
 // Export transporter so other controllers can send mail via the same SMTP config
 export { transporter };
 
-// Sender addresses — all authenticated via SMTP_USER credentials.
-// noreply: automated system emails  |  support: tickets/suggestions/enterprise
-// billing: payments/invoices/plan activation
+// Sender addresses — Hostinger SMTP only allows sending FROM the authenticated
+// account (zia@sambid.co). Using noreply/support/billing as the from address
+// causes relay rejection. We use display names to differentiate and replyTo for
+// routing replies to the appropriate mailbox.
 const _smtpUser = () => process.env.SMTP_USER || process.env.EMAIL_USER;
 export const FROM = {
-  noreply: () => `"Sambid" <${process.env.EMAIL_NOREPLY || _smtpUser()}>`,
-  support: () => `"Sambid Support" <${process.env.EMAIL_SUPPORT || _smtpUser()}>`,
-  billing: () => `"Sambid Billing" <${process.env.EMAIL_BILLING || _smtpUser()}>`,
-  custom:  (name) => `"${name}" <${process.env.EMAIL_NOREPLY || _smtpUser()}>`,
+  noreply: () => `"Sambid Notify" <${_smtpUser()}>`,
+  support: () => `"Sambid Support" <${_smtpUser()}>`,
+  billing: () => `"Sambid Billing" <${_smtpUser()}>`,
+  custom:  (name) => `"${name}" <${_smtpUser()}>`,
+};
+// Reply-To addresses for each sender type (for routing replies correctly)
+export const REPLY_TO = {
+  noreply: () => process.env.EMAIL_NOREPLY || _smtpUser(),
+  support: () => process.env.EMAIL_SUPPORT || _smtpUser(),
+  billing: () => process.env.EMAIL_BILLING || _smtpUser(),
 };
 
 /**
@@ -1500,4 +1515,203 @@ export const sendPaymentInstructionsEmail = async ({
     html,
   });
   console.log(`📧 Payment instructions sent to ${to} (ref: ${reference})`);
+};
+
+/**
+ * Notify support member + admin when a withdrawal request is submitted
+ */
+export const sendWithdrawalRequestEmails = async ({ supportName, supportEmail, amount, paypalEmail }) => {
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER;
+  const amountStr = `$${Number(amount).toFixed(2)}`;
+
+  // ── Email to support member (confirmation) ───────────────────────────────
+  const memberHtml = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+      <div style="text-align:center;padding:20px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;color:white;">
+        <h1 style="margin:0;">Sambid Notify</h1>
+        <p style="margin:5px 0 0;opacity:.9;">Support Commission Portal</p>
+      </div>
+      <div style="padding:30px;background:white;border-radius:12px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+        <h2 style="color:#1f2937;margin-top:0;">Withdrawal Request Received</h2>
+        <p style="color:#4b5563;line-height:1.6;">Hi ${supportName || 'there'},</p>
+        <p style="color:#4b5563;line-height:1.6;">
+          Your withdrawal request for <strong>${amountStr}</strong> has been submitted successfully.
+          Our team will review and process it within <strong>3–5 business days</strong>.
+        </p>
+        <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:10px;padding:20px;margin:24px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <tr style="border-bottom:1px solid #e5e7eb;">
+              <td style="padding:8px 0;color:#6b7280;width:40%;">Amount Requested</td>
+              <td style="padding:8px 0;color:#4f46e5;font-weight:700;font-size:18px;">${amountStr}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #e5e7eb;">
+              <td style="padding:8px 0;color:#6b7280;">Payment Method</td>
+              <td style="padding:8px 0;color:#1f2937;font-weight:600;">PayPal</td>
+            </tr>
+            ${paypalEmail ? `<tr>
+              <td style="padding:8px 0;color:#6b7280;">PayPal Email</td>
+              <td style="padding:8px 0;color:#1f2937;">${paypalEmail}</td>
+            </tr>` : ''}
+            <tr>
+              <td style="padding:8px 0;color:#6b7280;">Status</td>
+              <td style="padding:8px 0;"><span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:20px;font-weight:600;font-size:13px;">Pending Review</span></td>
+            </tr>
+          </table>
+        </div>
+        <p style="color:#6b7280;font-size:13px;line-height:1.6;">
+          You'll receive another email when the status is updated. If you have any questions, contact our support team.
+        </p>
+        <p style="color:#9ca3af;font-size:12px;text-align:center;margin-top:24px;border-top:1px solid #f3f4f6;padding-top:16px;">
+          Sambid Notify · Federal Contract Intelligence
+        </p>
+      </div>
+    </div>`;
+
+  // ── Email to admin (new request alert) ───────────────────────────────────
+  const adminHtml = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+      <div style="text-align:center;padding:20px;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:12px;color:white;">
+        <h1 style="margin:0;">New Withdrawal Request</h1>
+        <p style="margin:5px 0 0;opacity:.9;">Action Required — Support Commission</p>
+      </div>
+      <div style="padding:30px;background:white;border-radius:12px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+        <h2 style="color:#1f2937;margin-top:0;">Withdrawal Details</h2>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr style="border-bottom:1px solid #e5e7eb;">
+            <td style="padding:10px 0;font-weight:600;color:#374151;width:40%;">Support Member</td>
+            <td style="padding:10px 0;color:#4b5563;">${supportName || 'N/A'}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e5e7eb;">
+            <td style="padding:10px 0;font-weight:600;color:#374151;">Email</td>
+            <td style="padding:10px 0;color:#4b5563;"><a href="mailto:${supportEmail}" style="color:#6366f1;">${supportEmail}</a></td>
+          </tr>
+          <tr style="border-bottom:1px solid #e5e7eb;">
+            <td style="padding:10px 0;font-weight:600;color:#374151;">Amount</td>
+            <td style="padding:10px 0;font-size:22px;font-weight:700;color:#d97706;">${amountStr}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e5e7eb;">
+            <td style="padding:10px 0;font-weight:600;color:#374151;">Method</td>
+            <td style="padding:10px 0;color:#4b5563;">PayPal</td>
+          </tr>
+          ${paypalEmail ? `<tr>
+            <td style="padding:10px 0;font-weight:600;color:#374151;">PayPal Email</td>
+            <td style="padding:10px 0;color:#4b5563;">${paypalEmail}</td>
+          </tr>` : ''}
+        </table>
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px;margin:24px 0;text-align:center;">
+          <p style="margin:0;color:#92400e;font-weight:600;">Please review and process this request in the Admin Panel.</p>
+        </div>
+      </div>
+    </div>`;
+
+  await Promise.allSettled([
+    transporter.sendMail({
+      from: FROM.billing(),
+      to: supportEmail,
+      subject: `Withdrawal Request Submitted — ${amountStr} via PayPal`,
+      html: memberHtml,
+    }),
+    transporter.sendMail({
+      from: FROM.billing(),
+      to: adminEmail,
+      subject: `New Withdrawal Request: ${amountStr} from ${supportName || supportEmail}`,
+      html: adminHtml,
+    }),
+  ]);
+  console.log(`📧 Withdrawal request emails sent → ${supportEmail} + admin`);
+};
+
+/**
+ * Notify support member (and optionally admin) when a withdrawal status changes
+ */
+export const sendWithdrawalStatusEmail = async ({ supportName, supportEmail, amount, status, adminNote, paymentId, proofScreenshotUrl, adminEmail }) => {
+  const amountStr = `$${Number(amount).toFixed(2)}`;
+
+  const statusConfig = {
+    approved: { label: 'Approved',  color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', emoji: '✅', msg: 'Your withdrawal request has been approved. Payment will be sent to your PayPal account shortly.' },
+    paid:     { label: 'Paid',      color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', emoji: '💸', msg: 'Great news — your withdrawal has been paid to your PayPal account!' },
+    rejected: { label: 'Rejected',  color: '#dc2626', bg: '#fef2f2', border: '#fecaca', emoji: '❌', msg: 'Your withdrawal request has been rejected. Your balance has been refunded. Please contact support if you have questions.' },
+  };
+  const cfg = statusConfig[status] || statusConfig.approved;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+      <div style="text-align:center;padding:20px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;color:white;">
+        <h1 style="margin:0;">Sambid Notify</h1>
+        <p style="margin:5px 0 0;opacity:.9;">Support Commission Portal</p>
+      </div>
+      <div style="padding:30px;background:white;border-radius:12px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+        <h2 style="color:#1f2937;margin-top:0;">${cfg.emoji} Withdrawal ${cfg.label}</h2>
+        <p style="color:#4b5563;line-height:1.6;">Hi ${supportName || 'there'},</p>
+        <p style="color:#4b5563;line-height:1.6;">${cfg.msg}</p>
+
+        <div style="background:${cfg.bg};border:1px solid ${cfg.border};border-radius:10px;padding:20px;margin:24px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <tr style="border-bottom:1px solid ${cfg.border};">
+              <td style="padding:8px 0;color:#6b7280;width:40%;">Amount</td>
+              <td style="padding:8px 0;color:${cfg.color};font-weight:700;font-size:18px;">${amountStr}</td>
+            </tr>
+            <tr style="border-bottom:1px solid ${cfg.border};">
+              <td style="padding:8px 0;color:#6b7280;">Status</td>
+              <td style="padding:8px 0;"><span style="background:${cfg.bg};color:${cfg.color};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px;">${cfg.label}</span></td>
+            </tr>
+            ${paymentId ? `<tr style="border-bottom:1px solid ${cfg.border};">
+              <td style="padding:8px 0;color:#6b7280;">Transaction ID</td>
+              <td style="padding:8px 0;color:#1f2937;font-family:monospace;font-weight:700;">${paymentId}</td>
+            </tr>` : ''}
+            ${proofScreenshotUrl ? `<tr style="border-bottom:1px solid ${cfg.border};">
+              <td style="padding:8px 0;color:#6b7280;">Payment Proof</td>
+              <td style="padding:8px 0;"><a href="${proofScreenshotUrl}" target="_blank" style="color:#6366f1;font-weight:600;">View Screenshot</a></td>
+            </tr>` : ''}
+            ${adminNote ? `<tr>
+              <td style="padding:8px 0;color:#6b7280;vertical-align:top;">Note from Admin</td>
+              <td style="padding:8px 0;color:#374151;font-style:italic;">"${adminNote}"</td>
+            </tr>` : ''}
+          </table>
+        </div>
+
+        <p style="color:#6b7280;font-size:13px;line-height:1.6;">
+          If you have any questions about this withdrawal, please contact our support team.
+        </p>
+        <p style="color:#9ca3af;font-size:12px;text-align:center;margin-top:24px;border-top:1px solid #f3f4f6;padding-top:16px;">
+          Sambid Notify · Federal Contract Intelligence
+        </p>
+      </div>
+    </div>`;
+
+  const sends = [
+    transporter.sendMail({
+      from: FROM.billing(),
+      to: supportEmail,
+      subject: `${cfg.emoji} Withdrawal ${cfg.label} — ${amountStr} | Sambid Notify`,
+      html,
+    }),
+  ];
+
+  if (adminEmail) {
+    const adminHtml = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+        <div style="text-align:center;padding:16px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;color:white;">
+          <h2 style="margin:0;">Withdrawal ${cfg.label} — Action Logged</h2>
+        </div>
+        <div style="padding:24px;background:white;border-radius:12px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:8px 0;color:#6b7280;width:40%;">Support Member</td><td style="padding:8px 0;color:#1f2937;font-weight:600;">${supportName || supportEmail}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:8px 0;color:#6b7280;">Amount</td><td style="padding:8px 0;color:${cfg.color};font-weight:700;">${amountStr}</td></tr>
+            <tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:8px 0;color:#6b7280;">Status</td><td style="padding:8px 0;font-weight:700;color:${cfg.color};">${cfg.label}</td></tr>
+            ${paymentId ? `<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:8px 0;color:#6b7280;">Transaction ID</td><td style="padding:8px 0;font-family:monospace;color:#1f2937;">${paymentId}</td></tr>` : ''}
+            ${adminNote ? `<tr><td style="padding:8px 0;color:#6b7280;">Note</td><td style="padding:8px 0;color:#374151;font-style:italic;">"${adminNote}"</td></tr>` : ''}
+          </table>
+        </div>
+      </div>`;
+    sends.push(transporter.sendMail({
+      from: FROM.billing(),
+      to: adminEmail,
+      subject: `Withdrawal ${cfg.label}: ${amountStr} for ${supportName || supportEmail}`,
+      html: adminHtml,
+    }));
+  }
+
+  await Promise.allSettled(sends);
+  console.log(`📧 Withdrawal ${status} email sent to ${supportEmail}${adminEmail ? ' + admin' : ''}`);
 };

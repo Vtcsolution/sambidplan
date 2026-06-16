@@ -63,7 +63,6 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
     { path: '/pricing',         label: 'Pricing',        icon: DollarSign },
     { path: '/about',           label: 'About',          icon: Info },
     { path: '/contact',         label: 'Contact',        icon: Phone },
-    { path: '/become-partner',  label: 'Become Partner', icon: Gift },
   ];
 
   const isActive = (path) => location.pathname === path;

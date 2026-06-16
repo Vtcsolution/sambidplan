@@ -7,6 +7,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import connectDB from "./config/db.js";
 import { initSocket } from "./socket.js";
+import { ensureInvoiceIndexes } from "./models/Invoice.js";
 
 // Import routes
 import authRoutes from "./routes/authRoutes.js";
@@ -40,11 +41,17 @@ import { startEmailScheduler } from './services/emailSchedulerService.js';
 import { loadSettingsFromDB } from './services/settingsService.js';
 
 dotenv.config();
-connectDB().then(() => loadSettingsFromDB());
 
-// Start all schedulers
-startScheduler();
-startEmailScheduler();
+// Connect to DB first, then start schedulers — prevents "buffering timed out" on startup
+connectDB().then(async () => {
+  await ensureInvoiceIndexes(); // self-heal the paypalOrderId index (fixes E11000 on null)
+  await loadSettingsFromDB();
+  startScheduler();
+  startEmailScheduler();
+}).catch(err => {
+  console.error('❌ Startup aborted — DB connection failed:', err.message);
+  process.exit(1);
+});
 
 const app = express();
 
@@ -157,5 +164,7 @@ initSocket(httpServer);
 
 httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT} (HTTP + WebSocket)`);
-  setTimeout(() => reconcileReferralCommissions(), 3000);
+  // Reconcile only after DB is ready (connectDB resolves before listen fires in practice,
+  // but guard with a longer delay to be safe)
+  setTimeout(() => reconcileReferralCommissions(), 8000);
 });

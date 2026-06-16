@@ -1,17 +1,19 @@
 ﻿// frontend/src/pages/admin/AdminNotifications.jsx
 import { useState, useEffect } from 'react';
-import { 
-  Bell, 
-  CheckCircle, 
-  XCircle, 
-  Mail, 
-  Users, 
+import {
+  Bell,
+  CheckCircle,
+  XCircle,
+  Mail,
+  Users,
   CreditCard,
   RefreshCw,
   Trash2,
   Eye,
   Send,
-  AlertCircle
+  AlertCircle,
+  Wallet,
+  UserPlus
 } from 'lucide-react';
 import { adminPanelAPI as adminAPI } from '../../services/adminApi';
 import Card from '../../components/Card';
@@ -129,24 +131,34 @@ export default function AdminNotifications() {
 
   const getNotificationIcon = (type) => {
     switch(type) {
-      case 'plan_request': return <Users className="w-5 h-5 text-yellow-500" />;
-      case 'payment': return <CreditCard className="w-5 h-5 text-green-500" />;
-      case 'user_signup': return <CheckCircle className="w-5 h-5 text-blue-500" />;
-      case 'system': return <AlertCircle className="w-5 h-5 text-purple-500" />;
-      default: return <Bell className="w-5 h-5 text-gray-500" />;
+      case 'plan_request':      return <Users className="w-5 h-5 text-yellow-500" />;
+      case 'payment':           return <CreditCard className="w-5 h-5 text-green-500" />;
+      case 'user_signup':       return <CheckCircle className="w-5 h-5 text-blue-500" />;
+      case 'system':            return <AlertCircle className="w-5 h-5 text-purple-500" />;
+      case 'withdrawal_request':return <Wallet className="w-5 h-5 text-orange-500" />;
+      case 'referral_signup':   return <UserPlus className="w-5 h-5 text-emerald-500" />;
+      case 'ticket_created':    return <Mail className="w-5 h-5 text-red-500" />;
+      case 'ticket_reply':      return <Send className="w-5 h-5 text-indigo-500" />;
+      case 'suggestion':        return <Bell className="w-5 h-5 text-pink-500" />;
+      default:                  return <Bell className="w-5 h-5 text-gray-500" />;
     }
   };
 
   const getNotificationColor = (type, priority) => {
     if (priority === 'urgent') return 'bg-red-50 border-red-200';
     if (priority === 'high') return 'bg-orange-50 border-orange-200';
-    
+
     switch(type) {
-      case 'plan_request': return 'bg-yellow-50 border-yellow-200';
-      case 'payment': return 'bg-green-50 border-green-200';
-      case 'user_signup': return 'bg-blue-50 border-blue-200';
-      case 'system': return 'bg-purple-50 border-purple-200';
-      default: return 'bg-gray-50 border-gray-200';
+      case 'plan_request':       return 'bg-yellow-50 border-yellow-200';
+      case 'payment':            return 'bg-green-50 border-green-200';
+      case 'user_signup':        return 'bg-blue-50 border-blue-200';
+      case 'system':             return 'bg-purple-50 border-purple-200';
+      case 'withdrawal_request': return 'bg-orange-50 border-orange-200';
+      case 'referral_signup':    return 'bg-emerald-50 border-emerald-200';
+      case 'ticket_created':     return 'bg-red-50 border-red-200';
+      case 'ticket_reply':       return 'bg-indigo-50 border-indigo-200';
+      case 'suggestion':         return 'bg-pink-50 border-pink-200';
+      default:                   return 'bg-gray-50 border-gray-200';
     }
   };
 
@@ -161,7 +173,7 @@ export default function AdminNotifications() {
   }
 
   return (
-   <div className="min-h-screen bg-gray-50 py-8">
+    <div className="space-y-6">
       <ConfirmModal
         isOpen={!!confirmDlg}
         title={confirmDlg?.title || ''}
@@ -170,8 +182,7 @@ export default function AdminNotifications() {
         onConfirm={() => confirmDeleteNotification(confirmDlg?.id)}
         onCancel={() => setConfirmDlg(null)}
       />
-      <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div>
+      <div>
           <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
           <p className="text-gray-600 mt-4 mb-2">
             {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
@@ -383,7 +394,6 @@ export default function AdminNotifications() {
           </div>
         </div>
       )}
-    </div>
     </div>
   );
 }

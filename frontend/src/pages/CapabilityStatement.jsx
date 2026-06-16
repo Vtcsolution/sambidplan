@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { FileText, Sparkles, Copy, Download, CheckCircle, Loader2, Lock, RefreshCw, Building2, Target, Award, Users } from 'lucide-react';
 import { aiAPI } from '../services/api';
 import { useUserPlan } from '../hooks/useUserPlan';
+import { usePlans } from '../hooks/usePlans';
 import { AICreditsBar } from '../components/AICreditsBar';
 import jsPDF from 'jspdf';
 
@@ -9,6 +10,7 @@ const CERTIFICATIONS = ['8(a)', 'WOSB', 'EDWOSB', 'HUBZone', 'SDVOSB', 'VOSB', '
 
 export default function CapabilityStatement() {
   const { plan: userPlan, loading: planLoading } = useUserPlan();
+  const { getMonthly, getYearly } = usePlans();
   const isPro = ['pro', 'enterprise'].includes(userPlan);
 
   const [form, setForm] = useState({
@@ -115,7 +117,12 @@ export default function CapabilityStatement() {
             <Lock className="w-7 h-7 text-indigo-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Pro Feature</h2>
-          <p className="text-gray-500 mb-6">AI Capability Statement Generator is available on Pro ($79/mo) and Enterprise ($499/mo or $4,788/yr) plans.</p>
+          <p className="text-gray-500 mb-6">
+            AI Capability Statement Generator is available on Pro
+            {getMonthly('pro') != null ? ` ($${getMonthly('pro')}/mo)` : ''} and Enterprise
+            {getMonthly('enterprise') != null && getYearly('enterprise') != null
+              ? ` ($${getMonthly('enterprise')}/mo or $${getYearly('enterprise')}/yr)` : ''} plans.
+          </p>
           <a href="/pricing" className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition">
             Upgrade Now <Sparkles className="w-4 h-4" />
           </a>
@@ -125,8 +132,8 @@ export default function CapabilityStatement() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-5 sm:py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <AICreditsBar feature="capability_statement" />
         {/* Header */}
         <div className="mb-8">

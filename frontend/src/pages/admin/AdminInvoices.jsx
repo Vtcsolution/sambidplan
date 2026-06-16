@@ -124,9 +124,8 @@ export default function AdminInvoices() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Invoices</h1>
             <p className="text-gray-600 text-sm">Manage and track all invoices</p>
@@ -387,6 +386,5 @@ export default function AdminInvoices() {
         </div>
       )}
     </div>
-     </div>
   );
 }

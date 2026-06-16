@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import AdminSidebar from '../admin/AdminSidebar';
 import AdminHeader  from '../admin/AdminHeader';
 import { adminAuthAPI } from '../../services/adminApi';
+import SEOHead from '../../components/SEOHead';
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -33,6 +34,7 @@ export default function AdminLayout() {
 
   return (
     <div className="min-h-screen bg-gray-100 overflow-x-hidden">
+      <SEOHead title="Admin Panel" noindex={true} />
       <AdminHeader admin={admin} onMenuClick={() => setSidebarOpen(true)} />
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="lg:pl-72 pt-16 min-w-0">

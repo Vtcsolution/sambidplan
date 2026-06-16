@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { FileText, ArrowLeft } from 'lucide-react';
+import SEOHead from '../components/SEOHead';
 
 const LAST_UPDATED = 'June 1, 2025';
 
@@ -73,6 +74,11 @@ const sections = [
 export default function TermsOfService() {
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 sm:px-6 lg:px-8">
+      <SEOHead
+        title="Terms of Service — Sambid"
+        description="Read Sambid's Terms of Service. Understand your rights and obligations when using our federal contract opportunity notification platform."
+        canonical="https://sambid.co/terms"
+      />
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}

@@ -204,7 +204,7 @@ export default function PlanRequests() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="space-y-6">
       <ConfirmModal
         isOpen={!!confirmDlg}
         title={confirmDlg?.title || ''}
@@ -214,7 +214,7 @@ export default function PlanRequests() {
         onConfirm={() => confirmDeletePlan(confirmDlg?.plan)}
         onCancel={() => setConfirmDlg(null)}
       />
-      <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div>
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Plan Management</h1>
           <p className="text-gray-600 mt-1">Manage subscription plans and pricing</p>

@@ -11,6 +11,7 @@ import { authAPI, opportunityAPI, paymentAPI } from '../services/api';
 import { searchNAICS, NAICS_CODES } from '../data/naicsCodes';
 import PushNotificationToggle from '../components/PushNotificationToggle';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { usePlans } from '../hooks/usePlans';
 
 const TABS = [
   { id: 'profile',       label: 'Profile',       icon: User },
@@ -48,6 +49,7 @@ export default function Settings() {
   const [userData,   setUserData]   = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [isDark, setIsDark] = useDarkMode();
+  const { getMonthly, getYearly } = usePlans();
 
   // ── Profile tab ────────────────────────────────────────────────────────────
   const [name,         setName]         = useState('');
@@ -325,8 +327,8 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-5 sm:py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         <div className="mb-5 sm:mb-8">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">Settings</h1>
@@ -1119,10 +1121,15 @@ export default function Settings() {
                 {/* Plan comparison */}
                 <div className="space-y-3 mb-6">
                   {[
-                    { name: 'Starter', price: '$29/mo', features: ['500 matches/month', '14-day source window', 'Priority email support'] },
-                    { name: 'Pro',     price: '$79/mo', features: ['3,000 matches/month', '60-day window', 'AI proposal generation', 'Real-time alerts'] },
-                    { name: 'Enterprise', price: '$499/mo · $4,788/yr', features: ['Unlimited matches', 'Dedicated manager', 'Custom integrations', 'Full API access'] },
+                    { name: 'Starter',    features: ['500 matches/month', '14-day source window', 'Priority email support'] },
+                    { name: 'Pro',        features: ['3,000 matches/month', '60-day window', 'AI proposal generation', 'Real-time alerts'] },
+                    { name: 'Enterprise', features: ['Unlimited matches', 'Dedicated manager', 'Custom integrations', 'Full API access'] },
                   ].map(plan => {
+                    const mo = getMonthly(plan.name);
+                    const yr = getYearly(plan.name);
+                    const priceLabel = plan.name === 'Enterprise' && mo && yr
+                      ? `$${mo}/mo · $${yr}/yr`
+                      : mo != null ? `$${mo}/mo` : '…';
                     const isCurrent = userData?.plan?.toLowerCase() === plan.name.toLowerCase();
                     return (
                       <div key={plan.name} className={`flex items-center justify-between p-4 rounded-xl border ${isCurrent ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200'}`}>
@@ -1134,7 +1141,7 @@ export default function Settings() {
                           <p className="text-xs text-gray-500 mt-0.5">{plan.features.slice(0, 2).join(' · ')}</p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-gray-700">{plan.price}</span>
+                          <span className="text-sm font-bold text-gray-700">{priceLabel}</span>
                           {!isCurrent && (
                             <Link to="/pricing" className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-colors">
                               Upgrade

@@ -49,6 +49,44 @@ function ButtonLoader() {
   );
 }
 
+// ── Dev-only: simulate a successful payment without PayPal popup ────────────
+function DevSimulateButton({ planName, billingCycle, onSuccess, onError, referralBalanceToApply = 0 }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    setLoading(true);
+    try {
+      // 1. Create the invoice on the backend (same as real flow)
+      const orderRes = await paymentAPI.createPayPalOrder({ planName, billingCycle, referralBalanceToApply });
+      if (!orderRes.data.success) throw new Error(orderRes.data.message || 'Order creation failed');
+      const invoiceId = orderRes.data.invoiceId;
+
+      // 2. Simulate capture — skips PayPal API entirely
+      const captureRes = await paymentAPI.simulatePayPalCapture({ invoiceId });
+      if (!captureRes.data.success) throw new Error(captureRes.data.message || 'Simulate capture failed');
+
+      onSuccess(captureRes.data.plan);
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Simulation failed';
+      console.error('Dev simulate error:', msg);
+      onError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={loading}
+      className="w-full mt-3 py-3 rounded-lg border-2 border-dashed border-yellow-400 bg-yellow-50 text-yellow-800 text-sm font-semibold hover:bg-yellow-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+    >
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : '🧪'}
+      {loading ? 'Processing…' : 'Test Payment (Dev Only — bypasses PayPal)'}
+    </button>
+  );
+}
+
 // ── Main PayPal Smart Button component ──────────────────────────────────────
 function SmartButton({ amount, planName, billingCycle, onSuccess, onError, referralBalanceToApply = 0 }) {
   const invoiceIdRef = useRef(null);
@@ -176,26 +214,36 @@ export default function PayPalPayment({ amount, planName, billingCycle, onSucces
           </div>
         )}
 
-        {/* PayPal Smart Buttons */}
-        <PayPalScriptProvider
-          key={`${planName}-${billingCycle}-${amount}`}
-          options={{
-            clientId:   PAYPAL_CLIENT_ID,
-            currency:   'USD',
-            intent:     'capture',
-            components: 'buttons',
-          }}
-        >
-          <ButtonLoader />
-          <SmartButton
-            amount={amount}
+        {/* In dev mode skip the real PayPal SDK entirely — sandbox popup is unreliable locally */}
+        {import.meta.env.DEV ? (
+          <DevSimulateButton
             planName={planName}
             billingCycle={billingCycle}
             onSuccess={handleSuccess}
             onError={handleError}
             referralBalanceToApply={referralBalanceToApply}
           />
-        </PayPalScriptProvider>
+        ) : (
+          <PayPalScriptProvider
+            key={`${planName}-${billingCycle}-${amount}`}
+            options={{
+              clientId:   PAYPAL_CLIENT_ID,
+              currency:   'USD',
+              intent:     'capture',
+              components: 'buttons',
+            }}
+          >
+            <ButtonLoader />
+            <SmartButton
+              amount={amount}
+              planName={planName}
+              billingCycle={billingCycle}
+              onSuccess={handleSuccess}
+              onError={handleError}
+              referralBalanceToApply={referralBalanceToApply}
+            />
+          </PayPalScriptProvider>
+        )}
 
         <p className="text-xs text-center text-gray-400 mt-4">
           Payment processed securely by PayPal. Sambid Notify never stores your card details.

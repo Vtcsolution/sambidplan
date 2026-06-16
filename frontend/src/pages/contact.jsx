@@ -4,6 +4,7 @@ import {
   Building2, Mail, Phone, Users, MessageSquare,
   CheckCircle, Loader2, ArrowRight, Clock, AlertCircle, RefreshCw
 } from 'lucide-react';
+import SEOHead from '../components/SEOHead';
 import { contactAPI } from '../services/api';
 
 const EMPLOYEE_OPTIONS = ['1-10', '11-50', '51-200', '201-500', '500+'];
@@ -248,6 +249,12 @@ export default function Contact() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 py-10 sm:py-16 px-4">
+      <SEOHead
+        title="Contact Sambid — Get Help with Federal Contract Alerts"
+        description="Have a question about Sambid's federal contract notification platform? Contact our support team. We help government contractors get set up with SAM.gov alerts, billing, and account issues."
+        keywords="contact Sambid, federal contracting support, SAM.gov alert help, government contracting software support, Sambid customer service"
+        canonical="https://sambid.co/contact"
+      />
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="text-center mb-7 sm:mb-10">

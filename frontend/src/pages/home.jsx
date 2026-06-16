@@ -1,10 +1,65 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
+import { usePlans } from '../hooks/usePlans';
 import {
   ArrowRight, Bell, Search, Brain, TrendingUp, Shield, Clock,
   CheckCircle, Star, Users, Award, Zap, Target, FileText, BarChart2
 } from 'lucide-react';
+import SEOHead from '../components/SEOHead';
+
+const HOME_JSON_LD = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'Sambid',
+    url: 'https://sambid.co',
+    logo: 'https://sambid.co/logo.png',
+    description: 'Sambid delivers real-time federal contract opportunity alerts from SAM.gov, USASpending.gov, and FPDS directly to small and mid-size contractors.',
+    sameAs: [
+      'https://twitter.com/sambidco',
+      'https://linkedin.com/company/sambid',
+    ],
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'Customer Support',
+      email: 'support@sambid.co',
+      url: 'https://sambid.co/contact',
+    },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Sambid',
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    url: 'https://sambid.co',
+    description: 'AI-powered federal contract opportunity discovery and alert platform for US government contractors.',
+    offers: {
+      '@type': 'AggregateOffer',
+      priceCurrency: 'USD',
+      lowPrice: '0',
+      highPrice: '499',
+      offerCount: '4',
+    },
+    aggregateRating: {
+      '@type': 'AggregateRating',
+      ratingValue: '4.8',
+      reviewCount: '120',
+    },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Sambid',
+    url: 'https://sambid.co',
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: 'https://sambid.co/opportunities?search={search_term_string}',
+      'query-input': 'required name=search_term_string',
+    },
+  },
+];
 
 const fadeInUp = {
   initial: { opacity: 0, y: 30 },
@@ -18,11 +73,19 @@ const staggerContainer = {
 
 export default function Home() {
   const { isAuthenticated } = useAuth();
+  const { getMonthly } = usePlans();
   const ctaTo = isAuthenticated ? '/dashboard' : '/signup';
   const ctaLabel = isAuthenticated ? 'Go to Dashboard' : 'Start Free Trial';
 
   return (
     <div className="overflow-hidden">
+      <SEOHead
+        title="Federal Contract Opportunity Alerts & SAM.gov Notifications"
+        description="Sambid delivers daily federal contract opportunities from SAM.gov, USASpending.gov & FPDS straight to your inbox. AI-matched alerts for small businesses. Start free — no credit card needed."
+        keywords="federal contract opportunities, SAM.gov alerts, government contracting software, federal procurement notifications, FPDS contract search, small business federal contracts, USASpending opportunities, federal RFP alerts"
+        canonical="https://sambid.co/"
+        jsonLd={HOME_JSON_LD}
+      />
 
       {/* ── Hero ── */}
       <section className="relative bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 text-white">
@@ -223,11 +286,14 @@ export default function Home() {
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {[
-              { name: 'Trial',      price: 'Free',  period: '3 days',  matches: '15 matches',  color: 'border-gray-200',   badge: null },
-              { name: 'Starter',    price: '$29',   period: '/month',  matches: '500/month',   color: 'border-blue-200',   badge: null },
-              { name: 'Pro',        price: '$49',   period: '/month',  matches: '3,000/month', color: 'border-indigo-400', badge: 'Most Popular' },
-              { name: 'Enterprise', price: '$99',   period: '/month',  matches: 'Unlimited',   color: 'border-amber-300',  badge: null },
-            ].map((plan, i) => (
+              { name: 'Trial',      key: null,           period: '3 days',  matches: '15 matches',  color: 'border-gray-200',   badge: null,           free: true },
+              { name: 'Starter',    key: 'starter',      period: '/month',  matches: '500/month',   color: 'border-blue-200',   badge: null,           free: false },
+              { name: 'Pro',        key: 'pro',          period: '/month',  matches: '3,000/month', color: 'border-indigo-400', badge: 'Most Popular', free: false },
+              { name: 'Enterprise', key: 'enterprise',   period: '/month',  matches: 'Unlimited',   color: 'border-amber-300',  badge: null,           free: false },
+            ].map((plan, i) => {
+              const mo = plan.key ? getMonthly(plan.key) : null;
+              const priceDisplay = plan.free ? 'Free' : mo != null ? `$${mo}` : '…';
+              return (
               <div key={i} className={`bg-white rounded-2xl border-2 ${plan.color} p-5 relative`}>
                 {plan.badge && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">
@@ -235,11 +301,11 @@ export default function Home() {
                   </span>
                 )}
                 <p className="text-sm font-semibold text-gray-500 mb-1">{plan.name}</p>
-                <p className="text-3xl font-bold text-gray-900">{plan.price}<span className="text-sm font-normal text-gray-500">{plan.period}</span></p>
+                <p className="text-3xl font-bold text-gray-900">{priceDisplay}<span className="text-sm font-normal text-gray-500">{plan.free ? '' : plan.period}</span></p>
                 <p className="text-sm text-indigo-600 font-medium mt-2">{plan.matches}</p>
                 <p className="text-xs text-gray-500 mt-1">SAM.gov contract matches</p>
               </div>
-            ))}
+            )})}
           </div>
 
           <div className="text-center mt-8">

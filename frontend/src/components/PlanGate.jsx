@@ -1,44 +1,62 @@
 // Reusable lock screen for plan-gated pages.
 // Usage: wrap with useUserPlan hook in the parent page, then render <PlanGate ... /> when plan insufficient.
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Lock, Sparkles, Zap, Crown } from 'lucide-react';
+import { paymentAPI } from '../services/api';
 
-const CONFIG = {
+const PLAN_STYLE = {
   starter: {
-    icon:    Zap,
-    iconBg:  'bg-blue-50',
-    iconColor:'text-blue-500',
-    badge:   'Starter Feature',
-    badgeBg: 'bg-blue-100 text-blue-700',
-    cta:     'Upgrade to Starter — $29/mo',
-    ctaBg:   'bg-blue-600 hover:bg-blue-700',
-    href:    '/pricing',
+    icon:      Zap,
+    iconBg:    'bg-blue-50',
+    iconColor: 'text-blue-500',
+    badge:     'Starter Feature',
+    badgeBg:   'bg-blue-100 text-blue-700',
+    ctaBg:     'bg-blue-600 hover:bg-blue-700',
+    href:      '/pricing',
   },
   pro: {
-    icon:    Sparkles,
-    iconBg:  'bg-indigo-50',
-    iconColor:'text-indigo-500',
-    badge:   'Pro Feature',
-    badgeBg: 'bg-indigo-100 text-indigo-700',
-    cta:     'Upgrade to Pro — $79/mo',
-    ctaBg:   'bg-indigo-600 hover:bg-indigo-700',
-    href:    '/pricing',
+    icon:      Sparkles,
+    iconBg:    'bg-indigo-50',
+    iconColor: 'text-indigo-500',
+    badge:     'Pro Feature',
+    badgeBg:   'bg-indigo-100 text-indigo-700',
+    ctaBg:     'bg-indigo-600 hover:bg-indigo-700',
+    href:      '/pricing',
   },
   enterprise: {
-    icon:    Crown,
-    iconBg:  'bg-amber-50',
-    iconColor:'text-amber-500',
-    badge:   'Enterprise Feature',
-    badgeBg: 'bg-amber-100 text-amber-700',
-    cta:     'Request Enterprise Access',
-    ctaBg:   'bg-amber-600 hover:bg-amber-700',
-    href:    '/contact',
+    icon:      Crown,
+    iconBg:    'bg-amber-50',
+    iconColor: 'text-amber-500',
+    badge:     'Enterprise Feature',
+    badgeBg:   'bg-amber-100 text-amber-700',
+    ctaBg:     'bg-amber-600 hover:bg-amber-700',
+    href:      '/contact',
   },
 };
 
 export default function PlanGate({ requiredPlan = 'pro', featureName, description }) {
-  const c = CONFIG[requiredPlan] || CONFIG.pro;
+  const [monthlyPrice, setMonthlyPrice] = useState(null);
+
+  useEffect(() => {
+    paymentAPI.getPlans()
+      .then(res => {
+        const plan = res.data?.data?.find(p => p.name === requiredPlan);
+        if (plan?.priceMonthly != null) setMonthlyPrice(plan.priceMonthly);
+      })
+      .catch(() => {});
+  }, [requiredPlan]);
+
+  const c = PLAN_STYLE[requiredPlan] || PLAN_STYLE.pro;
   const Icon = c.icon;
+
+  const planLabel = requiredPlan.charAt(0).toUpperCase() + requiredPlan.slice(1);
+
+  const ctaText = requiredPlan === 'enterprise'
+    ? 'Request Enterprise Access'
+    : monthlyPrice != null
+      ? `Upgrade to ${planLabel} — $${monthlyPrice}/mo`
+      : `Upgrade to ${planLabel}`;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
@@ -55,7 +73,7 @@ export default function PlanGate({ requiredPlan = 'pro', featureName, descriptio
         {featureName || 'Upgrade Required'}
       </h2>
       <p className="text-gray-500 max-w-md mb-7 text-sm leading-relaxed">
-        {description || `This feature is available on the ${requiredPlan.charAt(0).toUpperCase() + requiredPlan.slice(1)} plan and above.`}
+        {description || `This feature is available on the ${planLabel} plan and above.`}
       </p>
 
       <Link
@@ -63,7 +81,7 @@ export default function PlanGate({ requiredPlan = 'pro', featureName, descriptio
         className={`inline-flex items-center gap-2 ${c.ctaBg} text-white font-semibold px-6 py-3 rounded-xl transition-colors shadow-sm`}
       >
         <Icon className="w-4 h-4" />
-        {c.cta}
+        {ctaText}
       </Link>
 
       {requiredPlan !== 'free' && (

@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Check, Zap, Shield, Users, CreditCard, X, ArrowRight, Loader2 } from 'lucide-react';
 import PaymentModal from '../components/PaymentModal';
 import { authAPI, paymentAPI } from '../services/api';
+import SEOHead from '../components/SEOHead';
 
 // Yearly prices shown on the pricing page (20% off annual total).
 // These match priceYearly in the Plan model — keep in sync.
@@ -72,11 +73,14 @@ export default function Pricing() {
   };
 
   const handleUpgrade = (plan) => {
+    if (plan.name === 'free') {
+      navigate('/signup');
+      return;
+    }
     if (!isAuthenticated) {
       navigate('/login');
       return;
     }
-    if (plan.name === 'free') return;
 
     // All yearly paid plans → Annual Plan Request form (manual activation)
     if (billingCycle === 'yearly') {
@@ -91,7 +95,7 @@ export default function Pricing() {
 
   const getButtonStyle = (plan) => {
     if (plan.name === 'free') {
-      return 'bg-gray-100 text-gray-700 cursor-default';
+      return 'bg-amber-500 text-white hover:bg-amber-600';
     }
     if (plan.popular) {
       return 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg';
@@ -122,6 +126,12 @@ export default function Pricing() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-10 sm:py-12 md:py-16">
+      <SEOHead
+        title="Pricing — Federal Contract Alert Plans"
+        description="Choose the right Sambid plan for your business. Start with a 7-day free trial. Starter at $49/mo gets 10 daily matched opportunities. Pro at $99/mo gets 25. Enterprise is unlimited. No credit card for trial."
+        keywords="federal contracting software pricing, SAM.gov alert subscription, government contracting tool cost, federal opportunity tracker price, small business contracting plan"
+        canonical="https://sambid.co/pricing"
+      />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-8 sm:mb-12">
@@ -176,9 +186,16 @@ export default function Pricing() {
               )}
               
               <div className="p-6">
-                <h3 className="text-xl font-bold text-gray-900">{plan.displayName}</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-xl font-bold text-gray-900">{plan.displayName}</h3>
+                  {plan.name === 'free' && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                      7-Day Trial
+                    </span>
+                  )}
+                </div>
                 <p className="text-gray-500 text-sm mt-1">{plan.description}</p>
-                
+
                 <div className="mt-4">
                   <div className="flex items-end gap-1 flex-wrap">
                     <span className="text-4xl font-bold text-gray-900">{getPrice(plan)}</span>
@@ -209,7 +226,7 @@ export default function Pricing() {
                       className={`w-full mt-6 px-4 py-2.5 rounded-lg font-medium transition-all ${getButtonStyle(plan)}`}
                     >
                       {plan.name === 'free'
-                        ? 'Current Plan'
+                        ? 'Start Free Trial'
                         : billingCycle === 'yearly'
                           ? `Request ${plan.displayName} Annual`
                           : `Upgrade to ${plan.displayName}`}

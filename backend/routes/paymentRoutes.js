@@ -9,6 +9,7 @@ import {
   cancelSubscription,
   createPayPalPayment,
   capturePayPalPaymentHandler,
+  simulatePayPalCapture,
   getPlanStatus,
   createStripePayment,
   confirmStripePaymentHandler,
@@ -36,6 +37,7 @@ router.post('/cancel', cancelSubscription);
 // PayPal payment routes
 router.post('/paypal/create-order', createPayPalPayment);
 router.post('/paypal/capture', capturePayPalPaymentHandler);
+router.post('/paypal/simulate-capture', simulatePayPalCapture); // DEV ONLY
 
 // Stripe payment routes
 router.post('/stripe/create-intent', createStripePayment);

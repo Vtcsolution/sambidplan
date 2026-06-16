@@ -36,3 +36,11 @@ export const superAdminOnly = (req, res, next) => {
   }
   next();
 };
+
+// Admin or super_admin (excludes support role)
+export const adminOrSuperAdmin = (req, res, next) => {
+  if (!['admin', 'super_admin'].includes(req.admin?.role)) {
+    return res.status(403).json({ success: false, message: 'Admin access required.' });
+  }
+  next();
+};

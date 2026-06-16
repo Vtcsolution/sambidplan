@@ -234,8 +234,8 @@ export default function AdminUsers() {
   const planCounts = PLANS.slice(1).reduce((acc, p) => ({ ...acc, [p]: users.filter(u => u.plan === p).length }), {});
 
   return (
-    <div className="min-h-screen bg-gray-50 py-6 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="space-y-6">
+      <div>
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">

@@ -39,6 +39,7 @@ function EditModal({ plan, onClose, onSaved }) {
     priceMonthly: plan.priceMonthly ?? 0,
     priceYearly:  plan.priceYearly  ?? 0,
     order:        plan.order        ?? 0,
+    features: (plan.features || []).map(f => ({ name: f.name, included: f.included })),
     limits: {
       maxSavedOpportunities: plan.limits?.maxSavedOpportunities ?? 10,
       maxAlerts:             plan.limits?.maxAlerts             ?? 5,
@@ -49,6 +50,26 @@ function EditModal({ plan, onClose, onSaved }) {
   });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
+
+  const addFeature = () =>
+    setForm(f => ({ ...f, features: [...f.features, { name: '', included: true }] }));
+
+  const removeFeature = (i) =>
+    setForm(f => ({ ...f, features: f.features.filter((_, idx) => idx !== i) }));
+
+  const updateFeatureName = (i, val) =>
+    setForm(f => {
+      const features = [...f.features];
+      features[i] = { ...features[i], name: val };
+      return { ...f, features };
+    });
+
+  const toggleFeature = (i) =>
+    setForm(f => {
+      const features = [...f.features];
+      features[i] = { ...features[i], included: !features[i].included };
+      return { ...f, features };
+    });
 
   const set = (field) => (e) =>
     setForm(f => ({ ...f, [field]: field === 'priceMonthly' || field === 'priceYearly' || field === 'order'
@@ -181,6 +202,54 @@ function EditModal({ plan, onClose, onSaved }) {
             </div>
           </div>
 
+          {/* Features */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Features (shown on pricing page)</p>
+              <button
+                type="button"
+                onClick={addFeature}
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Feature
+              </button>
+            </div>
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {form.features.map((feature, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleFeature(i)}
+                    title={feature.included ? 'Included — click to exclude' : 'Excluded — click to include'}
+                    className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center border-2 transition-colors ${
+                      feature.included
+                        ? 'bg-green-500 border-green-500 text-white'
+                        : 'bg-white border-gray-300 text-gray-300'
+                    }`}
+                  >
+                    {feature.included ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                  </button>
+                  <input
+                    value={feature.name}
+                    onChange={e => updateFeatureName(i, e.target.value)}
+                    placeholder="Feature description…"
+                    className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeFeature(i)}
+                    className="shrink-0 p-1 text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {form.features.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-3">No features yet — click "Add Feature" to add one.</p>
+              )}
+            </div>
+          </div>
+
           {/* Limits */}
           <div className="space-y-3">
             <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Plan Limits</p>
@@ -240,6 +309,183 @@ function EditModal({ plan, onClose, onSaved }) {
   );
 }
 
+// ── Create Plan Modal ─────────────────────────────────────────────────────────
+function CreateModal({ onClose, onSaved }) {
+  const EMPTY = {
+    name: '', displayName: '', description: '',
+    priceMonthly: 0, priceYearly: 0, order: 0,
+    features: [],
+    limits: { maxSavedOpportunities: 10, maxAlerts: 5, aiProposals: false, prioritySupport: false, apiAccess: false },
+  };
+  const [form, setForm] = useState(EMPTY);
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+
+  const set = (field) => (e) =>
+    setForm(f => ({ ...f, [field]: ['priceMonthly','priceYearly','order'].includes(field) ? Number(e.target.value) : e.target.value }));
+
+  const setLimit = (field) => (e) =>
+    setForm(f => ({ ...f, limits: { ...f.limits, [field]: e.target.type === 'checkbox' ? e.target.checked : Number(e.target.value) } }));
+
+  const addFeature    = () => setForm(f => ({ ...f, features: [...f.features, { name: '', included: true }] }));
+  const removeFeature = (i) => setForm(f => ({ ...f, features: f.features.filter((_,idx) => idx !== i) }));
+  const updateFName   = (i, val) => setForm(f => { const features = [...f.features]; features[i] = { ...features[i], name: val }; return { ...f, features }; });
+  const toggleF       = (i) => setForm(f => { const features = [...f.features]; features[i] = { ...features[i], included: !features[i].included }; return { ...f, features }; });
+
+  const handleSave = async () => {
+    if (!form.name.trim())        return setError('Plan ID (name) is required.');
+    if (!form.displayName.trim()) return setError('Display name is required.');
+    if (!/^[a-z0-9_-]+$/.test(form.name.trim())) return setError('Plan ID must be lowercase letters, numbers, hyphens or underscores only.');
+    setSaving(true); setError('');
+    try {
+      await adminPanelAPI.createPlan({ ...form, name: form.name.trim().toLowerCase() });
+      onSaved(); onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to create plan.');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Create New Plan</h2>
+            <p className="text-xs text-gray-400 mt-0.5">This plan will appear on the public pricing page once active.</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+            </div>
+          )}
+
+          {/* Identity */}
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Plan Identity</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Plan ID <span className="text-red-500">*</span></label>
+                <input value={form.name} onChange={set('name')}
+                  placeholder="e.g. growth"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+                <p className="text-xs text-gray-400 mt-0.5">Lowercase, no spaces</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Display Name <span className="text-red-500">*</span></label>
+                <input value={form.displayName} onChange={set('displayName')}
+                  placeholder="e.g. Growth"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+              <input value={form.description} onChange={set('description')}
+                placeholder="e.g. For mid-size contractors"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
+              <input type="number" min="0" value={form.order} onChange={set('order')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+              <p className="text-xs text-gray-400 mt-0.5">Lower = appears first (Free=1, Starter=2, Pro=3, Enterprise=4)</p>
+            </div>
+          </div>
+
+          {/* Pricing */}
+          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Pricing</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Monthly Price ($)</label>
+                <input type="number" min="0" value={form.priceMonthly} onChange={set('priceMonthly')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Yearly Price ($)</label>
+                <input type="number" min="0" value={form.priceYearly} onChange={set('priceYearly')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+                {form.priceMonthly > 0 && form.priceYearly > 0 && (
+                  <p className="text-xs text-green-600 mt-0.5 font-semibold">
+                    Save {Math.round(((form.priceMonthly * 12 - form.priceYearly) / (form.priceMonthly * 12)) * 100)}% vs monthly
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Features */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Features</p>
+              <button type="button" onClick={addFeature} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                <Plus className="w-3.5 h-3.5" /> Add Feature
+              </button>
+            </div>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {form.features.map((feature, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <button type="button" onClick={() => toggleF(i)}
+                    className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center border-2 transition-colors ${feature.included ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-gray-300 text-gray-300'}`}>
+                    {feature.included ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                  </button>
+                  <input value={feature.name} onChange={e => updateFName(i, e.target.value)}
+                    placeholder="Feature description…"
+                    className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+                  <button type="button" onClick={() => removeFeature(i)} className="shrink-0 p-1 text-gray-400 hover:text-red-500">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {form.features.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-3">Click "Add Feature" to add plan highlights.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Limits */}
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Plan Limits</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Max Saved Opps (-1 = unlimited)</label>
+                <input type="number" min="-1" value={form.limits.maxSavedOpportunities} onChange={setLimit('maxSavedOpportunities')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Max Alerts (-1 = unlimited)</label>
+                <input type="number" min="-1" value={form.limits.maxAlerts} onChange={setLimit('maxAlerts')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {[{ field: 'aiProposals', label: 'AI Proposals' }, { field: 'prioritySupport', label: 'Priority Support' }, { field: 'apiAccess', label: 'API Access' }].map(({ field, label }) => (
+                <label key={field} className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.limits[field]} onChange={setLimit(field)}
+                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  <span className="text-sm text-gray-700">{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 pb-6 flex justify-end gap-3 border-t border-gray-100 pt-4">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {saving ? 'Creating…' : 'Create Plan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AdminPlans() {
   const [plans,    setPlans]    = useState([]);
@@ -247,6 +493,7 @@ export default function AdminPlans() {
   const [error,    setError]    = useState('');
   const [editPlan, setEditPlan] = useState(null);
   const [toast,    setToast]    = useState('');
+  const [showCreate, setShowCreate] = useState(false);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -299,11 +546,18 @@ export default function AdminPlans() {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Plan Pricing</h1>
           <p className="text-gray-500 text-sm mt-0.5">Manage subscription plans, monthly and yearly pricing, and plan limits.</p>
         </div>
-        <button onClick={loadPlans} disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 shrink-0 self-start sm:self-auto">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          <button onClick={loadPlans} disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+            <Plus className="w-4 h-4" />
+            Create Plan
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -502,6 +756,16 @@ export default function AdminPlans() {
           plan={editPlan}
           onClose={() => setEditPlan(null)}
           onSaved={handleSaved}
+        />
+      )}
+
+      {showCreate && (
+        <CreateModal
+          onClose={() => setShowCreate(false)}
+          onSaved={() => {
+            showToast('New plan created successfully.');
+            loadPlans();
+          }}
         />
       )}
     </div>

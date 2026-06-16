@@ -6,17 +6,17 @@ import {
   adminGetSupportWithdrawals,
   adminProcessWithdrawal,
 } from '../controllers/supportController.js';
-import { protectAdmin, superAdminOnly } from '../middleware/adminAuthMiddleware.js';
+import { protectAdmin, adminOrSuperAdmin } from '../middleware/adminAuthMiddleware.js';
 
 const router = express.Router();
 
-// Support member routes (any admin/support can access own stats)
-router.get('/stats',    protectAdmin, getSupportStats);
+// Support member routes — any logged-in admin/support member can access their own stats
+router.get('/stats',     protectAdmin, getSupportStats);
 router.post('/withdraw', protectAdmin, requestSupportWithdrawal);
 
-// Admin-only: view all support member activities
-router.get('/admin/all',             protectAdmin, superAdminOnly, adminGetAllSupportStats);
-router.get('/admin/withdrawals',     protectAdmin, superAdminOnly, adminGetSupportWithdrawals);
-router.put('/admin/withdrawals/:id', protectAdmin, superAdminOnly, adminProcessWithdrawal);
+// Admin routes — admin or super_admin can view and process support team data
+router.get('/admin/all',             protectAdmin, adminOrSuperAdmin, adminGetAllSupportStats);
+router.get('/admin/withdrawals',     protectAdmin, adminOrSuperAdmin, adminGetSupportWithdrawals);
+router.put('/admin/withdrawals/:id', protectAdmin, adminOrSuperAdmin, adminProcessWithdrawal);
 
 export default router;

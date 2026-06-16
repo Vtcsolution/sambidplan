@@ -3,6 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { CheckCircle, AlertCircle, Loader2, ArrowRight, Calendar, Shield, Clock, Star, CreditCard, FileText } from 'lucide-react';
 import { paymentAPI } from '../services/api';
 import PayPalPayment from '../components/PayPalPayment';
+import SEOHead from '../components/SEOHead';
 
 // Yearly prices = 20% off monthly×12. Keep in sync with backend/models/Plan.js.
 const PLAN_INFO = {
@@ -124,6 +125,7 @@ export default function AnnualPlanRequest() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 py-10 px-4">
+      <SEOHead title="Annual Plan Request — Sambid" noindex={true} />
       <div className="max-w-2xl mx-auto">
 
         {/* Header */}

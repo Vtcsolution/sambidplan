@@ -1,6 +1,7 @@
 // frontend/src/pages/Signup.jsx
 import { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import SEOHead from '../components/SEOHead';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Card from '../components/Card';
@@ -273,6 +274,12 @@ export default function Signup({ setIsAuthenticated, setUser }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-indigo-50 py-10 sm:py-12 px-4 sm:px-6 lg:px-8">
+      <SEOHead
+        title="Sign Up Free — Start Your Federal Contract Trial"
+        description="Create your free Sambid account and start receiving AI-matched federal contract opportunities from SAM.gov in minutes. 7-day free trial, no credit card required."
+        keywords="sign up federal contracting tool, create account SAM.gov alerts, free federal contract notifications, register Sambid"
+        canonical="https://sambid.co/signup"
+      />
       <div className="max-w-md w-full">
         <div className="text-center mb-5 sm:mb-6">
           <div className="inline-flex items-center gap-2 mb-3">
@@ -409,24 +416,39 @@ export default function Signup({ setIsAuthenticated, setUser }) {
                   </div>
                 </div>
 
-                {/* Referral Code */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Referral Code <span className="text-gray-400 font-normal">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="referralCode"
-                    value={formData.referralCode}
-                    onChange={handleChange}
-                    placeholder="Enter referral code (e.g. AB12CD34)"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase tracking-widest focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    maxLength={8}
-                  />
-                  {formData.referralCode && (
-                    <p className="text-xs text-green-600 mt-1">Referral code applied!</p>
-                  )}
-                </div>
+                {/* Support referral banner — shown when URL has ?supportRef= */}
+                {formData.supportRef && (
+                  <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
+                    <span className="text-lg">🎉</span>
+                    <div>
+                      <p className="text-sm font-semibold text-indigo-800">Support referral applied!</p>
+                      <p className="text-xs text-indigo-600 mt-0.5">
+                        You were referred by a Sambid support member. You'll receive a <strong>20% discount</strong> on your first plan.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Referral Code — only shown when NOT a support referral */}
+                {!formData.supportRef && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Referral Code <span className="text-gray-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="referralCode"
+                      value={formData.referralCode}
+                      onChange={handleChange}
+                      placeholder="Enter referral code (e.g. AB12CD34)"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase tracking-widest focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      maxLength={8}
+                    />
+                    {formData.referralCode && (
+                      <p className="text-xs text-green-600 mt-1">Referral code applied!</p>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-start">
                   <input

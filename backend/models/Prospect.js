@@ -67,6 +67,9 @@ const ProspectSchema = new mongoose.Schema({
   },
   notes: { type: String },
 
+  // Small business flag
+  isSmallBusiness: { type: Boolean, default: false, index: true },
+
   // Source tracking
   dataSource: { type: [String], default: [], index: true },
 
@@ -100,8 +103,8 @@ ProspectSchema.index(
 );
 
 ProspectSchema.pre('save', function (next) {
-  this.priority = this.totalAwardAmount >= 1_000_000 ? 'high'
-    : this.totalAwardAmount >= 100_000 ? 'medium' : 'low';
+  this.priority = this.totalAwardAmount >= 500_000 ? 'high'
+    : this.totalAwardAmount >= 50_000 ? 'medium' : 'low';
   next();
 });
 

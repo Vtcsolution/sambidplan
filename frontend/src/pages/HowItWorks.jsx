@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
+import { usePlans } from '../hooks/usePlans';
+import SEOHead from '../components/SEOHead';
 import {
   UserPlus, Search, Bell, TrendingUp, CheckCircle, ArrowRight,
   Shield, Clock, Target, BarChart2, FileText, Brain, Zap, Star
@@ -72,10 +74,17 @@ const features = [
 
 export default function HowItWorks() {
   const { isAuthenticated } = useAuth();
+  const { getMonthly, getYearly } = usePlans();
   const ctaTo = isAuthenticated ? '/dashboard' : '/signup';
 
   return (
     <div className="bg-white">
+      <SEOHead
+        title="How It Works — Find Federal Contracts in 3 Steps"
+        description="Sambid scans SAM.gov, USASpending.gov, and FPDS daily, matches contracts to your NAICS codes using AI, and sends alerts straight to your inbox. See exactly how federal contract discovery works."
+        keywords="how to find federal contracts, SAM.gov search guide, federal contracting process, government contract notification system, NAICS code matching, federal RFP discovery"
+        canonical="https://sambid.co/how-it-works"
+      />
 
       {/* Hero */}
       <section className="relative bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 text-white py-12 sm:py-16 md:py-20 overflow-hidden">
@@ -199,21 +208,29 @@ export default function HowItWorks() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[
-                  { plan: 'Trial',      matches: '15 total',        window: 'Last 3 days',  price: 'Free (3 days)' },
-                  { plan: 'Free',       matches: '50/month',        window: 'Last 7 days',  price: 'Free' },
-                  { plan: 'Starter',    matches: '500/month',       window: 'Last 14 days', price: '$29/mo' },
-                  { plan: 'Pro',        matches: '3,000/month',     window: 'Last 60 days', price: '$79/mo' },
-                  { plan: 'Enterprise', matches: 'Unlimited',       window: 'Last 180 days', price: '$499/mo · $4,788/yr' },
-                ].map((row, i) => (
+                  { plan: 'Trial',      matches: '15 total',        window: 'Last 3 days',   key: null,           freeLabel: 'Free (3 days)' },
+                  { plan: 'Free',       matches: '50/month',        window: 'Last 7 days',   key: null,           freeLabel: 'Free' },
+                  { plan: 'Starter',    matches: '500/month',       window: 'Last 14 days',  key: 'starter',      freeLabel: null },
+                  { plan: 'Pro',        matches: '3,000/month',     window: 'Last 60 days',  key: 'pro',          freeLabel: null },
+                  { plan: 'Enterprise', matches: 'Unlimited',       window: 'Last 180 days', key: 'enterprise',   freeLabel: null },
+                ].map((row, i) => {
+                  const mo = row.key ? getMonthly(row.key) : null;
+                  const yr = row.key === 'enterprise' ? getYearly(row.key) : null;
+                  const priceLabel = row.freeLabel
+                    ? row.freeLabel
+                    : row.key === 'enterprise' && mo != null && yr != null
+                      ? `$${mo}/mo · $${yr}/yr`
+                      : mo != null ? `$${mo}/mo` : '…';
+                  return (
                   <tr key={i} className={i === 2 ? 'bg-indigo-50' : ''}>
                     <td className={`py-3 pr-4 font-semibold ${i === 2 ? 'text-indigo-700' : 'text-gray-900'}`}>
                       {row.plan} {i === 2 && <span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full ml-1">Popular</span>}
                     </td>
                     <td className="py-3 pr-4 text-gray-700">{row.matches}</td>
                     <td className="py-3 pr-4 text-gray-700">{row.window}</td>
-                    <td className="py-3 text-gray-700 font-medium">{row.price}</td>
+                    <td className="py-3 text-gray-700 font-medium">{priceLabel}</td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>

@@ -272,7 +272,16 @@ export const createPayPalPayment = async (req, res) => {
       return res.status(404).json({ success: false, message: `Plan "${planName}" not found` });
     }
 
-    const fullAmount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+    let fullAmount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+
+    // Apply 20% support referral discount if user was referred by a support member
+    let supportDiscount = 0;
+    const freshUser = await User.findById(user._id).select('supportReferredBy');
+    if (freshUser.supportReferredBy) {
+      supportDiscount = Math.round(fullAmount * SUPPORT_DISCOUNT_RATE * 100) / 100;
+      fullAmount      = Math.round((fullAmount - supportDiscount) * 100) / 100;
+      console.log(`🎁 Support referral discount $${supportDiscount} applied for ${user.email}`);
+    }
 
     // Validate and compute referral balance reservation (not deducted until capture succeeds)
     let referralReserved = 0;
@@ -287,29 +296,82 @@ export const createPayPalPayment = async (req, res) => {
     }
     const chargeAmount = Math.round((fullAmount - referralReserved) * 100) / 100;
 
-    const invoice = new Invoice({
+    // Reuse an existing pending PayPal invoice for this user+plan to avoid orphans
+    const existingInvoice = await Invoice.findOne({
       user: user._id,
-      plan: planName,
-      billingCycle,
-      amount: fullAmount,
-      currency: 'USD',
       status: 'pending',
-      paymentMethod: 'paypal'
+      plan: planName,
+      paymentMethod: 'paypal',
     });
 
-    if (referralReserved > 0) {
-      invoice.metadata = new Map([['referralBalanceReserved', referralReserved.toString()]]);
+    let invoice;
+    if (existingInvoice) {
+      invoice = existingInvoice;
+      // Update amount in case plan price changed or discount changed
+      invoice.amount = fullAmount;
+      invoice.billingCycle = billingCycle;
+      if (referralReserved > 0) {
+        invoice.metadata = new Map([['referralBalanceReserved', referralReserved.toString()]]);
+      }
+      await invoice.save();
+      console.log(`♻️  Reusing existing pending invoice: ${invoice.invoiceNumber}`);
+    } else {
+      invoice = new Invoice({
+        user: user._id,
+        plan: planName,
+        billingCycle,
+        amount: fullAmount,
+        currency: 'USD',
+        status: 'pending',
+        paymentMethod: 'paypal',
+        ...(supportDiscount > 0 && { supportDiscount, supportMember: freshUser.supportReferredBy }),
+      });
+      if (referralReserved > 0) {
+        invoice.metadata = new Map([['referralBalanceReserved', referralReserved.toString()]]);
+      }
+      try {
+        await invoice.save();
+        console.log(`✅ Invoice created: ${invoice.invoiceNumber}${referralReserved > 0 ? ` (referral reserved: $${referralReserved})` : ''}`);
+      } catch (saveErr) {
+        // E11000: old non-partial index rejects a 2nd null paypalOrderId — fall back to reusing
+        // any existing pending invoice for this user (across all plans) rather than crashing.
+        if (saveErr.code === 11000) {
+          console.warn('⚠️  E11000 on invoice save (old index) — falling back to existing pending invoice');
+          invoice = await Invoice.findOne({ user: user._id, status: 'pending', paymentMethod: 'paypal' });
+          if (!invoice) throw saveErr; // nothing to fall back to — surface the real error
+          invoice.plan = planName;
+          invoice.billingCycle = billingCycle;
+          invoice.amount = fullAmount;
+          if (referralReserved > 0) {
+            invoice.metadata = new Map([['referralBalanceReserved', referralReserved.toString()]]);
+          }
+          // Save without triggering the unique index (plan/amount update only, paypalOrderId stays null)
+          await Invoice.updateOne({ _id: invoice._id }, {
+            $set: { plan: planName, billingCycle, amount: fullAmount }
+          });
+          console.log(`♻️  Fell back to existing pending invoice: ${invoice.invoiceNumber}`);
+        } else {
+          throw saveErr;
+        }
+      }
     }
 
-    await invoice.save();
-    console.log(`✅ Invoice created: ${invoice.invoiceNumber}${referralReserved > 0 ? ` (referral reserved: $${referralReserved})` : ''}`);
-
-    const result = await createPayPalOrder(chargeAmount, 'USD', {
-      userId: user._id.toString(),
-      userEmail: user.email,
-      planName: planName,
-      billingCycle: billingCycle
-    });
+    let result;
+    try {
+      result = await createPayPalOrder(chargeAmount, 'USD', {
+        userId: user._id.toString(),
+        userEmail: user.email,
+        planName: planName,
+        billingCycle: billingCycle
+      });
+    } catch (paypalError) {
+      // PayPal failed — delete the invoice so it doesn't show as a ghost pending entry
+      if (!existingInvoice) {
+        await invoice.deleteOne();
+        console.warn(`🗑️  Deleted orphan invoice ${invoice.invoiceNumber} after PayPal order failure`);
+      }
+      throw paypalError;
+    }
 
     res.json({
       success: true,
@@ -550,11 +612,14 @@ export const adminVerifyPayment = async (req, res) => {
     const user = await User.findById(invoice.user);
     const oldPlan = user.plan;
     user.plan = invoice.plan;
-    
+
     const duration = invoice.billingCycle === 'yearly' ? 365 : 30;
-    user.planExpiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+    user.planExpiresAt    = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+    user.isTrialActive    = false;
+    user.dailyMatchesUsed = 0;
+    user.lastMatchReset   = new Date();
     await user.save();
-    
+
     console.log(`✅ User ${user.email} upgraded from ${oldPlan} to ${invoice.plan} (admin verify)`);
 
     // Credit referral commission (fire-and-forget)
@@ -562,6 +627,10 @@ export const adminVerifyPayment = async (req, res) => {
       .catch(e => console.error('Referral commission (admin verify):', e.message));
     creditSupportCommission(user._id, invoice._id, invoice.plan, invoice.amount)
       .catch(e => console.error('Support commission (admin verify):', e.message));
+
+    // Distribute today's opportunities immediately
+    distributeToUser(user)
+      .catch(e => console.error('Distribution error (admin verify):', e.message));
 
     const plan = await Plan.findOne({ name: invoice.plan });
     
@@ -588,8 +657,16 @@ export const adminVerifyPayment = async (req, res) => {
       } catch (notifError) {
         console.error('Failed to create notification:', notifError);
       }
+
+      // User confirmation email (fire-and-forget)
+      sendPaymentConfirmationEmail({
+        name: user.name, email: user.email,
+        planName: invoice.plan, amount: invoice.amount,
+        billingCycle: invoice.billingCycle, paymentMethod: invoice.paymentMethod || 'manual',
+        invoiceNumber: invoice.invoiceNumber,
+      }).catch(e => console.error('User payment confirmation email failed (admin verify):', e.message));
     }
-    
+
     console.log('\n' + '='.repeat(70));
     console.log('🎉 PLAN UPGRADED SUCCESSFULLY');
     console.log('='.repeat(70));
@@ -606,6 +683,79 @@ export const adminVerifyPayment = async (req, res) => {
     
   } catch (error) {
     console.error('❌ Admin verify payment error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Simulate a successful PayPal capture — DEV ONLY
+// @route   POST /api/payment/paypal/simulate-capture
+export const simulatePayPalCapture = async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ success: false, message: 'Not available in production.' });
+  }
+
+  const { invoiceId } = req.body;
+  if (!invoiceId) {
+    return res.status(400).json({ success: false, message: 'invoiceId is required' });
+  }
+
+  try {
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    if (invoice.status === 'paid') {
+      return res.status(409).json({ success: false, message: 'Invoice already paid.', duplicate: true });
+    }
+
+    const fakeOrderId = `SIMULATED-${Date.now()}`;
+
+    invoice.status          = 'paid';
+    invoice.paidAt          = new Date();
+    invoice.paypalOrderId   = fakeOrderId;
+    invoice.paypalCaptureId = `CAPTURE-${Date.now()}`;
+    invoice.paymentMethod   = 'paypal';
+    await invoice.save();
+
+    const user    = await User.findById(invoice.user);
+    const oldPlan = user.plan;
+    user.plan     = invoice.plan;
+    const duration = invoice.billingCycle === 'yearly' ? 365 : 30;
+    user.planExpiresAt  = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+    user.isTrialActive  = false;
+    user.dailyMatchesUsed = 0;
+    user.lastMatchReset = new Date();
+    await user.save();
+
+    console.log(`🧪 [DEV] Simulated PayPal capture: ${user.email} upgraded ${oldPlan} → ${invoice.plan}`);
+
+    creditReferralCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Referral commission (simulate):', e.message));
+    creditSupportCommission(user._id, invoice._id, invoice.plan, invoice.amount)
+      .catch(e => console.error('Support commission (simulate):', e.message));
+
+    try {
+      const { distributeToUser } = await import('../services/schedulerService.js');
+      await distributeToUser(user);
+    } catch (distErr) {
+      console.error('Distribution error after simulated upgrade:', distErr.message);
+    }
+
+    createUserNotification(
+      user._id,
+      'plan_purchased',
+      `${invoice.plan.charAt(0).toUpperCase() + invoice.plan.slice(1)} plan activated!`,
+      `Your simulated PayPal payment of $${invoice.amount} was successful.`,
+      '/dashboard'
+    );
+
+    res.json({
+      success:     true,
+      message:     `[DEV] Simulated payment — ${invoice.plan} plan activated!`,
+      plan:        invoice.plan,
+      planExpires: user.planExpiresAt,
+      invoice:     { invoiceNumber: invoice.invoiceNumber, amount: invoice.amount, paidAt: invoice.paidAt },
+    });
+  } catch (error) {
+    console.error('Simulate capture error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -863,11 +1013,14 @@ export const payoneerWebhook = async (req, res) => {
 
         const user = await User.findById(invoice.user);
         if (user) {
-          user.plan = invoice.plan;
-          const duration = invoice.billingCycle === 'yearly' ? 365 : 30;
-          user.planExpiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
-          user.isTrialActive = false;
+          user.plan             = invoice.plan;
+          const duration        = invoice.billingCycle === 'yearly' ? 365 : 30;
+          user.planExpiresAt    = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+          user.isTrialActive    = false;
+          user.dailyMatchesUsed = 0;
+          user.lastMatchReset   = new Date();
           await user.save();
+          distributeToUser(user).catch(() => {});
           console.log(`✅ Webhook: ${user.email} upgraded to ${invoice.plan} via Payoneer`);
         }
       }

@@ -190,6 +190,9 @@ export const supportAPI = {
   adminProcess:        (id, data)  => adminApi.put(`/support/admin/withdrawals/${id}`, data),
 };
 
+// alias used by AdminSupportEarnings (same as supportAPI)
+export { supportAPI as supportEarningsAPI };
+
 // ── Partner application routes ────────────────────────────────────────────────
 export const partnerAPI = {
   listApplications:  (status) => adminApi.get('/partner/admin/applications', { params: { status } }),

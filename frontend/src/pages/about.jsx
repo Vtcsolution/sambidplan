@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import { Target, Heart, Lightbulb, Shield, TrendingUp, ArrowRight, Search, Globe, CheckCircle } from 'lucide-react';
+import SEOHead from '../components/SEOHead';
 
 const values = [
   { icon: Target,    title: 'Accuracy First',       description: 'Every contract match is filtered to your exact NAICS codes. We surface what\'s relevant — nothing else.' },
@@ -24,6 +25,12 @@ export default function About() {
 
   return (
     <div className="bg-white">
+      <SEOHead
+        title="About Sambid — Our Mission to Help Federal Contractors Win"
+        description="Sambid was built to level the playing field for small and mid-size businesses competing for US federal contracts. Learn about our mission, our team, and why we built the smartest federal contract alert platform."
+        keywords="about Sambid, federal contracting company, government contract alert startup, small business federal contracting tools, federal procurement platform mission"
+        canonical="https://sambid.co/about"
+      />
 
       {/* Hero */}
       <section className="relative bg-gradient-to-r from-indigo-600 to-purple-700 text-white py-20 sm:py-24">

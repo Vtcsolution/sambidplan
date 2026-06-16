@@ -85,8 +85,8 @@ export const createPayPalOrder = async (amount, currency = 'USD', metadata = {})
           brand_name:          'Sambid Notify',
           shipping_preference: 'NO_SHIPPING',
           user_action:         'PAY_NOW',
-          return_url:          `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/success`,
-          cancel_url:          `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pricing`
+          return_url:          `${process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : 'http://localhost:5173'}/payment/success`,
+          cancel_url:          `${process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : 'http://localhost:5173'}/pricing`
         }
       },
       { headers: await headers() }

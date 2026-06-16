@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { Lock, Eye, EyeOff, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { authAPI } from '../services/api';
+import SEOHead from '../components/SEOHead';
 
 export default function ResetPassword() {
   const location = useLocation();
@@ -56,6 +57,7 @@ export default function ResetPassword() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50 py-12 px-4">
+      <SEOHead title="Reset Password — Sambid" noindex={true} />
       <div className="max-w-md w-full">
 
         <div className="text-center mb-8">

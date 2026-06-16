@@ -221,7 +221,7 @@ export default function AdminSuggestions() {
   const total = Object.values(statusCounts).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
         <div className="flex items-center gap-3 min-w-0">

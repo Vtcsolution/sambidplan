@@ -54,7 +54,6 @@ const invoiceSchema = new mongoose.Schema({
   paypalOrderId: {
     type: String,
     default: null,
-    sparse: true   // allows multiple null values while enforcing uniqueness on non-null
   },
   paypalCaptureId: {
     type: String,
@@ -72,8 +71,16 @@ const invoiceSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Unique index on PayPal order ID (sparse = ignore null values)
-invoiceSchema.index({ paypalOrderId: 1 }, { unique: true, sparse: true });
+// Unique index on PayPal order ID — PARTIAL so it only applies to real
+// (string) order IDs. Pending invoices store paypalOrderId: null, and a plain
+// sparse unique index still rejects duplicate *explicit* nulls (sparse only
+// skips MISSING fields, not null values) — which caused E11000 on the 2nd
+// unpaid invoice. A partial filter on { $type: 'string' } excludes null/missing
+// entirely while still preventing double-capture of the same real order ID.
+invoiceSchema.index(
+  { paypalOrderId: 1 },
+  { unique: true, partialFilterExpression: { paypalOrderId: { $type: 'string' } } }
+);
 
 // Generate invoice number before saving
 invoiceSchema.pre('save', async function(next) {
@@ -84,6 +91,38 @@ invoiceSchema.pre('save', async function(next) {
   }
   next();
 });
+
+// Self-healing index migration — runs on server startup (called from server.js
+// after the DB connects). On databases that still have the OLD non-partial
+// paypalOrderId index (which rejects a 2nd invoice with paypalOrderId: null and
+// throws E11000), this drops it and recreates it as a partial unique index.
+// Idempotent: a no-op once the partial index is in place. Wrapped so a failure
+// here never blocks startup.
+export async function ensureInvoiceIndexes() {
+  try {
+    const col = mongoose.connection.db.collection('invoices');
+    const want = { paypalOrderId: { $type: 'string' } };
+    const indexes = await col.indexes();
+    const existing = indexes.find(i => i.name === 'paypalOrderId_1');
+    const isPartial =
+      existing?.partialFilterExpression &&
+      JSON.stringify(existing.partialFilterExpression) === JSON.stringify(want);
+
+    if (existing && !isPartial) {
+      console.log('🔧 Migrating invoices.paypalOrderId index → partial unique…');
+      await col.dropIndex('paypalOrderId_1');
+    }
+    if (!existing || !isPartial) {
+      await col.createIndex(
+        { paypalOrderId: 1 },
+        { unique: true, partialFilterExpression: want, name: 'paypalOrderId_1' }
+      );
+      console.log('✅ invoices.paypalOrderId partial unique index ensured.');
+    }
+  } catch (err) {
+    console.error('⚠️  ensureInvoiceIndexes failed (non-fatal):', err.message);
+  }
+}
 
 const Invoice = mongoose.model('Invoice', invoiceSchema);
 export default Invoice;

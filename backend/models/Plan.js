@@ -4,7 +4,8 @@ const planSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    enum: ['free', 'starter', 'pro', 'enterprise']
+    trim: true,
+    lowercase: true,
   },
   displayName: {
     type: String,
@@ -45,23 +46,25 @@ const planSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Pre-defined plans
+// Pre-defined plans — features & descriptions sync to DB on every server start.
+// Prices are only set on first insert (admin may customise them via the panel).
 const defaultPlans = [
   {
     name: 'free',
-    displayName: 'Free',
-    description: 'Perfect for getting started',
+    displayName: 'Free Trial',
+    description: '7-day free trial — no credit card required',
     priceMonthly: 0,
     priceYearly: 0,
     features: [
-      { name: '5 Alerts per month', included: true },
-      { name: 'Basic contract search', included: true },
-      { name: 'Email notifications', included: true },
-      { name: 'Save up to 10 opportunities', included: true },
-      { name: 'Basic match scoring', included: true },
-      { name: 'AI proposal generation', included: false },
-      { name: 'Priority support', included: false },
-      { name: 'API access', included: false }
+      { name: '7-day free trial (no credit card)',   included: true  },
+      { name: 'Up to 3 new opportunities per day',   included: true  },
+      { name: 'SAM.gov contract search',             included: true  },
+      { name: 'Email notifications',                 included: true  },
+      { name: 'Save up to 10 opportunities',         included: true  },
+      { name: 'Basic NAICS match scoring',           included: true  },
+      { name: 'AI proposal tools',                   included: false },
+      { name: 'Priority support',                    included: false },
+      { name: 'API access',                          included: false },
     ],
     limits: {
       maxSavedOpportunities: 10,
@@ -76,17 +79,17 @@ const defaultPlans = [
     name: 'starter',
     displayName: 'Starter',
     description: 'For growing contractors',
-    priceMonthly: 29,
-    priceYearly: 278,   // 20% off ($29×12=$348 → $278)
+    priceMonthly: 49,
+    priceYearly: 470,   // ~20% off ($49×12=$588 → $470)
     features: [
-      { name: '50 Alerts per month', included: true },
-      { name: 'Advanced contract search', included: true },
-      { name: 'Email + SMS notifications', included: true },
-      { name: 'Save up to 100 opportunities', included: true },
-      { name: 'Advanced AI matching', included: true },
-      { name: 'AI proposal generation', included: false },
-      { name: 'Priority email support', included: true },
-      { name: 'API access', included: false }
+      { name: '10 new matched opportunities daily',  included: true  },
+      { name: 'SAM.gov + FPDS contract search',      included: true  },
+      { name: 'Email & SMS notifications',           included: true  },
+      { name: 'Save up to 100 opportunities',        included: true  },
+      { name: 'Advanced NAICS AI matching',          included: true  },
+      { name: 'AI proposal generation',              included: false },
+      { name: 'Priority email support',              included: true  },
+      { name: 'API access',                          included: false },
     ],
     limits: {
       maxSavedOpportunities: 100,
@@ -101,17 +104,17 @@ const defaultPlans = [
     name: 'pro',
     displayName: 'Pro',
     description: 'For established federal contractors',
-    priceMonthly: 79,
-    priceYearly: 758,   // 20% off ($79×12=$948 → $758)
+    priceMonthly: 99,
+    priceYearly: 950,   // ~20% off ($99×12=$1,188 → $950)
     features: [
-      { name: 'Unlimited alerts', included: true },
-      { name: 'Real-time tracking', included: true },
-      { name: 'All notification channels', included: true },
-      { name: 'Unlimited saved opportunities', included: true },
-      { name: 'Premium AI matching', included: true },
-      { name: 'AI proposal generation', included: true },
-      { name: '24/7 Priority support', included: true },
-      { name: 'Full API access', included: true }
+      { name: '25 new matched opportunities daily',  included: true  },
+      { name: 'SAM.gov + FPDS + USASpending search', included: true  },
+      { name: 'All notification channels',           included: true  },
+      { name: 'Unlimited saved opportunities',       included: true  },
+      { name: 'Premium AI matching & scoring',       included: true  },
+      { name: 'AI proposal generation',              included: true  },
+      { name: '24/7 Priority support',               included: true  },
+      { name: 'Full API access',                     included: true  },
     ],
     limits: {
       maxSavedOpportunities: -1,
@@ -125,20 +128,20 @@ const defaultPlans = [
   {
     name: 'enterprise',
     displayName: 'Enterprise',
-    description: 'For large organizations',
+    description: 'For large organizations & teams',
     priceMonthly: 499,
-    priceYearly: 4788,  // 20% off ($499×12=$5,988 → $4,788 ≈ $399/mo)
+    priceYearly: 4788,  // ~20% off ($499×12=$5,988 → $4,788 ≈ $399/mo)
     features: [
-      { name: 'Unlimited alerts', included: true },
-      { name: 'Real-time tracking', included: true },
-      { name: 'All notification channels', included: true },
-      { name: 'Unlimited saved opportunities', included: true },
-      { name: 'Premium AI matching', included: true },
-      { name: 'AI proposal generation', included: true },
-      { name: '24/7 Priority support', included: true },
-      { name: 'Full API access', included: true },
-      { name: 'Dedicated account manager', included: true },
-      { name: 'Custom integration', included: true }
+      { name: 'Unlimited daily opportunities',       included: true  },
+      { name: 'SAM.gov + FPDS + USASpending search', included: true  },
+      { name: 'All notification channels',           included: true  },
+      { name: 'Unlimited saved opportunities',       included: true  },
+      { name: 'Premium AI matching & scoring',       included: true  },
+      { name: 'AI proposal generation',              included: true  },
+      { name: '24/7 Priority support',               included: true  },
+      { name: 'Full API access',                     included: true  },
+      { name: 'Dedicated account manager',           included: true  },
+      { name: 'Custom integrations',                 included: true  },
     ],
     limits: {
       maxSavedOpportunities: -1,
@@ -165,15 +168,25 @@ export const initializePlans = async () => {
     await Plan.insertMany(defaultPlans);
     console.log('✅ Default plans created');
   } else {
-    // Insert any missing plans; preserve prices already set by admin (only set on insert)
     for (const def of defaultPlans) {
       const exists = await Plan.findOne({ name: def.name });
       if (!exists) {
         await Plan.create(def);
         console.log(`✅ Created missing plan: ${def.name}`);
+      } else {
+        // Sync features, description, displayName, and order — but NEVER touch prices
+        // (admin may have customised priceMonthly / priceYearly via the panel)
+        await Plan.updateOne({ name: def.name }, {
+          $set: {
+            displayName: def.displayName,
+            description: def.description,
+            features:    def.features,
+            order:       def.order,
+          },
+        });
       }
     }
-    console.log('✅ Plans checked (existing prices preserved, missing plans inserted)');
+    console.log('✅ Plans synced (features updated, prices preserved)');
   }
 };
 

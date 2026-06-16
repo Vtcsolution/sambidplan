@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import api from '../services/api';
+import SEOHead from '../components/SEOHead';
 
 export default function VerifyEmail() {
   const { token } = useParams();
@@ -29,6 +30,7 @@ export default function VerifyEmail() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <SEOHead title="Verify Email — Sambid" noindex={true} />
       <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-10 text-center">
         {status === 'loading' && (
           <>

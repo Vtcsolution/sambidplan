@@ -465,6 +465,7 @@ export default function AdminCompanies() {
   const [priorityFilter, setPriorityFilter] = useState('');
   const [sourceFilter,   setSourceFilter]   = useState('');
   const [page,           setPage]           = useState(1);
+  const [limit,          setLimit]          = useState(50);
   const [totalPages,     setTotalPages]     = useState(1);
   const [total,          setTotal]          = useState(0);
 
@@ -472,7 +473,7 @@ export default function AdminCompanies() {
   const statsInterval = useRef(null);
   const prevSyncing   = useRef(false);
 
-  const LIMIT = 50;
+  const PAGE_SIZE_OPTIONS = [20, 50, 100, 500, 1000];
   const rateLimitCountdown = useCountdown(stats?.rateLimitedUntil);
 
   const loadCompanies = useCallback(async (pg = 1) => {
@@ -481,7 +482,7 @@ export default function AdminCompanies() {
     try {
       const res = await adminPanelAPI.getCompanies({
         page:     pg,
-        limit:    LIMIT,
+        limit,
         search:   search.trim()         || undefined,
         naics:    naicsFilter.trim()    || undefined,
         state:    stateFilter           || undefined,
@@ -497,7 +498,7 @@ export default function AdminCompanies() {
     } finally {
       setLoading(false);
     }
-  }, [search, naicsFilter, stateFilter, priorityFilter, sourceFilter]);
+  }, [search, naicsFilter, stateFilter, priorityFilter, sourceFilter, limit]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -537,7 +538,7 @@ export default function AdminCompanies() {
           showToast('Sync complete! Companies updated.');
           setPage(1);
           // use a fresh load call directly
-          adminPanelAPI.getCompanies({ page: 1, limit: 50 }).then(r => {
+          adminPanelAPI.getCompanies({ page: 1, limit }).then(r => {
             setCompanies(r.data.data || []);
             setTotalPages(r.data.pagination?.pages || 1);
             setTotal(r.data.pagination?.total || 0);
@@ -699,7 +700,7 @@ export default function AdminCompanies() {
   const breakdown = sourceStats?.breakdown;
 
   return (
-    <div className="p-4 sm:p-6 max-w-screen-2xl mx-auto">
+    <div className="space-y-6 w-full">
 
       {/* Toast */}
       {toast && (
@@ -999,7 +1000,7 @@ export default function AdminCompanies() {
 
         {total > 0 && (
           <p className="text-xs text-gray-400 mt-2">
-            Showing {((page - 1) * LIMIT) + 1}–{Math.min(page * LIMIT, total)} of {fmtNumber(total)} companies
+            Showing {((page - 1) * limit) + 1}–{Math.min(page * limit, total)} of {fmtNumber(total)} companies
             {priorityFilter && ` · ${PRIORITY_CONFIG[priorityFilter]?.label} priority`}
             {sourceFilter && ` · ${SOURCE_LABELS[sourceFilter]?.label} only`}
           </p>
@@ -1075,46 +1076,61 @@ export default function AdminCompanies() {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-gray-500">Page {page} of {totalPages}</p>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => handlePageChange(Math.max(1, page - 1))}
-              disabled={page === 1}
-              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+      {total > 0 && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-gray-500">
+              {((page - 1) * limit + 1).toLocaleString()}–{Math.min(page * limit, total).toLocaleString()} of {total.toLocaleString()}
+            </p>
+            <span className="text-gray-300">|</span>
+            <label className="text-xs text-gray-500">Per page:</label>
+            <select
+              value={limit}
+              onChange={e => { const n = Number(e.target.value); setLimit(n); setPage(1); loadCompanies(1); }}
+              className="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-indigo-500 bg-white"
             >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
-              .reduce((acc, p, idx, arr) => {
-                if (idx > 0 && p - arr[idx - 1] > 1) acc.push('…');
-                acc.push(p);
-                return acc;
-              }, [])
-              .map((p, idx) =>
-                p === '…'
-                  ? <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">…</span>
-                  : (
-                    <button key={p} onClick={() => handlePageChange(p)}
-                      className={`w-9 h-9 rounded-lg text-sm font-medium ${
-                        p === page ? 'bg-indigo-600 text-white' : 'border border-gray-200 hover:bg-gray-50 text-gray-700'
-                      }`}>
-                      {p}
-                    </button>
-                  )
-              )}
-
-            <button
-              onClick={() => handlePageChange(Math.min(totalPages, page + 1))}
-              disabled={page === totalPages}
-              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+              {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handlePageChange(Math.max(1, page - 1))}
+                disabled={page === 1}
+                className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+                .reduce((acc, p, idx, arr) => {
+                  if (idx > 0 && p - arr[idx - 1] > 1) acc.push('…');
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, idx) =>
+                  p === '…'
+                    ? <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">…</span>
+                    : (
+                      <button key={p} onClick={() => handlePageChange(p)}
+                        className={`w-9 h-9 rounded-lg text-sm font-medium ${
+                          p === page ? 'bg-indigo-600 text-white' : 'border border-gray-200 hover:bg-gray-50 text-gray-700'
+                        }`}>
+                        {p}
+                      </button>
+                    )
+                )}
+
+              <button
+                onClick={() => handlePageChange(Math.min(totalPages, page + 1))}
+                disabled={page === totalPages}
+                className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Referral, { calcCommission } from '../models/Referral.js';
 import Withdrawal, { MIN_PAID_REFERRALS, MIN_WITHDRAWAL_AMOUNT, MIN_BALANCE_TO_USE } from '../models/Withdrawal.js';
 import { sendAdminUserActionAlert, sendPlanActivatedEmail } from '../services/emailService.js';
+import { distributeToUser } from '../services/schedulerService.js';
 
 // Standard monthly plan prices — fallback when no invoice amount is available
 const PLAN_PRICES = { starter: 29, pro: 79, enterprise: 499 };
@@ -127,7 +128,8 @@ export const getReferralStats = async (req, res) => {
       .filter(w => ['approved', 'paid'].includes(w.status))
       .reduce((s, w) => s + w.amount, 0);
 
-    const referralLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/signup?ref=${user.referralCode}`;
+    const frontendUrl  = process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : 'http://localhost:5173';
+    const referralLink = `${frontendUrl}/signup?ref=${user.referralCode}`;
 
     res.json({
       success: true,
@@ -249,7 +251,7 @@ export const applyReferralBalance = async (req, res) => {
 
     const apply = Math.min(amountToApply, invoice.amount, user.referralBalance);
     invoice.amount         = Math.max(0, invoice.amount - apply);
-    invoice.metadata       = invoice.metadata || {};
+    if (!invoice.metadata) invoice.metadata = new Map();
     invoice.metadata.set('referralBalanceApplied', String(apply));
     user.referralBalance   = Math.max(0, user.referralBalance - apply);
 
@@ -269,6 +271,8 @@ export const applyReferralBalance = async (req, res) => {
       upgradedUser.isTrialActive = false;
       upgradedUser.dailyMatchesUsed = 0;
       await upgradedUser.save();
+
+      distributeToUser(upgradedUser).catch(e => console.error('Distribution error (apply-balance):', e.message));
 
       // Notify admin (fire-and-forget)
       sendAdminUserActionAlert({
@@ -383,6 +387,9 @@ export const activateWithBalance = async (req, res) => {
         'Method':            'Referral Balance (auto)',
       },
     }).catch(() => {});
+
+    // Distribute today's opportunities immediately (fire-and-forget)
+    distributeToUser(user).catch(e => console.error('Distribution error (activate-with-balance):', e.message));
 
     // Notify user (fire-and-forget)
     sendPlanActivatedEmail({

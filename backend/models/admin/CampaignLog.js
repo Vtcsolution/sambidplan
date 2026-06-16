@@ -12,7 +12,7 @@ const campaignLogSchema = new mongoose.Schema({
   failed:          { type: Number, default: 0 },
   recipients:      [{ name: String, email: String, delivered: Boolean }],
   failedEmails:    [{ type: String }],
-  status:     { type: String, enum: ['success', 'partial', 'failed'], default: 'success' },
+  status:     { type: String, enum: ['sending', 'success', 'partial', 'failed'], default: 'sending' },
 }, { timestamps: true });
 
 export default mongoose.model('CampaignLog', campaignLogSchema);

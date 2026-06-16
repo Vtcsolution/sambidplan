@@ -125,9 +125,14 @@ export const registerUser = async (req, res) => {
 
     // Create notification for admin
     try {
+      const refLabel = supportMember
+        ? ` via support referral (${supportMember.name})`
+        : referredByUser
+          ? ` via user referral`
+          : '';
       await AdminNotification.create({
         title: 'New User Registered',
-        message: `${user.name || user.email} created a new account`,
+        message: `${user.name || user.email} created a new account${refLabel}`,
         type: 'user_signup',
         actionRequired: false,
         priority: 'medium',
@@ -135,7 +140,8 @@ export const registerUser = async (req, res) => {
           userId: user._id,
           userEmail: user.email,
           userPlan: user.plan,
-          businessName: user.businessName || 'Not provided'
+          businessName: user.businessName || 'Not provided',
+          ...(supportMember && { supportMemberId: supportMember._id, supportMemberName: supportMember.name }),
         }
       });
     } catch (notifError) {

@@ -1,6 +1,7 @@
 // frontend/src/App.jsx
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -34,7 +35,6 @@ import AdminContactInquiries from './pages/admin/AdminContactInquiries';
 import AdminLogin            from './pages/admin/AdminLogin';
 import AdminSupportEarnings  from './pages/admin/AdminSupportEarnings';
 import AdminMarketingPanel   from './pages/admin/AdminMarketingPanel';
-import BecomePartner         from './pages/BecomePartner';
 import AdminAIInsights       from './pages/admin/AdminAIInsights';
 import AdminUserSegments     from './pages/admin/AdminUserSegments';
 import AdminCampaigns        from './pages/admin/AdminCampaigns';
@@ -42,6 +42,8 @@ import AdminPlatformHealth   from './pages/admin/AdminPlatformHealth';
 import AdminRevenueForecast  from './pages/admin/AdminRevenueForecast';
 import AdminContentGenerator from './pages/admin/AdminContentGenerator';
 import SupportChatbot from './components/SupportChatbot';
+import SupportLogin from './pages/SupportLogin';
+import SupportDashboard from './pages/SupportDashboard';
 import CapabilityStatement from './pages/CapabilityStatement';
 import RFPAnalyzer from './pages/RFPAnalyzer';
 import GoNoGo from './pages/GoNoGo';
@@ -80,9 +82,14 @@ import AdminCompanies from './pages/admin/AdminCompanies';
 import AdminProspects from './pages/admin/AdminProspects';
 import AdminProspectOutreach from './pages/admin/AdminProspectOutreach';
 import AdminManagement from './pages/admin/AdminManagement';
+import AdminSupportManagement from './pages/admin/AdminSupportManagement';
+import AdminSupportGuide from './pages/admin/AdminSupportGuide';
 
 function App() {
   const location = useLocation();
+  const isProtectedRoute = !['/', '/pricing', '/about', '/how-it-works', '/contact',
+    '/signup', '/login', '/forgot-password', '/reset-password', '/terms', '/privacy',
+    '/annual-plan-request'].some(p => location.pathname === p || location.pathname.startsWith('/verify-email'));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -122,7 +129,7 @@ function App() {
 
   // Get current path — use useLocation() so re-renders happen on navigation
   const currentPath = location.pathname;
-  const isAdminRoute = currentPath.startsWith('/admin');
+  const isAdminRoute   = currentPath.startsWith('/admin');
   
   // Define routes that should show the sidebar (dashboard pages)
   const sidebarRoutes = [
@@ -141,6 +148,7 @@ function App() {
   if (isAdminRoute) {
     return (
       <Routes>
+        {/* noindex injected in AdminLayout itself */}
         {/* Public admin login — no AdminRoute guard */}
         <Route path="/admin/login" element={<AdminLogin />} />
 
@@ -175,6 +183,8 @@ function App() {
           <Route path="prospect-outreach"     element={<AdminProspectOutreach />} />
           <Route path="admin-management"      element={<AdminManagement />} />
           <Route path="my-earnings"           element={<AdminSupportEarnings />} />
+          <Route path="earning-guide"         element={<AdminSupportGuide />} />
+          <Route path="support-management"    element={<AdminSupportManagement />} />
           <Route path="marketing-panel"       element={<AdminMarketingPanel />} />
         </Route>
       </Routes>
@@ -184,6 +194,12 @@ function App() {
   // Regular app layout for non-admin routes
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
+      {/* Default noindex for all protected/dashboard routes — public pages override this with their own SEOHead */}
+      {isProtectedRoute && (
+        <Helmet>
+          <meta name="robots" content="noindex, nofollow" />
+        </Helmet>
+      )}
       <Navbar
         isAuthenticated={isAuthenticated} 
         setIsAuthenticated={setIsAuthenticated}
@@ -224,7 +240,6 @@ function App() {
           <Route path="/how-it-works" element={<HowItWorks />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/annual-plan-request" element={<AnnualPlanRequest />} />
-          <Route path="/become-partner"     element={<BecomePartner />} />
 
           {/* Protected Routes (Dashboard area) */}
           <Route path="/dashboard" element={<Dashboard />} />
@@ -255,6 +270,10 @@ function App() {
           <Route path="/past-performance"  element={<PastPerformance />} />
           <Route path="/sources-sought"   element={<SourcesSought />} />
           <Route path="/ai-predictions"   element={<AIPredictions />} />
+
+          {/* Support Portal — separate from admin panel and user dashboard */}
+          <Route path="/support/login"     element={<SupportLogin />} />
+          <Route path="/support/dashboard" element={<SupportDashboard />} />
         </Routes>
       </main>
     </div>
