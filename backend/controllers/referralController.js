@@ -1,4 +1,5 @@
 import User from '../models/User.js';
+import Admin from '../models/Admin.js';
 import Referral, { calcCommission } from '../models/Referral.js';
 import Withdrawal, { MIN_PAID_REFERRALS, MIN_WITHDRAWAL_AMOUNT, MIN_BALANCE_TO_USE } from '../models/Withdrawal.js';
 import { sendAdminUserActionAlert, sendPlanActivatedEmail } from '../services/emailService.js';
@@ -44,6 +45,37 @@ export const creditReferralCommission = async (purchasingUserId, invoiceId, plan
     console.log(`💸 Referral commission $${commission} credited to ${purchaser.referredBy} (referee: ${purchaser.email})`);
   } catch (err) {
     console.error('Referral commission error:', err.message, err.stack);
+  }
+};
+
+// ─── Validate Coupon Code (public) ───────────────────────────────────────────
+// Returns referrer info + discount if the code belongs to a valid user
+export const validateCoupon = async (req, res) => {
+  try {
+    const code = (req.body.code || req.query.code || '').trim().toUpperCase();
+    if (!code) return res.status(400).json({ success: false, message: 'Coupon code is required.' });
+
+    // Check User referral codes first, then Support Admin referral codes
+    let referrer = await User.findOne({ referralCode: code }).select('name email referralCode');
+    if (!referrer) {
+      referrer = await Admin.findOne({ referralCode: code, role: 'support', isActive: true }).select('name email referralCode');
+    }
+
+    if (!referrer) {
+      return res.status(404).json({ success: false, message: 'Invalid coupon code. Please check and try again.' });
+    }
+
+    res.json({
+      success:         true,
+      valid:           true,
+      discountPercent: 10,
+      referrerName:    referrer.name,
+      referrerId:      referrer._id,
+      code,
+      message:         `Coupon applied! You get 10% off — referred by ${referrer.name}.`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

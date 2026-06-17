@@ -19,34 +19,34 @@ const ALL_NAV = [
   {
     section: 'AI & Automation',
     items: [
-      { path: '/admin/ai-insights',       label: 'AI Insights',        icon: Sparkles,   roles: ['super_admin','admin'] },
+      { path: '/admin/ai-insights',       label: 'AI Insights',        icon: Sparkles,   roles: ['super_admin','admin'], permission: 'aiTools' },
       { path: '/admin/revenue-forecast',  label: 'Revenue Forecast',   icon: TrendingUp, roles: ['super_admin'] },
       { path: '/admin/user-segments',     label: 'User Segments',      icon: UserCheck,  roles: ['super_admin','admin'] },
-      { path: '/admin/campaigns',         label: 'Email Campaigns',    icon: Send,       roles: ['super_admin','admin'] },
-      { path: '/admin/content-generator', label: 'Content Generator',  icon: Cpu,        roles: ['super_admin','admin'] },
+      { path: '/admin/campaigns',         label: 'Email Campaigns',    icon: Send,       roles: ['super_admin','admin'], permission: 'campaigns' },
+      { path: '/admin/content-generator', label: 'Content Generator',  icon: Cpu,        roles: ['super_admin','admin'], permission: 'aiTools' },
     ],
   },
   {
     section: 'Users & Plans',
     items: [
-      { path: '/admin/users',             label: 'All Users',         icon: Users,       roles: ['super_admin','admin'] },
-      { path: '/admin/plans',              label: 'Plan Pricing',      icon: DollarSign,  roles: ['super_admin','admin'] },
-      { path: '/admin/plan-requests',     label: 'Plan Requests',     icon: Layers,      roles: ['super_admin','admin'] },
-      { path: '/admin/annual-requests',   label: 'Annual Requests',   icon: UserCheck,   roles: ['super_admin','admin','support'] },
-      { path: '/admin/credit-requests',  label: 'Credit Requests',   icon: Zap,         roles: ['super_admin','admin'] },
+      { path: '/admin/users',             label: 'All Users',         icon: Users,        roles: ['super_admin','admin'], permission: 'users' },
+      { path: '/admin/plans',             label: 'Plan Pricing',      icon: DollarSign,   roles: ['super_admin','admin'], permission: 'payments' },
+      { path: '/admin/plan-requests',     label: 'Plan Requests',     icon: Layers,       roles: ['super_admin','admin'], permission: 'payments' },
+      { path: '/admin/annual-requests',   label: 'Annual Requests',   icon: UserCheck,    roles: ['super_admin','admin','support'] },
+      { path: '/admin/credit-requests',   label: 'Credit Requests',   icon: Zap,          roles: ['super_admin','admin'], permission: 'payments' },
       { path: '/admin/contact-inquiries', label: 'Contact Inquiries', icon: MessageSquare,roles: ['super_admin','admin','support'] },
-      { path: '/admin/tickets',           label: 'Support Tickets',   icon: Ticket,      roles: ['super_admin','admin','support'] },
-      { path: '/admin/suggestions',       label: 'Suggestions',        icon: Lightbulb,   roles: ['super_admin','admin','support'] },
-      { path: '/admin/payments',          label: 'Payments',          icon: CreditCard,  roles: ['super_admin','admin'] },
-      { path: '/admin/invoices',          label: 'Invoices',          icon: FileText,    roles: ['super_admin','admin'] },
+      { path: '/admin/tickets',           label: 'Support Tickets',   icon: Ticket,       roles: ['super_admin','admin','support'] },
+      { path: '/admin/suggestions',       label: 'Suggestions',       icon: Lightbulb,    roles: ['super_admin','admin','support'] },
+      { path: '/admin/payments',          label: 'Payments',          icon: CreditCard,   roles: ['super_admin','admin'], permission: 'payments' },
+      { path: '/admin/invoices',          label: 'Invoices',          icon: FileText,     roles: ['super_admin','admin'], permission: 'payments' },
     ],
   },
   {
     section: 'Prospect Database',
     items: [
-      { path: '/admin/prospects',          label: 'Federal Prospects', icon: Users,     roles: ['super_admin','admin','support'] },
-      { path: '/admin/prospect-outreach',  label: 'Email Outreach',    icon: Send,      roles: ['super_admin','admin','support'] },
-      { path: '/admin/companies',          label: 'SAM Companies',     icon: Building2, roles: ['super_admin','admin'] },
+      { path: '/admin/prospects',         label: 'Federal Prospects', icon: Users,     roles: ['super_admin','admin','support'], permission: 'content' },
+      { path: '/admin/prospect-outreach', label: 'Email Outreach',    icon: Send,      roles: ['super_admin','admin','support'], permission: 'campaigns' },
+      { path: '/admin/companies',         label: 'SAM Companies',     icon: Building2, roles: ['super_admin','admin'], permission: 'content' },
     ],
   },
   {
@@ -63,6 +63,8 @@ const ALL_NAV = [
       { path: '/admin/opportunities',      label: 'Opportunities',       icon: FileText,    roles: ['super_admin','admin'] },
       { path: '/admin/hybrid-fetch',       label: 'Hybrid Pipeline',     icon: Layers,      roles: ['super_admin'] },
       { path: '/admin/marketing-panel',    label: 'Marketing Panel',     icon: TrendingUp,  roles: ['super_admin'] },
+      { path: '/admin/company-workspaces',  label: 'Company Workspaces',  icon: Building2,   roles: ['super_admin','admin'] },
+      { path: '/admin/media-manager',      label: 'Page Media',          icon: Layers,      roles: ['super_admin','admin'] },
       { path: '/admin/support-management', label: 'Support Team',        icon: Heart,       roles: ['super_admin','admin'] },
       { path: '/admin/admin-management',   label: 'Admin Accounts',      icon: ShieldCheck, roles: ['super_admin'] },
       { path: '/admin/settings',           label: 'Settings',            icon: Settings,    roles: ['super_admin'] },
@@ -85,7 +87,7 @@ const BADGE_KEY = {
 export default function AdminSidebar({ isOpen, onClose }) {
   const location = useLocation();
   const navigate  = useNavigate();
-  const { role: adminRole, name: adminName, email: adminEmail, canAccessPage } = useAdminPermission();
+  const { role: adminRole, name: adminName, email: adminEmail, canAccessPage, can } = useAdminPermission();
   const [counts, setCounts] = useState({});
 
   useEffect(() => {
@@ -100,10 +102,12 @@ export default function AdminSidebar({ isOpen, onClose }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Filter nav sections based on current admin role
+  // Filter: role must match AND (if a permission key is defined) the admin must have that permission
   const NAV = ALL_NAV.map(group => ({
     ...group,
-    items: group.items.filter(item => item.roles.includes(adminRole)),
+    items: group.items.filter(item =>
+      item.roles.includes(adminRole) && (!item.permission || can(item.permission))
+    ),
   })).filter(group => group.items.length > 0);
 
   const handleLogout = () => {

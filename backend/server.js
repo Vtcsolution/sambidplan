@@ -35,6 +35,9 @@ import trackingRoutes          from './routes/trackingRoutes.js';
 import pastPerformanceRoutes   from './routes/pastPerformanceRoutes.js';
 import supportRoutes           from './routes/supportRoutes.js';
 import partnerRoutes           from './routes/partnerRoutes.js';
+import mediaRoutes                  from './routes/mediaRoutes.js';
+import companyRoutes                from './routes/companyRoutes.js';
+import adminCompanyWorkspaceRoutes  from './routes/adminCompanyWorkspaceRoutes.js';
 import { reconcileReferralCommissions } from './controllers/referralController.js';
 import { startScheduler } from './services/schedulerService.js';
 import { startEmailScheduler } from './services/emailSchedulerService.js';
@@ -69,6 +72,7 @@ app.use(helmet({
 // CORS — allow localhost + configured frontend URL
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://localhost:5174',
   'http://localhost:3000',
   'http://localhost:4173',
   process.env.FRONTEND_URL,
@@ -112,6 +116,16 @@ const loginLimiter = rateLimit({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// ── Static uploads ────────────────────────────────────────────────────────────
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = dirname(__filename);
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(join(__dirname, 'uploads')));
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.get("/",       (req, res) => res.json({ success: true, message: "Sambid API is running." }));
 app.get("/health", (req, res) => res.json({ success: true, status: "healthy", timestamp: new Date().toISOString() }));
@@ -142,6 +156,9 @@ app.use('/api/admin/prospects',    apiLimiter, prospectRoutes);
 app.use('/api/track',              trackingRoutes); // public — no auth, no rate limit
 app.use('/api/past-performance',   apiLimiter, pastPerformanceRoutes);
 app.use('/api/credits',            apiLimiter, creditTopupRoutes);
+app.use('/api/media',              mediaRoutes);   // public GET, admin POST/DELETE
+app.use('/api/company',            apiLimiter, companyRoutes);
+app.use('/api/admin/company-workspaces', apiLimiter, adminCompanyWorkspaceRoutes);
 
 // 404 handler
 app.use((req, res) => {

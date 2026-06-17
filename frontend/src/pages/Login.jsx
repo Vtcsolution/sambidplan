@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import SEOHead from '../components/SEOHead';
 import Button from '../components/Button';
 import Input from '../components/Input';
@@ -111,6 +111,8 @@ export default function Login({ setIsAuthenticated, setUser }) {
   const [tempToken, setTempToken] = useState('');
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || null;
 
   const validateForm = () => {
     const errs = {};
@@ -137,6 +139,8 @@ export default function Login({ setIsAuthenticated, setUser }) {
 
     if (role === 'admin') {
       window.location.href = '/admin/dashboard';
+    } else if (redirectTo) {
+      navigate(redirectTo);
     } else {
       try {
         const profileRes = await authAPI.getProfile();

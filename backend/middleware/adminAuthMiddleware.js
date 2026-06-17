@@ -44,3 +44,18 @@ export const adminOrSuperAdmin = (req, res, next) => {
   }
   next();
 };
+
+// Per-permission guard — use after protectAdmin or flexAdmin
+// Usage: requirePermission('aiTools') or requirePermission('content')
+export const requirePermission = (perm) => (req, res, next) => {
+  const admin = req.admin;
+  if (!admin) return res.status(403).json({ success: false, message: 'Admin authentication required.' });
+  if (admin.role === 'super_admin') return next(); // super_admin bypasses all
+  if (!admin.permissions?.[perm]) {
+    return res.status(403).json({
+      success: false,
+      message: `You do not have permission to perform this action. Required: ${perm}.`,
+    });
+  }
+  next();
+};

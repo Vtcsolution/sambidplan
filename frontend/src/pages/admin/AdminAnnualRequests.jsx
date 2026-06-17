@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import {
   CheckCircle, XCircle, DollarSign, RefreshCw, Clock, AlertTriangle,
   Mail, X, Send, Loader2, BadgeCheck, ShieldCheck, Eye, ChevronDown, ChevronUp, Headphones,
+  CreditCard, Zap,
 } from 'lucide-react';
 import { adminPanelAPI } from '../../services/adminApi';
 import ConfirmModal from '../../components/ConfirmModal';
+import { useAdminPermission } from '../../hooks/useAdminPermission';
 
 const STATUS_TABS = ['pending', 'approved', 'completed', 'rejected'];
 
@@ -275,8 +277,15 @@ function VerifyActivateModal({ request, onClose, onActivated }) {
   );
 }
 
+const PAYMENT_METHOD_LABEL = {
+  paypal: 'PayPal', stripe: 'Stripe', payoneer: 'Payoneer',
+  bank_transfer: 'Bank Transfer', manual: 'Manual', credit_card: 'Credit Card',
+  referral_balance: 'Referral Balance',
+};
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function AdminAnnualRequests() {
+  const { isAdmin } = useAdminPermission();
   const [status,         setStatus]        = useState('pending');
   const [requests,       setRequests]      = useState([]);
   const [total,          setTotal]         = useState(0);
@@ -287,11 +296,17 @@ export default function AdminAnnualRequests() {
   const [verifyModal,    setVerifyModal]   = useState(null);
   const [toast,          setToast]         = useState('');
   const [expandedId,     setExpandedId]    = useState(null);
-  const [rejectDlg,      setRejectDlg]     = useState(null);   // { id }
+  const [rejectDlg,      setRejectDlg]     = useState(null);
   const [rejectReason,   setRejectReason]  = useState('');
   const [rejectSaving,   setRejectSaving]  = useState(false);
 
+  // Online annual payments (Invoice records)
+  const [invoices,       setInvoices]      = useState([]);
+  const [invoiceLoading, setInvoiceLoading] = useState(true);
+  const [invoiceStatus,  setInvoiceStatus]  = useState('all');
+
   useEffect(() => { fetchRequests(); }, [status]); // eslint-disable-line
+  useEffect(() => { fetchInvoices(); }, [invoiceStatus]); // eslint-disable-line
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 5000); };
 
@@ -309,6 +324,20 @@ export default function AdminAnnualRequests() {
       setLoading(false);
     }
   };
+
+  const fetchInvoices = async () => {
+    setInvoiceLoading(true);
+    try {
+      const res = await adminPanelAPI.getAnnualInvoices({ status: invoiceStatus, limit: 100 });
+      if (res.data.success) setInvoices(res.data.data);
+    } catch {
+      // non-critical, fail silently
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
+  const handleRefreshAll = () => { fetchRequests(); fetchInvoices(); };
 
   const handleApprove = async (id) => {
     setActionLoading(id + '_approve');
@@ -401,7 +430,7 @@ export default function AdminAnnualRequests() {
           <h1 className="text-2xl font-bold text-gray-900">Annual Plan Requests</h1>
           <p className="text-sm text-gray-500 mt-1">Manual payment flow · Starter ($278/yr) · Pro ($758/yr) · Enterprise ($4,788/yr)</p>
         </div>
-        <button onClick={fetchRequests} className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm self-start">
+        <button onClick={handleRefreshAll} className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm self-start">
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
       </div>
@@ -539,8 +568,8 @@ export default function AdminAnnualRequests() {
 
                     {/* Right: actions */}
                     <div className="flex flex-wrap gap-2 lg:flex-col lg:items-end shrink-0">
-                      {/* Primary action: Verify & Activate (proof received) */}
-                      {proofReady && (
+                      {/* Primary action: Verify & Activate (proof received) — admin/super_admin only */}
+                      {isAdmin && proofReady && (
                         <button onClick={() => setVerifyModal(req)}
                           className="flex items-center gap-1.5 px-4 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 shadow-sm transition-colors">
                           <ShieldCheck className="w-4 h-4" /> Verify &amp; Activate
@@ -556,8 +585,8 @@ export default function AdminAnnualRequests() {
                         </button>
                       )}
 
-                      {/* Approve / Reject (pending only) */}
-                      {req.status === 'pending' && (
+                      {/* Approve / Reject (pending only) — admin/super_admin only */}
+                      {isAdmin && req.status === 'pending' && (
                         <>
                           <button onClick={() => handleApprove(req._id)} disabled={actionLoading === req._id + '_approve'}
                             className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
@@ -571,8 +600,8 @@ export default function AdminAnnualRequests() {
                         </>
                       )}
 
-                      {/* Approved but no proof yet — manual override */}
-                      {req.status === 'approved' && !hasProof && (
+                      {/* Mark as Paid / Verify & Activate — admin/super_admin only */}
+                      {isAdmin && req.status === 'approved' && !hasProof && (
                         <div className="mt-1 lg:text-right">
                           <button onClick={() => setExpandedId(isExpanded ? null : req._id)}
                             className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors">
@@ -613,6 +642,103 @@ export default function AdminAnnualRequests() {
           </p>
         </div>
       )}
+
+      {/* ── Online Annual Payments (Invoice records) ──────────────────────── */}
+      <div className="mt-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-indigo-500" />
+            <h2 className="text-lg font-bold text-gray-900">Online Annual Payments</h2>
+            <span className="bg-indigo-100 text-indigo-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+              {invoices.length}
+            </span>
+          </div>
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+            {['all', 'pending', 'paid', 'expired', 'cancelled'].map(s => (
+              <button key={s} onClick={() => setInvoiceStatus(s)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition-all ${invoiceStatus === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mb-4">Yearly plan purchases made via PayPal, Stripe, and other online payment methods.</p>
+
+        {invoiceLoading ? (
+          <div className="flex justify-center py-10">
+            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-500" />
+          </div>
+        ) : invoices.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+            <Zap className="w-9 h-9 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-400 text-sm">No annual online payments found</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wide">
+                  <th className="text-left px-5 py-3">User</th>
+                  <th className="text-left px-4 py-3">Plan</th>
+                  <th className="text-left px-4 py-3">Amount</th>
+                  <th className="text-left px-4 py-3">Method</th>
+                  <th className="text-left px-4 py-3">Invoice #</th>
+                  <th className="text-left px-4 py-3">Transaction ID</th>
+                  <th className="text-left px-4 py-3">Status</th>
+                  <th className="text-left px-4 py-3">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {invoices.map(inv => {
+                  const txId = inv.paypalCaptureId || inv.payoneerInvoiceId || '—';
+                  const statusColor = {
+                    paid:      'bg-green-100 text-green-700',
+                    pending:   'bg-amber-100 text-amber-700',
+                    expired:   'bg-gray-100 text-gray-500',
+                    cancelled: 'bg-red-100 text-red-600',
+                    refunded:  'bg-purple-100 text-purple-700',
+                  }[inv.status] || 'bg-gray-100 text-gray-600';
+
+                  return (
+                    <tr key={inv._id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-gray-900">{inv.user?.name || '—'}</p>
+                        <p className="text-xs text-gray-400">{inv.user?.email || '—'}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${PLAN_BADGE[inv.plan] || 'bg-gray-100 text-gray-600'}`}>
+                          {inv.plan || '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-bold text-gray-900">${(inv.amount || 0).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-600 capitalize">
+                        {PAYMENT_METHOD_LABEL[inv.paymentMethod] || inv.paymentMethod || '—'}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-700">{inv.invoiceNumber || '—'}</td>
+                      <td className="px-4 py-3">
+                        {txId !== '—' ? (
+                          <span className="font-mono text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded">{txId}</span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${statusColor}`}>
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        {inv.paidAt ? fmtDate(inv.paidAt) : fmtDate(inv.createdAt)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="px-5 py-3 border-t border-gray-50 text-xs text-gray-400">
+              {invoices.length} record{invoices.length !== 1 ? 's' : ''} · yearly billing cycle
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
       {instructModal && (

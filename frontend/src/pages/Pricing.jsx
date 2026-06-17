@@ -1,9 +1,9 @@
 // frontend/src/pages/Pricing.jsx
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Zap, Shield, Users, CreditCard, X, ArrowRight, Loader2 } from 'lucide-react';
+import { Check, Zap, Shield, Users, CreditCard, X, ArrowRight, Loader2, Tag, CheckCircle } from 'lucide-react';
 import PaymentModal from '../components/PaymentModal';
-import { authAPI, paymentAPI } from '../services/api';
+import { authAPI, paymentAPI, validateCoupon } from '../services/api';
 import SEOHead from '../components/SEOHead';
 
 // Yearly prices shown on the pricing page (20% off annual total).
@@ -20,6 +20,11 @@ export default function Pricing() {
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState([]);
   const [userPlan, setUserPlan] = useState(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponInput, setCouponInput] = useState('');
+  const [couponResult, setCouponResult] = useState(null); // { valid, discountPercent, referrerName, message }
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState('');
 
   // Check authentication on component mount
   useEffect(() => {
@@ -70,6 +75,40 @@ export default function Pricing() {
     if (plan.name === 'free' || billingCycle === 'monthly') return null;
     const equiv = (plan.priceYearly / 12).toFixed(0);
     return `~$${equiv}/mo`;
+  };
+
+  const applyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) return;
+    setCouponLoading(true);
+    setCouponError('');
+    setCouponResult(null);
+    try {
+      const res = await validateCoupon(code);
+      if (res.data.valid) {
+        setCouponResult(res.data);
+        setCouponCode(code);
+      } else {
+        setCouponError('Invalid coupon code.');
+      }
+    } catch (err) {
+      setCouponError(err.response?.data?.message || 'Invalid coupon code.');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setCouponCode('');
+    setCouponInput('');
+    setCouponResult(null);
+    setCouponError('');
+  };
+
+  const getDiscountedPrice = (plan) => {
+    if (!couponResult || plan.name === 'free') return null;
+    const base = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+    return (base * (1 - couponResult.discountPercent / 100)).toFixed(2);
   };
 
   const handleUpgrade = (plan) => {
@@ -168,6 +207,48 @@ export default function Pricing() {
           </div>
         </div>
 
+        {/* Coupon Code Section */}
+        <div className="flex justify-center mb-8">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 w-full max-w-md">
+            {couponResult ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-green-700">
+                  <CheckCircle className="w-5 h-5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">{couponResult.discountPercent}% discount applied!</p>
+                    <p className="text-xs text-green-600">{couponResult.message}</p>
+                  </div>
+                </div>
+                <button onClick={removeCoupon} className="text-gray-400 hover:text-gray-600 p-1 rounded">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={couponInput}
+                    onChange={e => { setCouponInput(e.target.value.toUpperCase()); setCouponError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+                    placeholder="Have a coupon code?"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+                <button
+                  onClick={applyCoupon}
+                  disabled={couponLoading || !couponInput.trim()}
+                  className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
+                </button>
+              </div>
+            )}
+            {couponError && <p className="text-xs text-red-500 mt-2">{couponError}</p>}
+          </div>
+        </div>
+
         {/* Pricing Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6">
           {sortedPlans.map((plan) => (
@@ -198,12 +279,24 @@ export default function Pricing() {
 
                 <div className="mt-4">
                   <div className="flex items-end gap-1 flex-wrap">
-                    <span className="text-4xl font-bold text-gray-900">{getPrice(plan)}</span>
+                    {getDiscountedPrice(plan) ? (
+                      <>
+                        <span className="text-2xl font-bold text-gray-400 line-through">{getPrice(plan)}</span>
+                        <span className="text-4xl font-bold text-green-600">${getDiscountedPrice(plan)}</span>
+                      </>
+                    ) : (
+                      <span className="text-4xl font-bold text-gray-900">{getPrice(plan)}</span>
+                    )}
                     {plan.name !== 'free' && (
                       <span className="text-gray-500 mb-1">{getPeriodText(plan)}</span>
                     )}
                   </div>
-                  {getMonthlyEquivalent(plan) && (
+                  {couponResult && plan.name !== 'free' && (
+                    <p className="text-xs text-green-600 font-semibold mt-1">
+                      {couponResult.discountPercent}% off with coupon
+                    </p>
+                  )}
+                  {!couponResult && getMonthlyEquivalent(plan) && (
                     <p className="text-xs text-green-600 font-semibold mt-1">
                       {getMonthlyEquivalent(plan)} · Save {YEARLY_SAVINGS_PCT}%
                     </p>
@@ -277,6 +370,8 @@ export default function Pricing() {
         onClose={() => setShowPaymentModal(false)}
         plan={selectedPlan}
         billingCycle={billingCycle}
+        couponCode={couponCode}
+        couponDiscount={couponResult?.discountPercent || 0}
       />
     </div>
   );

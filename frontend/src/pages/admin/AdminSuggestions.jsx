@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { adminSuggestionAPI } from '../../services/adminApi';
 import { getSocket } from '../../hooks/useSocket';
+import { useAdminPermission } from '../../hooks/useAdminPermission';
 import ConfirmModal from '../../components/ConfirmModal';
 
 const CATEGORIES = {
@@ -46,6 +47,7 @@ function SuggestionRow({ suggestion: initial, onDeleted }) {
   const [deleting, setDel]   = useState(false);
   const [saved, setSaved]    = useState(false);
   const [confirmDlg, setConfirmDlg] = useState(false);
+  const { isAdmin } = useAdminPermission();
 
   const cat = CATEGORIES[s.category] || CATEGORIES.general;
 
@@ -150,15 +152,17 @@ function SuggestionRow({ suggestion: initial, onDeleted }) {
 
           {/* Actions */}
           <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
-            >
-              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-              Delete
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Delete
+              </button>
+            )}
 
             <button
               type="button"

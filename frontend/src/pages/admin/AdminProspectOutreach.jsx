@@ -7,6 +7,7 @@ import {
   Building2, History, ArrowLeft, Plus, UserPlus,
 } from 'lucide-react';
 import { adminProspectAPI } from '../../services/adminApi';
+import { useAdminPermission } from '../../hooks/useAdminPermission';
 
 const EMAIL_TYPES = [
   { id: 'intro',      label: 'Platform Intro',   emoji: '👋', desc: 'Introduce Sambid for the first time' },
@@ -29,9 +30,22 @@ const fmt = d => new Date(d).toLocaleDateString('en-US', {
 });
 
 export default function AdminProspectOutreach() {
+  const { can } = useAdminPermission();
   const [searchParams] = useSearchParams();
   const navigate       = useNavigate();
   const preId          = searchParams.get('id');
+
+  if (!can('campaigns')) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h2>
+        <p className="text-gray-500 text-sm">You don't have permission to access Email Outreach.<br/>Contact your administrator to enable the Campaigns permission.</p>
+      </div>
+    );
+  }
 
   // DB prospect list (left panel)
   const [prospects, setProspects]     = useState([]);

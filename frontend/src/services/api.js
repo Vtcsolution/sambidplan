@@ -270,4 +270,32 @@ export const pastPerformanceAPI = {
   exportBatch:  (ids)      => api.post('/past-performance/export/batch', { ids }),
 };
 
+// Coupon validation (public — no auth required, uses base axios without interceptors)
+export const validateCoupon = (code) =>
+  api.post('/referral/validate-coupon', { code });
+
+// Company Workspace APIs
+export const companyAPI = {
+  // Company profile
+  create:       (data)          => api.post('/company', data),
+  getMine:      ()              => api.get('/company/mine'),
+  update:       (data)          => api.put('/company', data),
+  verifyUEI:    (data)          => api.post('/company/verify-uei', data),
+
+  // Team members
+  invite:        (data)          => api.post('/company/invite', data),
+  previewInvite: (token)         => api.get(`/company/join/${token}`),
+  acceptInvite:  (token)         => api.post(`/company/join/${token}`),
+  updateRole:   (memberId, role) => api.put(`/company/members/${memberId}/role`, { role }),
+  removeMember: (memberId)      => api.delete(`/company/members/${memberId}`),
+  leave:        ()              => api.delete('/company/leave'),
+
+  // Documents
+  listDocs:     (params)        => api.get('/company/documents', { params }),
+  uploadDoc:    (formData)      => api.post('/company/documents/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  deleteDoc:    (id)            => api.delete(`/company/documents/${id}`),
+  addComment:   (id, text)      => api.post(`/company/documents/${id}/comment`, { text }),
+  downloadDoc:  (id)            => api.get(`/company/documents/${id}/download`, { responseType: 'blob' }),
+};
+
 export default api;

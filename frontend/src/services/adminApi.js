@@ -50,6 +50,7 @@ export const adminAuthAPI = {
 export const adminPanelAPI = {
   getStats:              ()     => adminApi.get('/admin/stats'),
   getPlanRequests:       (p)    => adminApi.get('/admin/plan-requests', { params: p }),
+  getAnnualInvoices:     (p)    => adminApi.get('/admin/annual-invoices', { params: p }),
   approvePlanRequest:         (id,d) => adminApi.post(`/admin/plan-requests/${id}/approve`, d),
   markRequestAsPaid:          (id,d) => adminApi.post(`/admin/plan-requests/${id}/mark-paid`, d),
   rejectPlanRequest:          (id,d) => adminApi.post(`/admin/plan-requests/${id}/reject`, d),

@@ -2,71 +2,74 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import {
   Menu, LogOut, ChevronDown, LayoutDashboard, User, X,
-  Home, Info, HelpCircle, DollarSign, Phone, Gift
+  Home, Info, HelpCircle, DollarSign, Phone, Gift,
+  Zap, Star, BookOpen
 } from 'lucide-react';
 import UserNotificationDropdown from './UserNotificationDropdown';
+
+const platformLinks = [
+  { path: '/how-it-works', label: 'How It Works',  icon: HelpCircle, desc: 'See the full platform walkthrough' },
+  { path: '/features',     label: 'Features',       icon: Zap,        desc: 'All 12 tools in one place' },
+  { path: '/faq',          label: 'FAQ',            icon: BookOpen,   desc: 'Common questions answered' },
+];
 
 export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, user, onMenuClick }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen]           = useState(false);
+  const [isPlatformOpen, setIsPlatformOpen]               = useState(false);
+  const dropdownRef  = useRef(null);
+  const platformRef  = useRef(null);
 
   const dashboardRoutes = [
     '/dashboard', '/opportunities', '/opportunity',
     '/saved', '/alerts', '/winning-bids',
     '/settings', '/profile', '/notifications', '/help',
     '/pipeline', '/calendar', '/capability-statement', '/rfp-analyzer',
-    '/go-no-go', '/teaming-finder', '/contract-vehicles', '/market-research', '/referral', '/billing', '/proposal-builder', '/past-performance', '/sources-sought'
+    '/go-no-go', '/teaming-finder', '/contract-vehicles', '/market-research',
+    '/referral', '/billing', '/proposal-builder', '/past-performance',
+    '/sources-sought', '/ai-predictions', '/suggestions',
   ];
 
-  const isDashboardRoute = dashboardRoutes.some(route => location.pathname.startsWith(route));
+  const isDashboardRoute = dashboardRoutes.some(r => location.pathname.startsWith(r));
 
-  // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+    const handler = e => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
         setIsProfileDropdownOpen(false);
-      }
+      if (platformRef.current && !platformRef.current.contains(e.target))
+        setIsPlatformOpen(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Close mobile menu on route change
   useEffect(() => {
     setIsMobileMenuOpen(false);
+    setIsPlatformOpen(false);
   }, [location.pathname]);
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     setUser(null);
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('userName');
-    localStorage.removeItem('userId');
-    localStorage.removeItem('userNAICS');
-    localStorage.removeItem('businessName');
-    localStorage.removeItem('userPlan');
-    localStorage.removeItem('userRole');
-    sessionStorage.removeItem('authToken');
-    sessionStorage.removeItem('userEmail');
+    ['authToken','userEmail','userName','userId','userNAICS','businessName','userPlan','userRole']
+      .forEach(k => { localStorage.removeItem(k); sessionStorage.removeItem(k); });
     navigate('/');
     setIsProfileDropdownOpen(false);
     setIsMobileMenuOpen(false);
   };
 
-  const publicLinks = [
-    { path: '/',                label: 'Home',           icon: Home },
-    { path: '/how-it-works',    label: 'How It Works',   icon: HelpCircle },
-    { path: '/pricing',         label: 'Pricing',        icon: DollarSign },
-    { path: '/about',           label: 'About',          icon: Info },
-    { path: '/contact',         label: 'Contact',        icon: Phone },
-  ];
-
-  const isActive = (path) => location.pathname === path;
+  const isActive   = path => location.pathname === path;
+  const isPlatPath = platformLinks.some(l => location.pathname === l.path);
   const showPublicNav = !isAuthenticated || !isDashboardRoute;
+
+  const topLinks = [
+    { path: '/',        label: 'Home',    icon: Home },
+    { path: '/pricing', label: 'Pricing', icon: DollarSign },
+    { path: '/about',   label: 'About',   icon: Info },
+    { path: '/contact', label: 'Contact', icon: Phone },
+  ];
 
   return (
     <>
@@ -74,7 +77,7 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
 
-            {/* Left: hamburger (sidebar on dashboard, mobile-only on desktop) + logo */}
+            {/* Left — hamburger + logo */}
             <div className="flex items-center gap-2">
               {isAuthenticated && isDashboardRoute ? (
                 <button
@@ -85,9 +88,8 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                   <Menu className="w-5 h-5" />
                 </button>
               ) : (
-                /* Mobile hamburger for public nav */
                 <button
-                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                  onClick={() => setIsMobileMenuOpen(o => !o)}
                   className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
                   aria-label="Toggle menu"
                 >
@@ -108,33 +110,88 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
               </Link>
             </div>
 
-            {/* Desktop nav links */}
-            <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
-              {showPublicNav ? (
-                publicLinks.map((link) => (
+            {/* Desktop nav */}
+            <div className="hidden md:flex items-center space-x-1 lg:space-x-2">
+              {showPublicNav && (
+                <>
+                  {/* Home */}
                   <Link
-                    key={link.path}
-                    to={link.path}
-                    className={`text-sm font-medium transition-colors duration-200 ${
-                      isActive(link.path)
-                        ? 'text-indigo-600 font-semibold'
-                        : 'text-gray-600 hover:text-indigo-600'
+                    to="/"
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      isActive('/') ? 'text-indigo-600 bg-indigo-50' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-50'
                     }`}
                   >
-                    {link.label}
+                    Home
                   </Link>
-                ))
-              ) : (
+
+                  {/* Platform dropdown */}
+                  <div className="relative" ref={platformRef}>
+                    <button
+                      onClick={() => setIsPlatformOpen(o => !o)}
+                      className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isPlatPath || isPlatformOpen
+                          ? 'text-indigo-600 bg-indigo-50'
+                          : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Platform
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${isPlatformOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isPlatformOpen && (
+                      <div className="absolute left-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50">
+                        {platformLinks.map(l => {
+                          const Icon = l.icon;
+                          return (
+                            <Link
+                              key={l.path}
+                              to={l.path}
+                              className={`flex items-start gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors ${
+                                isActive(l.path) ? 'bg-indigo-50' : ''
+                              }`}
+                            >
+                              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+                                <Icon className="w-4 h-4 text-indigo-600" />
+                              </div>
+                              <div>
+                                <p className={`text-sm font-semibold ${isActive(l.path) ? 'text-indigo-600' : 'text-gray-900'}`}>
+                                  {l.label}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-0.5">{l.desc}</p>
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Other links */}
+                  {topLinks.slice(1).map(link => (
+                    <Link
+                      key={link.path}
+                      to={link.path}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isActive(link.path)
+                          ? 'text-indigo-600 bg-indigo-50'
+                          : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </>
+              )}
+
+              {!showPublicNav && (
                 <span className="text-sm text-gray-400 font-medium">Dashboard</span>
               )}
             </div>
 
-            {/* Right: notifications + auth buttons / profile */}
+            {/* Right — auth + notifications */}
             <div className="flex items-center gap-1 sm:gap-2">
-              {/* Refer & Earn — shown on all dashboard pages */}
               {isAuthenticated && isDashboardRoute && (
                 <>
-                  {/* Desktop: large violet pill */}
                   <Link
                     to="/referral"
                     className="refer-earn-btn relative hidden sm:flex items-center gap-2 overflow-hidden bg-violet-100 hover:bg-violet-200 text-violet-700 text-sm font-semibold px-5 py-2.5 rounded-full transition-colors duration-300 select-none"
@@ -144,7 +201,6 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                     <Gift className="refer-icon w-5 h-5 shrink-0 text-violet-600" />
                     <span className="whitespace-nowrap">Refer &amp; earn up to $265</span>
                   </Link>
-                  {/* Mobile: compact icon pill */}
                   <Link
                     to="/referral"
                     className="refer-earn-btn relative sm:hidden flex items-center gap-1.5 overflow-hidden bg-violet-100 hover:bg-violet-200 text-violet-700 text-xs font-semibold px-3 py-2 rounded-full transition-colors duration-300 select-none"
@@ -156,14 +212,14 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                   </Link>
                 </>
               )}
-              {isAuthenticated && isDashboardRoute && (
-                <UserNotificationDropdown />
-              )}
+
+              {isAuthenticated && isDashboardRoute && <UserNotificationDropdown />}
+
               {!isAuthenticated ? (
                 <>
                   <Link
                     to="/login"
-                    className="hidden sm:block text-sm font-medium text-gray-700 hover:text-indigo-600 transition-colors"
+                    className="hidden sm:block text-sm font-medium text-gray-700 hover:text-indigo-600 transition-colors px-3 py-2"
                   >
                     Login
                   </Link>
@@ -177,8 +233,8 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
               ) : (
                 <div className="relative" ref={dropdownRef}>
                   <button
-                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-                    className="flex items-center gap-1.5 focus:outline-none group"
+                    onClick={() => setIsProfileDropdownOpen(o => !o)}
+                    className="flex items-center gap-1.5 focus:outline-none"
                   >
                     <div className="w-8 h-8 bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0">
                       {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
@@ -227,25 +283,65 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
           </div>
         </div>
 
-        {/* Mobile menu — public routes only */}
+        {/* Mobile menu */}
         {!isDashboardRoute && isMobileMenuOpen && (
           <div className="md:hidden border-t border-gray-100 bg-white shadow-lg">
             <div className="px-4 py-3 space-y-1">
-              {showPublicNav && publicLinks.map((link) => (
-                <Link
-                  key={link.path}
-                  to={link.path}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    isActive(link.path)
-                      ? 'bg-indigo-50 text-indigo-600'
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <link.icon className="w-4 h-4 shrink-0" />
-                  {link.label}
-                </Link>
-              ))}
+              {showPublicNav && (
+                <>
+                  {/* Home */}
+                  <Link
+                    to="/"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      isActive('/') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Home className="w-4 h-4 shrink-0" />
+                    Home
+                  </Link>
+
+                  {/* Platform section */}
+                  <div className="px-3 pt-2 pb-1">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Platform</p>
+                  </div>
+                  {platformLinks.map(l => {
+                    const Icon = l.icon;
+                    return (
+                      <Link
+                        key={l.path}
+                        to={l.path}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                          isActive(l.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {l.label}
+                      </Link>
+                    );
+                  })}
+
+                  {/* Rest */}
+                  <div className="px-3 pt-2 pb-1">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Company</p>
+                  </div>
+                  {topLinks.slice(1).map(link => (
+                    <Link
+                      key={link.path}
+                      to={link.path}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        isActive(link.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <link.icon className="w-4 h-4 shrink-0" />
+                      {link.label}
+                    </Link>
+                  ))}
+                </>
+              )}
+
               {!isAuthenticated && (
                 <div className="pt-2 border-t border-gray-100 flex flex-col gap-2 mt-2">
                   <Link

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, Bell, Settings, LogOut, CreditCard,
   Bookmark, TrendingUp, User, HelpCircle, Shield, Kanban,
   CalendarDays, Sparkles, ScanSearch, ThumbsUp, Truck, Users, BarChart3, Gift, Receipt, FileEdit, Lightbulb, Award, Search, Brain,
-  X, ChevronRight, Zap
+  X, ChevronRight, Zap, Building2, FolderOpen
 } from 'lucide-react';
 import { opportunityAPI } from '../services/api';
 
@@ -210,6 +210,12 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
     { path: '/referral',             label: 'Earn by Referring',          icon: Gift,       color: 'text-green-500',  pro: false, desc: 'Share & earn commissions' },
   ];
 
+  const companyItems = [
+    { path: '/company/profile',   label: 'Company Profile',   icon: Building2,   color: 'text-indigo-500', desc: 'UEI, certs, capabilities' },
+    { path: '/company/team',      label: 'Team Members',      icon: Users,       color: 'text-blue-500',   desc: 'Invite & manage your team' },
+    { path: '/company/documents', label: 'Document Library',  icon: FolderOpen,  color: 'text-amber-500',  desc: 'Shared proposals & templates' },
+  ];
+
   const accountItems = [
     { path: '/pricing',     label: 'Upgrade My Plan',     icon: CreditCard, color: 'text-purple-500', desc: 'See all plan options' },
     { path: '/billing',     label: 'Billing & Invoices',  icon: Receipt,    color: 'text-indigo-500', desc: 'Download receipts & manage plan' },
@@ -371,6 +377,21 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Company Workspace */}
+          <div className="px-3 pt-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">🏢 Company Workspace</p>
+            <div className="space-y-0.5">
+              {companyItems.map((item) => (
+                <Link key={item.path} to={item.path} onClick={onClose}
+                  className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive(item.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}>
+                  <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.path) ? 'text-indigo-600' : item.color} group-hover:scale-110 transition-transform`} />
+                  <span className="flex-1 font-medium text-sm">{item.label}</span>
+                  {isActive(item.path) && <div className="w-1 h-6 bg-indigo-600 rounded-full shrink-0" />}
+                </Link>
+              ))}
             </div>
           </div>
 

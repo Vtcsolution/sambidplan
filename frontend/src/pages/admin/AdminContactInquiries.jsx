@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MessageSquare, Mail, Phone, Building2, Users, Clock, ChevronDown, ChevronUp, Loader2, RefreshCw, Zap, AlertCircle, DollarSign, CheckCircle, ShieldAlert } from 'lucide-react';
 import { adminPanelAPI } from '../../services/adminApi';
 import ConfirmModal from '../../components/ConfirmModal';
+import { useAdminPermission } from '../../hooks/useAdminPermission';
 const contactAPI = {
   getAll:          (params) => adminPanelAPI.getContactInquiries(params),
   update:          (id, data) => adminPanelAPI.updateContactInquiry(id, data),
@@ -38,6 +39,7 @@ const ACTIVATABLE_PLANS = ['enterprise', 'custom', 'pro', 'starter'];
 const PLAN_PRICES = { starter: 29, pro: 79, enterprise: 499, custom: 499 };
 
 function InquiryRow({ inquiry: initialInquiry, onUpdate }) {
+  const { isAdmin } = useAdminPermission();
   const [expanded, setExpanded]         = useState(false);
   const [inquiry, setInquiry]           = useState(initialInquiry);
   const [status, setStatus]             = useState(initialInquiry.status);
@@ -234,57 +236,61 @@ function InquiryRow({ inquiry: initialInquiry, onUpdate }) {
                       ))}
                     </div>
 
-                    {/* Manual payment confirmation */}
-                    <div className="p-3 bg-white rounded-lg border border-amber-200">
-                      <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Confirm Payment Received</p>
-                      <div className="flex gap-2 mb-2">
-                        <input
-                          value={payRef}
-                          onChange={e => setPayRef(e.target.value)}
-                          placeholder="Payment reference / transaction ID"
-                          className="flex-1 text-xs border border-gray-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-indigo-400"
-                        />
-                        <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-                          className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:ring-1 focus:ring-indigo-400">
-                          <option value="manual">Manual / Bank</option>
-                          <option value="stripe">Stripe</option>
-                          <option value="paypal">PayPal</option>
-                          <option value="wire">Wire Transfer</option>
-                        </select>
+                    {/* Manual payment confirmation — admin/super_admin only */}
+                    {isAdmin && (
+                      <div className="p-3 bg-white rounded-lg border border-amber-200">
+                        <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Confirm Payment Received</p>
+                        <div className="flex gap-2 mb-2">
+                          <input
+                            value={payRef}
+                            onChange={e => setPayRef(e.target.value)}
+                            placeholder="Payment reference / transaction ID"
+                            className="flex-1 text-xs border border-gray-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-indigo-400"
+                          />
+                          <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
+                            className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:ring-1 focus:ring-indigo-400">
+                            <option value="manual">Manual / Bank</option>
+                            <option value="stripe">Stripe</option>
+                            <option value="paypal">PayPal</option>
+                            <option value="wire">Wire Transfer</option>
+                          </select>
+                        </div>
+                        <button onClick={handleConfirmPayment} disabled={confirmingPay || !payRef.trim()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 disabled:opacity-60 transition">
+                          {confirmingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                          {confirmingPay ? 'Confirming…' : 'Mark as Paid'}
+                        </button>
                       </div>
-                      <button onClick={handleConfirmPayment} disabled={confirmingPay || !payRef.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 disabled:opacity-60 transition">
-                        {confirmingPay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                        {confirmingPay ? 'Confirming…' : 'Mark as Paid'}
-                      </button>
-                    </div>
+                    )}
                   </>
                 )}
               </div>
 
-              {/* Step 2: Activate */}
-              <div className={`rounded-xl border p-4 ${payConfirmed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
-                <p className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-1.5">
-                  <Zap className="w-4 h-4 text-green-600" /> Step 2: Activate Plan
-                  {!payConfirmed && <span className="text-xs font-normal text-gray-500 ml-1">(requires payment confirmation)</span>}
-                </p>
-                {activateError && (
-                  <p className="text-xs text-red-600 flex items-center gap-1 mb-2">
-                    <AlertCircle className="w-3.5 h-3.5" /> {activateError}
+              {/* Step 2: Activate Plan — admin/super_admin only */}
+              {isAdmin && (
+                <div className={`rounded-xl border p-4 ${payConfirmed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                  <p className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-1.5">
+                    <Zap className="w-4 h-4 text-green-600" /> Step 2: Activate Plan
+                    {!payConfirmed && <span className="text-xs font-normal text-gray-500 ml-1">(requires payment confirmation)</span>}
                   </p>
-                )}
-                <button
-                  onClick={handleActivatePlan}
-                  disabled={!payConfirmed || activating}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                >
-                  {activating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                  {activating ? 'Activating...' : `Activate ${inquiry.planInterest} Plan for ${inquiry.email}`}
-                </button>
-                {!payConfirmed && (
-                  <p className="text-xs text-gray-400 mt-1.5">Confirm payment above to unlock activation.</p>
-                )}
-              </div>
+                  {activateError && (
+                    <p className="text-xs text-red-600 flex items-center gap-1 mb-2">
+                      <AlertCircle className="w-3.5 h-3.5" /> {activateError}
+                    </p>
+                  )}
+                  <button
+                    onClick={handleActivatePlan}
+                    disabled={!payConfirmed || activating}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  >
+                    {activating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    {activating ? 'Activating...' : `Activate ${inquiry.planInterest} Plan for ${inquiry.email}`}
+                  </button>
+                  {!payConfirmed && (
+                    <p className="text-xs text-gray-400 mt-1.5">Confirm payment above to unlock activation.</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {activated && (

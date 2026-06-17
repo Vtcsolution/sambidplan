@@ -16,7 +16,7 @@ const PLAN_COLORS = {
 // Plans whose yearly billing goes through the annual request form — NOT PayPal
 const MONTHLY_ONLY_PLANS = ['starter', 'pro'];
 
-export default function PaymentModal({ isOpen, onClose, plan, billingCycle: billingCycleProp = 'monthly' }) {
+export default function PaymentModal({ isOpen, onClose, plan, billingCycle: billingCycleProp = 'monthly', couponCode = '', couponDiscount = 0 }) {
   const navigate = useNavigate();
   const [cycle, setCycle]                     = useState(billingCycleProp);
   const [referralBalance, setReferralBalance] = useState(0);
@@ -43,7 +43,9 @@ export default function PaymentModal({ isOpen, onClose, plan, billingCycle: bill
   // Starter and Pro have yearly plans via the request form — lock them to monthly in this modal
   const isMonthlyOnly   = MONTHLY_ONLY_PLANS.includes(planId);
   const effectiveCycle  = isMonthlyOnly ? 'monthly' : cycle;
-  const baseAmount      = effectiveCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+  const rawAmount       = effectiveCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+  const couponSaving    = couponDiscount > 0 ? Math.round(rawAmount * couponDiscount / 100 * 100) / 100 : 0;
+  const baseAmount      = Math.round((rawAmount - couponSaving) * 100) / 100;
   const canUseBalance   = referralBalance >= MIN_BALANCE_TO_USE;
   const maxApply        = Math.min(referralBalance, baseAmount);
   const effectiveAmount = useBalance ? Math.max(0, baseAmount - balanceToApply) : baseAmount;
@@ -111,10 +113,16 @@ export default function PaymentModal({ isOpen, onClose, plan, billingCycle: bill
             </div>
           )}
 
-          <div className="flex items-baseline gap-1 mt-2">
+          <div className="flex items-baseline gap-2 mt-2 flex-wrap">
+            {couponSaving > 0 && (
+              <span className="text-2xl font-bold text-white/50 line-through">${rawAmount}</span>
+            )}
             <span className="text-4xl font-extrabold text-white">${baseAmount}</span>
             <span className="text-white/70 text-sm">/{effectiveCycle === 'yearly' ? 'year' : 'month'}</span>
           </div>
+          {couponSaving > 0 && (
+            <p className="text-white/80 text-xs mt-1">{couponDiscount}% coupon applied — saving ${couponSaving.toFixed(2)}</p>
+          )}
         </div>
 
         <div className="p-6 space-y-5">
@@ -214,6 +222,9 @@ export default function PaymentModal({ isOpen, onClose, plan, billingCycle: bill
           <div className="bg-gray-50 rounded-xl p-4 flex justify-between items-center text-sm">
             <div>
               <span className="text-gray-600">Total due today</span>
+              {couponSaving > 0 && (
+                <p className="text-xs text-green-600 mt-0.5">Coupon saves ${couponSaving.toFixed(2)}</p>
+              )}
               {useBalance && balanceToApply > 0 && (
                 <p className="text-xs text-green-600 mt-0.5">After ${balanceToApply.toFixed(2)} referral credit</p>
               )}
@@ -252,6 +263,7 @@ export default function PaymentModal({ isOpen, onClose, plan, billingCycle: bill
               planName={planId}
               billingCycle={effectiveCycle}
               referralBalanceToApply={useBalance ? balanceToApply : 0}
+              couponCode={couponCode}
               onSuccess={() => {}}
               onClose={onClose}
             />

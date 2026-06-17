@@ -263,6 +263,71 @@ Submission Date: ${new Date().toLocaleString()}
       return { success: false, error: error.message };
     }
   }
+
+  async sendTeamInvite({ toEmail, invitedByName, companyName, role, joinUrl }) {
+    const roleLabel = {
+      admin: 'Admin', capture_manager: 'Capture Manager',
+      proposal_writer: 'Proposal Writer', reviewer: 'Reviewer', member: 'Member',
+    }[role] || 'Member';
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body{font-family:Arial,sans-serif;line-height:1.6;color:#333;margin:0;padding:0}
+    .wrap{max-width:560px;margin:0 auto;padding:20px}
+    .header{background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px 24px;border-radius:12px 12px 0 0;text-align:center}
+    .header h1{color:#fff;margin:0;font-size:22px}
+    .header p{color:#c7d2fe;margin:6px 0 0;font-size:14px}
+    .body{background:#f8fafc;padding:28px 24px;border-radius:0 0 12px 12px}
+    .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin:20px 0}
+    .role{display:inline-block;background:#eef2ff;color:#4338ca;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600}
+    .btn{display:inline-block;background:#4f46e5;color:#fff!important;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;margin:16px 0}
+    .footer{text-align:center;color:#94a3b8;font-size:12px;margin-top:20px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>🏢 You're Invited to Join a Team</h1>
+      <p>Sambid — Federal Contract Platform</p>
+    </div>
+    <div class="body">
+      <p>Hi there,</p>
+      <p><strong>${invitedByName}</strong> has invited you to join the <strong>${companyName}</strong> company workspace on Sambid.</p>
+      <div class="card">
+        <p style="margin:0 0 8px"><strong>Company:</strong> ${companyName}</p>
+        <p style="margin:0 0 8px"><strong>Your Role:</strong> <span class="role">${roleLabel}</span></p>
+        <p style="margin:0;color:#64748b;font-size:13px">As a ${roleLabel}, you'll be able to collaborate on federal bids, share documents, and work together on proposals.</p>
+      </div>
+      <div style="text-align:center">
+        <a href="${joinUrl}" class="btn">Accept Invitation →</a>
+      </div>
+      <p style="font-size:13px;color:#64748b">Or copy this link into your browser:<br/><span style="font-family:monospace;word-break:break-all">${joinUrl}</span></p>
+      <p style="font-size:13px;color:#94a3b8">This invite link is unique to you. If you don't have a Sambid account yet, you'll be prompted to create one first.</p>
+      <div class="footer">
+        <p>© ${new Date().getFullYear()} Sambid · Federal Contract Discovery Platform</p>
+        <p>If you didn't expect this invite, you can safely ignore this email.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: `"Sambid Team" <${process.env.EMAIL_USER}>`,
+        to:      toEmail,
+        subject: `${invitedByName} invited you to join ${companyName} on Sambid`,
+        html,
+      });
+      console.log(`Team invite sent to ${toEmail}: ${info.messageId}`);
+      return { success: true };
+    } catch (err) {
+      console.error('Team invite email failed:', err.message);
+      return { success: false, error: err.message };
+    }
+  }
 }
 
 export default new EmailService();

@@ -26,6 +26,7 @@ import {
   getUnreadNotificationsCount,
   // Invoice Controllers
   getAllInvoices,
+  getAnnualInvoices,
   getInvoiceById,
   updateInvoiceStatus,
   // User Management
@@ -90,6 +91,7 @@ router.post('/plan-requests/:id/send-instructions', sendPlanPaymentInstructions)
 
 // Invoice Management
 router.get('/invoices', getAllInvoices);
+router.get('/annual-invoices', getAnnualInvoices);
 router.get('/invoices/:id', getInvoiceById);
 router.put('/invoices/:id/status', updateInvoiceStatus);
 router.post('/email/test', testEmail);

@@ -1,28 +1,37 @@
-// Hook to read current admin role and permissions from localStorage
+// Hook to read current admin role and permissions from localStorage.
+// Individual permissions (set per-account by super admin) override role defaults.
 export const useAdminPermission = () => {
-  const role        = localStorage.getItem('adminRole')  || 'support';
-  const name        = localStorage.getItem('adminName')  || 'Admin';
-  const email       = localStorage.getItem('adminEmail') || '';
+  const role  = localStorage.getItem('adminRole')  || 'support';
+  const name  = localStorage.getItem('adminName')  || 'Admin';
+  const email = localStorage.getItem('adminEmail') || '';
 
   const isSuperAdmin = role === 'super_admin';
   const isAdmin      = role === 'admin' || isSuperAdmin;
   const isSupport    = role === 'support' || isAdmin;
 
-  // Permission map per role
-  const ROLE_PERMISSIONS = {
-    super_admin: { users: true, payments: true, content: true, settings: true, aiTools: true, campaigns: true },
-    admin:       { users: true, payments: true, content: true, settings: false, aiTools: true, campaigns: true },
-    support:     { users: true, payments: false, content: true, settings: false, aiTools: false, campaigns: false },
+  // Role-level defaults (fallback when no individual permissions are stored)
+  const ROLE_DEFAULTS = {
+    super_admin: { users: true,  payments: true,  content: true,  settings: true,  aiTools: true,  campaigns: true  },
+    admin:       { users: true,  payments: true,  content: true,  settings: false, aiTools: true,  campaigns: true  },
+    support:     { users: false, payments: false, content: false, settings: false, aiTools: false, campaigns: false },
   };
 
-  const permissions = ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.support;
+  // Individual permissions stored at login time (set by super admin per account)
+  let storedPerms = {};
+  try {
+    storedPerms = JSON.parse(localStorage.getItem('adminPermissions') || '{}');
+  } catch {}
+
+  // Merge: stored individual permissions override role defaults
+  const defaults    = ROLE_DEFAULTS[role] || ROLE_DEFAULTS.support;
+  const permissions = { ...defaults, ...storedPerms };
 
   const can = (permission) => {
-    if (isSuperAdmin) return true; // super_admin bypasses all
+    if (isSuperAdmin) return true; // super_admin bypasses all checks
     return !!permissions[permission];
   };
 
-  // Page-level access rules
+  // Page-level access rules (role-based, not affected by individual permission toggles)
   const PAGE_ACCESS = {
     '/admin/dashboard':         ['super_admin', 'admin', 'support'],
     '/admin/platform-health':   ['super_admin', 'admin'],
@@ -39,12 +48,14 @@ export const useAdminPermission = () => {
     '/admin/opportunities':     ['super_admin', 'admin'],
     '/admin/settings':          ['super_admin'],
     '/admin/email-settings':    ['super_admin'],
+    '/admin/prospects':         ['super_admin', 'admin', 'support'],
+    '/admin/prospect-outreach': ['super_admin', 'admin', 'support'],
   };
 
   const canAccessPage = (path) => {
     if (isSuperAdmin) return true;
     const allowed = PAGE_ACCESS[path];
-    if (!allowed) return true; // no restriction defined
+    if (!allowed) return true;
     return allowed.includes(role);
   };
 

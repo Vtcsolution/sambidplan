@@ -18,6 +18,7 @@ import { sendAdminPaymentAlert, sendPaymentConfirmationEmail } from '../services
 import { creditReferralCommission } from './referralController.js';
 import { creditSupportCommission } from './supportController.js';
 import { SUPPORT_DISCOUNT_RATE } from '../models/SupportReferral.js';
+import Admin from '../models/Admin.js';
 import { createUserNotification } from '../services/notificationService.js';
 import { MIN_BALANCE_TO_USE } from '../models/Withdrawal.js';
 
@@ -258,7 +259,7 @@ export const confirmStripePaymentHandler = async (req, res) => {
 // @route   POST /api/payment/paypal/create-order
 export const createPayPalPayment = async (req, res) => {
   try {
-    const { planName, billingCycle = 'monthly', referralBalanceToApply = 0 } = req.body;
+    const { planName, billingCycle = 'monthly', referralBalanceToApply = 0, couponCode } = req.body;
     const user = await User.findById(req.user._id);
 
     console.log(`📝 Creating PayPal order for user: ${user.email}, plan: ${planName}`);
@@ -281,6 +282,23 @@ export const createPayPalPayment = async (req, res) => {
       supportDiscount = Math.round(fullAmount * SUPPORT_DISCOUNT_RATE * 100) / 100;
       fullAmount      = Math.round((fullAmount - supportDiscount) * 100) / 100;
       console.log(`🎁 Support referral discount $${supportDiscount} applied for ${user.email}`);
+    }
+
+    // Apply 10% coupon code discount — check User referral codes then Support Admin codes
+    let couponDiscount = 0;
+    let couponReferrerId = null;
+    if (couponCode && !freshUser.supportReferredBy) {
+      const code = couponCode.trim().toUpperCase();
+      let referrer = await User.findOne({ referralCode: code }).select('_id name');
+      if (!referrer) {
+        referrer = await Admin.findOne({ referralCode: code, role: 'support', isActive: true }).select('_id name');
+      }
+      if (referrer && referrer._id.toString() !== user._id.toString()) {
+        couponDiscount    = Math.round(fullAmount * 0.10 * 100) / 100;
+        fullAmount        = Math.round((fullAmount - couponDiscount) * 100) / 100;
+        couponReferrerId  = referrer._id;
+        console.log(`🏷️ Coupon ${code} applied: $${couponDiscount} off for ${user.email}`);
+      }
     }
 
     // Validate and compute referral balance reservation (not deducted until capture succeeds)
@@ -325,6 +343,7 @@ export const createPayPalPayment = async (req, res) => {
         status: 'pending',
         paymentMethod: 'paypal',
         ...(supportDiscount > 0 && { supportDiscount, supportMember: freshUser.supportReferredBy }),
+        ...(couponDiscount > 0 && couponReferrerId && { couponDiscount, couponReferrer: couponReferrerId }),
       });
       if (referralReserved > 0) {
         invoice.metadata = new Map([['referralBalanceReserved', referralReserved.toString()]]);
@@ -475,6 +494,21 @@ export const capturePayPalPaymentHandler = async (req, res) => {
       .catch(e => console.error('Referral commission (paypal):', e.message));
     creditSupportCommission(user._id, invoice._id, invoice.plan, invoice.amount)
       .catch(e => console.error('Support commission (paypal):', e.message));
+
+    // Credit 10% coupon commission to the code owner (User or Support Admin)
+    if (invoice.couponReferrer && invoice.couponDiscount > 0) {
+      const couponCommission = Math.round(invoice.amount * 0.10 * 100) / 100;
+      const userUpdate = await User.findByIdAndUpdate(invoice.couponReferrer, {
+        $inc: { referralBalance: couponCommission, totalReferralEarnings: couponCommission },
+      });
+      if (!userUpdate) {
+        // Referrer is a support admin — credit their admin balance
+        Admin.findByIdAndUpdate(invoice.couponReferrer, {
+          $inc: { referralBalance: couponCommission, totalCommissionEarned: couponCommission },
+        }).catch(e => console.error('Coupon commission (admin, paypal):', e.message));
+      }
+      console.log(`🏷️  Coupon commission $${couponCommission} credited to ${invoice.couponReferrer}`);
+    }
 
     // ── 7. Immediately distribute today's opportunities for the upgraded plan ─
     try {

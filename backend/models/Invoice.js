@@ -47,6 +47,8 @@ const invoiceSchema = new mongoose.Schema({
   },
   supportDiscount: { type: Number, default: 0 },
   supportMember:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  couponDiscount:  { type: Number, default: 0 },
+  couponReferrer:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   paidAt: {
     type: Date
   },

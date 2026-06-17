@@ -309,6 +309,42 @@ export const getAllInvoices = async (req, res) => {
   }
 };
 
+// @desc    Get yearly invoices (online payments) for the Annual Requests dashboard
+// @route   GET /api/admin/annual-invoices
+export const getAnnualInvoices = async (req, res) => {
+  try {
+    const { page = 1, limit = 50, status } = req.query;
+
+    const query = { billingCycle: 'yearly' };
+    if (status && status !== 'all') query.status = status;
+
+    // Support members only see invoices from users they referred
+    if (req.admin?.role === 'support') {
+      const referredUsers = await User.find({ supportReferredBy: req.admin._id }).select('_id');
+      query.user = { $in: referredUsers.map(u => u._id) };
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const invoices = await Invoice.find(query)
+      .populate('user', 'name email businessName plan supportReferredBy')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Invoice.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: invoices,
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / parseInt(limit)) },
+    });
+  } catch (error) {
+    console.error('Get annual invoices error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Get invoice by ID
 // @route   GET /api/admin/invoices/:id
 export const getInvoiceById = async (req, res) => {
@@ -1231,13 +1267,24 @@ export const updateSettings = async (req, res) => {
 
 // @desc    Get all notifications
 // @route   GET /api/admin/notifications
+// Notification types that support users are allowed to see
+const SUPPORT_NOTIFICATION_TYPES = ['ticket_created', 'ticket_reply', 'suggestion', 'referral_signup', 'withdrawal_request'];
+
 export const getNotifications = async (req, res) => {
   try {
     const { limit = 50, page = 1, type, read } = req.query;
-    const adminId = req.user._id;
+    const adminId   = req.user._id;
+    const adminRole = req.admin?.role;
 
     const query = {};
-    if (type && type !== 'all') query.type = type;
+
+    // Support role: restrict to types relevant to their work only
+    if (adminRole === 'support') {
+      query.type = { $in: SUPPORT_NOTIFICATION_TYPES };
+    } else if (type && type !== 'all') {
+      query.type = type;
+    }
+
     // Per-admin read filter: check readBy array, not global read flag
     if (read !== undefined) {
       if (read === 'true') {
@@ -1430,10 +1477,15 @@ export const sendBroadcastEmail = async (req, res) => {
 // @route   GET /api/admin/notifications/unread/count
 export const getUnreadNotificationsCount = async (req, res) => {
   try {
-    // Count notifications the current admin has NOT read yet (per-admin tracking)
-    const count = await AdminNotification.countDocuments({
-      'readBy.user': { $ne: req.user._id }
-    });
+    const adminRole = req.admin?.role;
+    const countQuery = { 'readBy.user': { $ne: req.user._id } };
+
+    // Support role: only count types relevant to them
+    if (adminRole === 'support') {
+      countQuery.type = { $in: SUPPORT_NOTIFICATION_TYPES };
+    }
+
+    const count = await AdminNotification.countDocuments(countQuery);
 
     res.json({
       success: true,
@@ -1811,6 +1863,15 @@ export const syncSbaSource = async (req, res) => {
 // Returns badge counts for sidebar items — all in one round-trip
 export const getPendingCounts = async (req, res) => {
   try {
+    const adminId   = req.user._id;
+    const adminRole = req.admin?.role;
+
+    // Notification query: per-admin unread, role-filtered for support
+    const notifQuery = { 'readBy.user': { $ne: adminId } };
+    if (adminRole === 'support') {
+      notifQuery.type = { $in: SUPPORT_NOTIFICATION_TYPES };
+    }
+
     const [
       planRequests,
       annualRequests,
@@ -1826,7 +1887,7 @@ export const getPendingCounts = async (req, res) => {
       ContactInquiry.countDocuments({ status: 'new' }),
       Ticket.countDocuments({ status: { $in: ['open', 'in_progress'] } }),
       Suggestion.countDocuments({ status: 'pending' }),
-      AdminNotification.countDocuments({ read: false }),
+      AdminNotification.countDocuments(notifQuery),
     ]);
 
     res.json({

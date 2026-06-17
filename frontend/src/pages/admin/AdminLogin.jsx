@@ -18,10 +18,11 @@ export default function AdminLogin() {
       const res = await adminAuthAPI.login(form);
       const { token, admin } = res.data;
 
-      localStorage.setItem('adminToken', token);
-      localStorage.setItem('adminName',  admin.name);
-      localStorage.setItem('adminEmail', admin.email);
-      localStorage.setItem('adminRole',  admin.role);
+      localStorage.setItem('adminToken',       token);
+      localStorage.setItem('adminName',        admin.name);
+      localStorage.setItem('adminEmail',       admin.email);
+      localStorage.setItem('adminRole',        admin.role);
+      localStorage.setItem('adminPermissions', JSON.stringify(admin.permissions || {}));
 
       console.log(`✅ Admin logged in: ${admin.email} (${admin.role})`);
       navigate('/admin/dashboard');

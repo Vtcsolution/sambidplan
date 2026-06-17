@@ -50,14 +50,14 @@ function ButtonLoader() {
 }
 
 // ── Dev-only: simulate a successful payment without PayPal popup ────────────
-function DevSimulateButton({ planName, billingCycle, onSuccess, onError, referralBalanceToApply = 0 }) {
+function DevSimulateButton({ planName, billingCycle, onSuccess, onError, referralBalanceToApply = 0, couponCode = '' }) {
   const [loading, setLoading] = useState(false);
 
   const handleClick = async () => {
     setLoading(true);
     try {
       // 1. Create the invoice on the backend (same as real flow)
-      const orderRes = await paymentAPI.createPayPalOrder({ planName, billingCycle, referralBalanceToApply });
+      const orderRes = await paymentAPI.createPayPalOrder({ planName, billingCycle, referralBalanceToApply, couponCode: couponCode || undefined });
       if (!orderRes.data.success) throw new Error(orderRes.data.message || 'Order creation failed');
       const invoiceId = orderRes.data.invoiceId;
 
@@ -88,14 +88,14 @@ function DevSimulateButton({ planName, billingCycle, onSuccess, onError, referra
 }
 
 // ── Main PayPal Smart Button component ──────────────────────────────────────
-function SmartButton({ amount, planName, billingCycle, onSuccess, onError, referralBalanceToApply = 0 }) {
+function SmartButton({ amount, planName, billingCycle, onSuccess, onError, referralBalanceToApply = 0, couponCode = '' }) {
   const invoiceIdRef = useRef(null);
 
   const createOrder = async () => {
     // Step 1: Ask backend to create a PayPal order + our invoice
     let res;
     try {
-      res = await paymentAPI.createPayPalOrder({ planName, billingCycle, referralBalanceToApply });
+      res = await paymentAPI.createPayPalOrder({ planName, billingCycle, referralBalanceToApply, couponCode: couponCode || undefined });
     } catch (axiosErr) {
       // Surface the exact backend error message
       const msg = axiosErr.response?.data?.message || axiosErr.message || 'Server error creating order';
@@ -139,7 +139,7 @@ function SmartButton({ amount, planName, billingCycle, onSuccess, onError, refer
 }
 
 // ── Exported component ───────────────────────────────────────────────────────
-export default function PayPalPayment({ amount, planName, billingCycle, onSuccess, onClose, referralBalanceToApply = 0 }) {
+export default function PayPalPayment({ amount, planName, billingCycle, onSuccess, onClose, referralBalanceToApply = 0, couponCode = '' }) {
   const [error,          setError]        = useState('');
   const [showToast,      setShowToast]    = useState(false);
   const [activatedPlan,  setActivatedPlan] = useState('');
@@ -193,6 +193,11 @@ export default function PayPalPayment({ amount, planName, billingCycle, onSucces
             <span className="text-base font-normal text-gray-400">/{billingCycle === 'yearly' ? 'yr' : 'mo'}</span>
           </p>
           <p className="text-xs text-gray-500 mt-1 capitalize">{planName} Plan · {billingCycle} billing</p>
+          {couponCode && (
+            <p className="text-xs text-green-600 font-medium mt-1">
+              Coupon <strong>{couponCode}</strong> applied — 10% off
+            </p>
+          )}
           {referralBalanceToApply > 0 && (
             <p className="text-xs text-green-600 font-medium mt-1">
               Includes ${Number(referralBalanceToApply).toFixed(2)} referral balance applied
@@ -222,6 +227,7 @@ export default function PayPalPayment({ amount, planName, billingCycle, onSucces
             onSuccess={handleSuccess}
             onError={handleError}
             referralBalanceToApply={referralBalanceToApply}
+            couponCode={couponCode}
           />
         ) : (
           <PayPalScriptProvider
@@ -241,6 +247,7 @@ export default function PayPalPayment({ amount, planName, billingCycle, onSucces
               onSuccess={handleSuccess}
               onError={handleError}
               referralBalanceToApply={referralBalanceToApply}
+              couponCode={couponCode}
             />
           </PayPalScriptProvider>
         )}

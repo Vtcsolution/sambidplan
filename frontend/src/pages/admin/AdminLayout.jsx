@@ -14,14 +14,18 @@ export default function AdminLayout() {
     const token = localStorage.getItem('adminToken');
     if (!token) { navigate('/admin/login'); return; }
 
-    // Verify token is still valid — 401 is handled by the adminApi interceptor
+    // Verify token is still valid and refresh permissions — 401 is handled by the adminApi interceptor
     adminAuthAPI.profile()
       .then(res => {
         const a = res.data.admin;
         setAdmin(a);
-        localStorage.setItem('adminName',  a.name);
-        localStorage.setItem('adminEmail', a.email);
-        localStorage.setItem('adminRole',  a.role);
+        localStorage.setItem('adminName',        a.name);
+        localStorage.setItem('adminEmail',       a.email);
+        localStorage.setItem('adminRole',        a.role);
+        // Always keep permissions fresh so sidebar reflects any changes made by super admin
+        if (a.permissions) {
+          localStorage.setItem('adminPermissions', JSON.stringify(a.permissions));
+        }
       })
       .catch(() => {
         // Interceptor already handles 401 (clears token + redirects).
