@@ -95,6 +95,7 @@ export default function PrivacyPolicy() {
       <SEOHead
         title="Privacy Policy — Sambid"
         description="Sambid's Privacy Policy explains how we collect, use, and protect your data when you use our federal contract notification platform."
+        keywords="Sambid privacy policy, federal contracting software data protection, SAM.gov platform privacy, GDPR compliance government contracting tool"
         canonical="https://sambid.co/privacy"
       />
       <div className="max-w-4xl mx-auto">

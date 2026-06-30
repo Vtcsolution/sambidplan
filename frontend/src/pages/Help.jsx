@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { ticketAPI, suggestionAPI } from '../services/api';
 import ConfirmModal from '../components/ConfirmModal';
+import HowItWorks from '../components/HowItWorks';
 
 const CATEGORIES = [
   { value: 'billing',         label: 'Billing & Payments' },
@@ -602,13 +603,19 @@ export default function Help() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
           <HelpCircle className="w-6 h-6 text-indigo-600 shrink-0" />
           Help & Support
+          <HowItWorks title="Help & Support" steps={[
+            { title: 'Create a support ticket', description: 'Describe your issue, select category (Billing, Technical, Account, General), set priority, attach files' },
+            { title: 'Track status', description: 'Tickets move through: Open → In Progress → Awaiting Reply → Resolved → Closed' },
+            { title: 'Get email replies', description: 'Our team responds via ticket thread — you get an email notification for each reply' },
+            { title: 'AI Chat Assistant', description: 'Quick answers from our AI chatbot for common questions about the platform' },
+          ]} dataUsed={['Your Tickets', 'FAQ Database']} />
         </h1>
         <p className="text-sm sm:text-base text-gray-600 mt-1">Submit a ticket, browse FAQs, or share feedback</p>
       </div>

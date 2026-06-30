@@ -1,88 +1,174 @@
 // backend/services/geminiService.js
-// Switched from Google Gemini to OpenAI — same exported API, drop-in replacement
-import OpenAI from 'openai';
+// AI backend — Claude Opus 4.8 via Anthropic SDK
+import Anthropic from '@anthropic-ai/sdk';
 
-// Lazy singleton — initialized on first use so dotenv has already run
 let _client = null;
 
 const getClient = () => {
   if (_client) return _client;
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error('OPENAI_API_KEY not set in .env');
-  _client = new OpenAI({ apiKey: key });
-  console.log('✅ OpenAI client initialized (lazy)');
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('ANTHROPIC_API_KEY not set in .env');
+  _client = new Anthropic({ apiKey: key });
+  console.log('✅ Anthropic Claude client initialized (lazy)');
   return _client;
 };
 
-// Called by settingsService after admin updates the API key
 export const resetAIClient = () => { _client = null; };
 
-export const chat = async (systemPrompt, userPrompt, model = 'gpt-4o-mini', maxTokens = 1500) => {
-  const client = getClient();
-  const res = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user',   content: userPrompt },
-    ],
-    max_tokens: maxTokens,
-    temperature: 0.7,
-  });
-  return res.choices[0].message.content.trim();
+// Tiered models — Opus for heavy analysis, Sonnet for light tasks
+const HEAVY = 'claude-opus-4-8';    // $5/$25 per 1M — bid analysis, proposals, competitive, risk, go/no-go
+const LIGHT = 'claude-sonnet-4-6';  // $3/$15 per 1M — summarize, Q&A, capability statement, chatbot
+
+// Model pricing: $ per 1M tokens
+const MODEL_PRICING = {
+  'claude-opus-4-8':             { input: 15, output: 75 },
+  'claude-sonnet-4-6':           { input: 3,  output: 15 },
+  'claude-haiku-4-5-20251001':   { input: 1,  output: 5  },
 };
 
-// Shared helper used by contactController for the support chatbot
-// systemPrompt is optional — if provided, it's used as the system message
+const logTokenUsage = async (model, usage) => {
+  try {
+    const AITokenUsage = (await import('../models/AITokenUsage.js')).default;
+    const pricing = MODEL_PRICING[model] || { input: 3, output: 15 };
+    const inputCost = (usage.input_tokens / 1_000_000) * pricing.input;
+    const outputCost = (usage.output_tokens / 1_000_000) * pricing.output;
+    await AITokenUsage.create({
+      provider: 'anthropic',
+      model,
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      totalTokens: (usage.input_tokens || 0) + (usage.output_tokens || 0),
+      cost: inputCost + outputCost,
+    });
+  } catch {}
+};
+
+export const chat = async (systemPrompt, userPrompt, model = LIGHT, maxTokens = 2048) => {
+  const client = getClient();
+  const res = await client.messages.create({
+    model,
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [
+      { role: 'user', content: userPrompt },
+    ],
+  });
+  if (res.usage) logTokenUsage(model, res.usage);
+  const text = res.content.find(b => b.type === 'text');
+  return text?.text?.trim() || '';
+};
+
 export const generateText = async (prompt, systemPrompt) => {
   const client = getClient();
-  const messages = systemPrompt
-    ? [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }]
-    : [{ role: 'user', content: prompt }];
-
-  const res = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages,
-    max_tokens: 500,
-    temperature: 0.6,
+  const res = await client.messages.create({
+    model: LIGHT,
+    max_tokens: 512,
+    ...(systemPrompt ? { system: systemPrompt } : {}),
+    messages: [
+      { role: 'user', content: prompt },
+    ],
   });
-  return res.choices[0].message.content.trim();
+  if (res.usage) logTokenUsage(LIGHT, res.usage);
+  const text = res.content.find(b => b.type === 'text');
+  return text?.text?.trim() || '';
 };
 
 /**
  * Go/No-Go structured analysis
  */
-export const generateGoNoGoAnalysis = async ({ opportunityTitle, agency, naicsCode, setAside, estimatedValue, dueDate, competitorCount, pastPerformanceMatch, teamCapacity, notes, userNaics, businessName }) => {
+export const generateGoNoGoAnalysis = async ({ opportunity, oppContext, compContext, companyProfile, teamCapacity, notes, userNaics, businessName }) => {
+  const hasRealData = !!oppContext;
+
   return await chat(
-    'You are a federal business development strategist running a Go/No-Go bid decision analysis.',
-    `Run a structured Go/No-Go bid decision analysis for this opportunity.
+    `You are a Shipley-certified federal capture director running a formal Go/No-Go gate review. You have access to REAL government data: the complete SAM.gov opportunity (full SOW/description), historical award winners from USASpending.gov, and the company's verified profile with actual past wins. Base EVERY scoring decision on specific evidence from this data. Never guess.`,
+    `Run a formal Go/No-Go gate review for this opportunity.${hasRealData ? ' You have been given COMPLETE real data — use it.' : ''}
 
-COMPANY: ${businessName || 'Our Company'} | NAICS: ${userNaics?.join(', ')}
-OPPORTUNITY: ${opportunityTitle}
-Agency: ${agency} | NAICS: ${naicsCode} | Set-Aside: ${setAside || 'Full & Open'}
-Est. Value: $${estimatedValue || 'Unknown'} | Due: ${dueDate || 'Unknown'}
-Competitor Count: ${competitorCount || 'Unknown'}
-Past Performance Match: ${pastPerformanceMatch || 'Unknown'}
-Team Capacity: ${teamCapacity || 'Available'}
-Notes: ${notes || 'None'}
+═══════════════════════════════════════════
+OUR COMPANY — VERIFIED PROFILE
+═══════════════════════════════════════════
+${companyProfile || `Company: ${businessName || 'Our Company'}\nNAICS: ${userNaics?.join(', ') || 'N/A'}`}
 
-Provide:
-## GO/NO-GO DECISION
-**DECISION: [GO / NO-GO / CONDITIONAL GO]**
-**Confidence: [X%]**
+Team Capacity: ${teamCapacity || 'Fully Available'}
+${notes ? `Additional Notes: ${notes}` : ''}
 
-## SCORING MATRIX (score each 1-10)
-- NAICS/Technical Match: X/10
-- Past Performance Relevance: X/10
-- Competitive Position: X/10
-- Win Probability: X/10
-- Revenue Impact: X/10
-- Resource Availability: X/10
-**TOTAL SCORE: XX/60**
+${hasRealData ? `═══════════════════════════════════════════
+COMPLETE OPPORTUNITY DATA (FROM SAM.GOV)
+═══════════════════════════════════════════
+${oppContext}
 
-## TOP 3 REASONS FOR THIS DECISION
-## WIN STRATEGY (if GO)
-## RISK MITIGATION
-## RECOMMENDED NEXT STEPS`
+═══════════════════════════════════════════
+REAL COMPETITORS & HISTORICAL AWARDS (FROM USASPENDING.GOV)
+═══════════════════════════════════════════
+${compContext || 'No historical data available.'}` : `OPPORTUNITY: ${opportunity?.title || 'Not specified'}\nAgency: ${opportunity?.agency || 'Not specified'}\nNAICS: ${opportunity?.naicsCode || 'N/A'}`}
+
+═══════════════════════════════════════════
+FORMAL GO/NO-GO GATE REVIEW
+═══════════════════════════════════════════
+
+## 1. DECISION
+# **[GO / NO-GO / CONDITIONAL GO]**
+**Confidence: X%**
+
+## 2. SCORING MATRIX (1-10, every score must cite specific evidence)
+
+| # | Factor | Score | Evidence (cite real data) |
+|---|--------|-------|--------------------------|
+| 1 | **NAICS/Technical Match** | X/10 | Does our NAICS match? Do we have the technical skills described in the SOW? |
+| 2 | **Set-Aside Eligibility** | X/10 | Does our business type qualify? If Full & Open, how does size affect us? |
+| 3 | **Past Performance Relevance** | X/10 | Our real past wins from USASpending — how relevant to this scope? |
+| 4 | **Competitive Position** | X/10 | How do we rank against the real USASpending winners? Name them |
+| 5 | **Price Competitiveness** | X/10 | Can we price within the real historical range? Cite award amounts |
+| 6 | **Win Probability** | X/10 | Based on all factors — realistic chance of winning |
+| 7 | **Revenue Impact** | X/10 | Contract value vs. our typical contract size |
+| 8 | **Resource Availability** | X/10 | Team capacity assessment — can we staff this? |
+| 9 | **Timeline Feasibility** | X/10 | Days until deadline — can we prepare quality response? |
+| 10 | **Agency Relationship** | X/10 | Have we/competitors won from this agency before? |
+
+**TOTAL: XX/100**
+- 75-100: Strong GO
+- 50-74: CONDITIONAL GO (address gaps first)
+- Below 50: NO-GO
+
+## 3. WIN PROBABILITY: X%
+Mathematical basis from the scoring matrix. Factor in real competitor count and incumbent strength.
+
+## 4. COMPETITIVE INTELLIGENCE SUMMARY
+${hasRealData ? `- Name EACH real competitor from USASpending data
+- Their contract count and total dollar value
+- Identify the likely incumbent
+- Our ranking among these competitors` : '- Assess based on available information'}
+
+## 5. PRICING INTELLIGENCE
+${hasRealData ? `- Historical award range for this NAICS (cite real amounts from USASpending)
+- Average and median award values
+- **Recommended price-to-win: $X – $Y**` : '- Assess based on estimated value'}
+
+## 6. TOP 3 STRENGTHS (why we should bid)
+Cite specific evidence from our company profile and opportunity data.
+
+## 7. TOP 3 RISKS (why we might lose)
+Cite specific evidence. For each risk, provide a mitigation action.
+
+## 8. WIN STRATEGY (if GO)
+- Key win themes (3 messages)
+- Differentiators to emphasize
+- Teaming strategy (if needed — cite capability gaps)
+- Price strategy (premium, competitive, or aggressive — with reasoning)
+
+## 9. REQUIRED ACTIONS BEFORE BID (if GO or CONDITIONAL)
+Numbered checklist with deadlines based on the response due date:
+1. [Action] — by [date]
+2. [Action] — by [date]
+3. [Action] — by [date]
+4. [Action] — by [date]
+5. [Action] — by [date]
+
+## 10. IF NO-GO: REASONING & ALTERNATIVES
+- Why not (specific evidence)
+- What would need to change for us to bid next time?
+- Subcontracting or teaming opportunity instead?
+- Similar upcoming opportunities to watch?`,
+    HEAVY, 3500
   );
 };
 
@@ -103,32 +189,76 @@ Cover:
 ## COMPETITIVE LANDSCAPE
 ## HOT TOPICS & TRENDS (3-5 policy/tech trends)
 ## RECOMMENDED ACTIONS (5 specific BD actions for this week)
-## AGENCY FOCUS RECOMMENDATIONS`,
-    'gpt-4o'
+## AGENCY FOCUS RECOMMENDATIONS`
   );
 };
 
 /**
- * Summarize RFP/Opportunity
+ * Summarize RFP/Opportunity — uses complete opportunity data from SAM.gov
  */
-export const summarizeRFP = async (opportunity) => {
+export const summarizeRFP = async (opportunity, oppContext, companyProfile) => {
   try {
     return await chat(
-      'You are a federal contracting expert. Be concise and practical.',
-      `Summarize this government contract opportunity:
+      `You are a senior federal contracting analyst with 20+ years analyzing government solicitations. You read the FULL description/SOW text and extract every actionable detail. You NEVER invent information — you only report what exists in the data. You understand FAR/DFARS, NAICS codes, set-aside rules, and agency procurement patterns.`,
+      `Read and analyze this COMPLETE government contract opportunity. Parse the FULL description text carefully — extract every requirement, deadline, submission instruction, and evaluation criterion.
 
-Title: ${opportunity.title}
-Agency: ${opportunity.agency}
-Description: ${opportunity.description?.substring(0, 2000)}
-Due Date: ${opportunity.dueDate ? new Date(opportunity.dueDate).toLocaleDateString() : 'N/A'}
-NAICS Code: ${opportunity.naicsCode}
+═══════════════════════════════════════════
+COMPLETE OPPORTUNITY DATA FROM SAM.GOV
+═══════════════════════════════════════════
+${oppContext || `Title: ${opportunity.title}\nAgency: ${opportunity.agency}\nDescription: ${opportunity.description?.substring(0, 6000)}\nNAICS: ${opportunity.naicsCode}`}
+${companyProfile ? `\n═══════════════════════════════════════════\nYOUR COMPANY PROFILE\n═══════════════════════════════════════════\n${companyProfile}` : ''}
 
-Provide:
-1. Executive Summary (2-3 sentences)
-2. Key Requirements (bullet points)
-3. Evaluation Criteria
-4. Recommended Actions
-5. Red Flags (if any)`
+═══════════════════════════════════════════
+PRODUCE THIS ANALYSIS (from the data above only):
+═══════════════════════════════════════════
+
+## 1. EXECUTIVE SUMMARY
+2-3 sentences: what is being procured, by whom, and the critical deadline.
+
+## 2. OPPORTUNITY CLASSIFICATION
+- Notice Type (Solicitation / RFI / Sources Sought / Combined Synopsis / Award / etc.)
+- Contract Type if stated (FFP, T&M, IDIQ, BPA, Cost-Plus, etc.)
+- Set-Aside (8(a), WOSB, HUBZone, SDVOSB, Full & Open, etc.)
+- NAICS Code + description + size standard if mentioned
+- PSC Code + description
+- Estimated Value
+
+## 3. CONTRACTING ORGANIZATION
+Department → Sub-Tier → Office (with office address if available)
+
+## 4. ALL DATES & DEADLINES
+List every date found: published, response due (with exact time/timezone), performance start, performance end, archive/inactive date, Q&A deadline, site visit date — whatever exists in the data.
+
+## 5. SCOPE OF WORK (extracted from description)
+Parse the description/SOW and list:
+- Primary services/products required
+- Specific tasks or deliverables mentioned
+- Technical requirements (systems, technologies, clearances, certifications)
+- Performance location requirements
+- Period of performance details
+- Any option years mentioned
+
+## 6. SUBMISSION REQUIREMENTS (extracted from description)
+If the description contains submission instructions, list:
+- What to submit (capability statement, proposal sections, page limits, etc.)
+- Where to submit (email addresses, portal, etc.)
+- Page/size limits
+- Required information (UEI, CAGE, NAICS, past performance refs, etc.)
+- Any specific questions to answer
+
+## 7. EVALUATION CRITERIA
+If mentioned: list evaluation factors, weights, and what the agency prioritizes.
+
+## 8. CONTACTS
+All points of contact: name, title, email, phone, role.
+
+## 9. ATTACHMENTS & DOCUMENTS
+List any referenced or attached documents (SOW, PWS, RFP, amendments).
+
+${opportunity.award?.awardee?.name ? `## 10. AWARD DETAILS\nWho won, award amount, award date, awardee UEI/CAGE, awardee location.` : `## 10. BID READINESS ASSESSMENT\n- How many days until deadline?\n- Is this an RFI/Sources Sought (no binding bid) or actual solicitation?\n- What should a small business do RIGHT NOW to respond?\n- Key risks: tight timeline, complex requirements, incumbent advantage?`}
+
+${companyProfile ? `## 11. FIT ASSESSMENT FOR YOUR COMPANY\nBased on your real company data:\n- NAICS match? Certification eligibility for set-aside?\n- Past performance relevance?\n- Honest assessment: are you a strong candidate or should you consider teaming?` : ''}`,
+      LIGHT, 1500
     );
   } catch (error) {
     console.error('AI summarization error:', error.message);
@@ -137,26 +267,75 @@ Provide:
 };
 
 /**
- * Bid/No-Bid Analysis
+ * Bid/No-Bid Analysis — uses real competitive data from USASpending
  */
-export const bidNoBidAnalysis = async (opportunity, userProfile) => {
+export const bidNoBidAnalysis = async (opportunity, userProfile, oppContext, compContext, companyProfile) => {
   try {
     return await chat(
-      'You are a federal contracting bid strategist.',
-      `Analyze if this company should bid on this government contract:
+      `You are a Shipley-certified federal capture manager who makes data-driven bid/no-bid decisions. You NEVER guess — every claim must cite specific data from the inputs. You understand set-aside rules, incumbent advantages, past performance scoring, and pricing strategies. You read the FULL SOW/description to assess technical fit.`,
+      `Make a bid/no-bid decision for this company on this contract. Read the FULL description to understand requirements, then cross-reference against our capabilities and the real competitive landscape.
 
-COMPANY: ${userProfile.businessName || 'Small Business'} | NAICS: ${userProfile.naicsCodes?.join(', ') || 'N/A'} | Type: ${userProfile.businessType || 'Small Business'}
+═══════════════════════════════════════════
+OUR COMPANY — VERIFIED DATA
+═══════════════════════════════════════════
+${companyProfile || `Company: ${userProfile.businessName || 'Small Business'}\nNAICS: ${userProfile.naicsCodes?.join(', ') || 'N/A'}\nType: ${userProfile.businessType || 'Small Business'}`}
 
-OPPORTUNITY: ${opportunity.title}
-Agency: ${opportunity.agency} | NAICS: ${opportunity.naicsCode} | Set-Aside: ${opportunity.setAside || 'Full and Open'} | Value: $${opportunity.estimatedValue?.toLocaleString() || 'Unknown'}
+═══════════════════════════════════════════
+COMPLETE OPPORTUNITY (FROM SAM.GOV)
+═══════════════════════════════════════════
+${oppContext || `Title: ${opportunity.title}\nAgency: ${opportunity.agency}\nNAICS: ${opportunity.naicsCode}\nValue: $${opportunity.estimatedValue?.toLocaleString() || 'Unknown'}`}
 
-Provide:
-1. Recommendation: BID or NO-BID
-2. Confidence Level (0-100%)
-3. Top 3 Reasons
-4. Win Probability (0-100%)
-5. Suggested Bid Range (if BID)
-6. Key Challenges`
+═══════════════════════════════════════════
+REAL COMPETITORS (FROM USASPENDING.GOV — LAST 3 YEARS)
+═══════════════════════════════════════════
+${compContext || 'No historical data available.'}
+
+═══════════════════════════════════════════
+PRODUCE THIS ANALYSIS:
+═══════════════════════════════════════════
+
+## DECISION: BID / NO-BID / CONDITIONAL
+State clearly with confidence percentage.
+
+## SCORING MATRIX (rate each 1-10, cite evidence)
+| Factor | Score | Evidence |
+|--------|-------|----------|
+| NAICS/Technical Match | X/10 | (does our NAICS match? do we have the technical skills described in the SOW?) |
+| Set-Aside Eligibility | X/10 | (does our business type qualify for the set-aside? if Full & Open, how does size affect us?) |
+| Past Performance Fit | X/10 | (do our real past wins align with this scope? cite our actual contracts) |
+| Competitive Position | X/10 | (how do we compare to the real USASpending winners above?) |
+| Price Competitiveness | X/10 | (can we price within the historical range? cite real award amounts) |
+| Timeline Feasibility | X/10 | (days until deadline — can we prepare a quality response?) |
+| Capacity & Resources | X/10 | (based on our company profile — do we have the staff/resources?) |
+| Agency Relationship | X/10 | (have we won from this agency before? do the USASpending winners suggest incumbent advantage?) |
+**TOTAL: XX/80**
+
+## WIN PROBABILITY: X%
+Based on the scoring matrix and real competitive data. Explain the math.
+
+## COMPETITIVE LANDSCAPE ANALYSIS
+- Name EACH real competitor from USASpending data
+- How many contracts they've won, total dollar value
+- Their likely strengths vs. ours
+- Incumbent identification (who currently holds this or similar contracts?)
+
+## PRICING INTELLIGENCE
+- Historical award range for this NAICS (cite real $ from USASpending)
+- Average award amount
+- **Recommended bid range: $X – $Y** (with reasoning)
+- Price-to-win strategy
+
+## TOP RISKS
+1. (specific risk with evidence)
+2. (specific risk with evidence)
+3. (specific risk with evidence)
+
+## IF GO: ACTION PLAN (next 5 steps)
+Specific actions with deadlines based on the response due date.
+
+## IF NO-GO: WHY NOT & ALTERNATIVES
+What would need to change for us to bid? Teaming options? Future opportunities?`,
+      HEAVY, 3000
     );
   } catch (error) {
     console.error('AI bid analysis error:', error.message);
@@ -165,85 +344,87 @@ Provide:
 };
 
 /**
- * Generate Full Proposal
+ * Generate Full Proposal — informed by real award/competitor data
  */
-export const generateFullProposal = async (opportunity, userProfile) => {
+export const generateFullProposal = async (opportunity, userProfile, oppContext, compContext, companyProfile) => {
   const company    = userProfile.businessName || 'Our Company';
-  const naics      = userProfile.naicsCodes?.join(', ') || 'Various';
-  const setAside   = opportunity.setAside || 'Full and Open Competition';
-  const value      = opportunity.estimatedValue ? `$${Number(opportunity.estimatedValue).toLocaleString()}` : 'Not specified';
-  const dueDate    = opportunity.dueDate ? new Date(opportunity.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'See solicitation';
-  const desc       = opportunity.description?.substring(0, 2500) || 'See solicitation documents for full requirements.';
 
-  const systemPrompt = `You are a senior federal proposal writer with 20+ years of experience winning government contracts. You write Section L/M-compliant proposals that score highest on technical and management evaluation factors. Your writing is specific, confident, and evidence-based — never generic. You always write complete, full-length sections with real substance, professional paragraph structure, and persuasive language. You never use placeholder brackets like [Insert X] — you write real, credible content. Use the company name and contract details provided.`;
+  const systemPrompt = `You are a Shipley-trained senior federal proposal writer with 20+ years winning government contracts. You MUST:
+1. Read the FULL SOW/description text and address every requirement directly in the Technical Approach
+2. Reference the company's REAL past wins from USASpending (actual agencies, amounts, dates)
+3. Use REAL competitor pricing data to inform the Pricing Strategy (cite actual award amounts)
+4. Address the specific agency's mission (research from the department/sub-tier/office chain)
+5. If the description mentions submission requirements (page limits, required sections), follow them
+6. Never use placeholder brackets like [Insert X] — write real content
+7. Never invent past performance — if the company has no wins, acknowledge it and emphasize capabilities`;
 
-  const userPrompt = `Write a complete, professionally-formatted government proposal response for the following contract. Each section must be full-length with real, specific, professional content — minimum 3-5 substantial paragraphs per section.
-
-═══════════════════════════════════════════
-CONTRACT INFORMATION
-═══════════════════════════════════════════
-Title: ${opportunity.title}
-Agency: ${opportunity.agency || 'Federal Agency'}
-NAICS Code: ${opportunity.naicsCode || naics}
-Set-Aside: ${setAside}
-Estimated Value: ${value}
-Proposal Due: ${dueDate}
-Description: ${desc}
+  const userPrompt = `Write a complete government proposal response. You MUST use the real data below — real contract details, real competitor landscape, AND the company's REAL past wins and certifications.
 
 ═══════════════════════════════════════════
-OUR COMPANY
+COMPLETE CONTRACT DATA (FROM SAM.GOV)
 ═══════════════════════════════════════════
-Company: ${company}
-NAICS Codes: ${naics}
-Certifications: Small Business${userProfile.certifications ? ', ' + userProfile.certifications : ''}
+${oppContext || `Title: ${opportunity.title}\nAgency: ${opportunity.agency}\nNAICS: ${opportunity.naicsCode}\nValue: $${opportunity.estimatedValue?.toLocaleString() || 'Unknown'}\nDescription: ${opportunity.description?.substring(0, 2500)}`}
 
 ═══════════════════════════════════════════
-REQUIRED SECTIONS — write each fully
+REAL HISTORICAL AWARDS IN THIS SPACE (FROM USASPENDING.GOV)
+═══════════════════════════════════════════
+${compContext || 'No historical data available.'}
+
+═══════════════════════════════════════════
+OUR COMPANY — REAL VERIFIED DATA
+═══════════════════════════════════════════
+${companyProfile || `Company: ${company}\nNAICS: ${userProfile.naicsCodes?.join(', ') || 'Various'}\nCertifications: Small Business${userProfile.certifications ? ', ' + userProfile.certifications : ''}`}
+
+═══════════════════════════════════════════
+REQUIRED SECTIONS
 ═══════════════════════════════════════════
 
 ## COVER LETTER
-
-Write a formal 3-paragraph cover letter addressed to the Contracting Officer. Include: (1) intent to submit and contract reference, (2) company qualifications summary and why we are uniquely positioned to win, (3) statement of commitment, point of contact, and professional closing. Use a professional business letter format.
+Formal 3-paragraph letter. Reference the ACTUAL solicitation number, agency name, and contract title. Address it to the contracting officer if their name is in the contact data. Include our company name, UEI, CAGE code if available.
 
 ## EXECUTIVE SUMMARY
-
-Write 4 substantial paragraphs covering: (1) a compelling opening that demonstrates deep understanding of the agency's mission and this specific requirement, (2) ${company}'s qualifications, relevant experience, and specific capabilities that match this contract, (3) our approach and key differentiators — what sets us apart from every other offeror, (4) summary of expected outcomes, value delivered, and why we represent the lowest risk highest value choice.
+4 paragraphs. (1) Demonstrate understanding of the agency's SPECIFIC mission by referencing the department/sub-tier/office. (2) Show we understand the ACTUAL scope by citing specific requirements from the description/SOW. (3) Our qualifications — reference our REAL past wins and certifications. (4) Why we represent best value — reference competitive pricing from USASpending data.
 
 ## TECHNICAL APPROACH
-
-Write 5+ paragraphs with full technical depth covering: (1) our methodology and technical framework for this specific contract, (2) Phase 1 approach — mobilization, requirements analysis, and kickoff activities, (3) Phase 2 — core delivery methodology with specific tools, technologies, and processes relevant to this contract scope, (4) quality assurance and quality control plan with specific metrics and review processes, (5) innovation and continuous improvement approach. Reference the contract description specifically.
+Read the FULL description/SOW text carefully. For EACH major requirement or task mentioned in the description:
+- State the requirement (quote or paraphrase from the SOW)
+- Describe our specific approach to meeting it
+- Reference relevant tools, technologies, methodologies
+- Cite our past experience with similar work (from our real contract history)
+Write 5+ substantive paragraphs. This is the most important section — it must directly address what the SOW asks for, not generic capabilities.
 
 ## MANAGEMENT PLAN
-
-Write 4+ paragraphs covering: (1) organizational structure and reporting hierarchy for this contract, (2) key personnel roles and qualifications — Program Manager, Technical Lead, and support staff relevant to this scope, (3) communication and reporting plan with specific cadences and deliverable schedules, (4) risk management approach with specific identified risks for this contract type and our mitigation strategies.
+4+ paragraphs. Address: (1) Organizational structure for this SPECIFIC contract at the ACTUAL performance location. (2) Key personnel roles. (3) Communication plan with the ACTUAL agency office. (4) Quality assurance approach. (5) Risk mitigation for the specific risks of this contract.
 
 ## PAST PERFORMANCE
-
-Write 3 specific past performance examples (even if slightly generalized, make them highly credible and relevant to this contract type). Each example must include: agency/client name, contract scope, contract value range, period of performance, specific achievements and metrics, and direct relevance to this procurement. Format as distinct subsections. End with a paragraph on how this experience directly prepares us to succeed on this contract.
+Use ONLY our REAL data:
+- If we have USASpending wins: cite each one with agency, value, dates, scope, and relevance to this contract
+- If we have no federal wins: state honestly that we are pursuing our first federal contract, then emphasize commercial experience and relevant capabilities
+- Compare our track record against the REAL competitors from USASpending data (name them, their contract counts)
+- Explain why our experience — even if smaller in scale — makes us the right choice
 
 ## PRICING STRATEGY
-
-Write 3+ paragraphs covering: (1) our pricing philosophy and approach — cost realism, best value, competitive but fair, (2) basis of estimate and cost elements included (labor categories, ODCs, overhead, profit), (3) cost reduction strategies and efficiencies we bring that reduce total cost of ownership for the government, (4) our commitment to staying within budget and managing cost growth.
+Reference REAL historical award data:
+- "Similar contracts in NAICS ${opportunity.naicsCode} have been awarded at $X–$Y (based on ${'{'}USASpending data{'}'})."
+- Our pricing philosophy: competitive but realistic
+- How our pricing compares to the actual market range
+- Value proposition: what the agency gets for our price that they won't get from lower bidders
 
 ## CONCLUSION
-
-Write a strong 2-paragraph conclusion: (1) recap our unique value proposition and why ${company} is the right choice for this contract, (2) express enthusiasm and commitment, thank the agency for the opportunity, and provide a clear call to action with contact information.
+2 paragraphs. Recap why ${company} is the right choice for this SPECIFIC contract. Reference: our NAICS match, our certifications, our past performance, our competitive pricing, and our commitment to the agency's mission.
 
 FORMAT RULES:
-- Use the exact section headings shown above (## COVER LETTER, ## EXECUTIVE SUMMARY, etc.)
-- Write in first person plural (we, our, us) referring to ${company}
-- Be specific to this contract — reference the agency name, contract title, and scope throughout
-- Professional, confident, government-contract tone
-- No bullet-only sections — use paragraphs with occasional bullets for lists
-- Do not use placeholder brackets like [Name] or [Insert X]`;
+- Write in first person plural referring to ${company}
+- Reference real data throughout (actual names, amounts, dates from the data provided)
+- Professional government-contract tone
+- No placeholder brackets`;
 
   try {
-    return await chat(systemPrompt, userPrompt, 'gpt-4o', 4000);
+    return await chat(systemPrompt, userPrompt, HEAVY, 4000);
   } catch (error) {
     console.error('AI proposal error:', error.message);
-    // Try smaller model if gpt-4o fails
     try {
-      return await chat(systemPrompt, userPrompt, 'gpt-4o-mini', 3500);
+      return await chat(systemPrompt, userPrompt, LIGHT, 3500);
     } catch (err2) {
       console.error('AI proposal fallback model error:', err2.message);
       return getFallbackProposal(opportunity, userProfile);
@@ -252,19 +433,23 @@ FORMAT RULES:
 };
 
 /**
- * Answer RFP Questions
+ * Answer RFP Questions — uses complete opportunity data
  */
-export const answerRFPQuestion = async (opportunity, question) => {
+export const answerRFPQuestion = async (opportunity, question, oppContext) => {
   try {
     return await chat(
-      'You are a federal contracting expert who answers RFP questions clearly.',
-      `Based on this contract, answer the question:
+      'You are a federal contracting expert. Answer questions using ONLY the real contract data provided. If the answer is not in the data, say so clearly — do not guess or invent information.',
+      `Answer the question using ONLY the real contract data below.
 
-CONTRACT: ${opportunity.title}
-AGENCY: ${opportunity.agency}
-DESCRIPTION: ${opportunity.description?.substring(0, 1500)}
+═══════════════════════════════════════════
+COMPLETE CONTRACT DATA (FROM SAM.GOV)
+═══════════════════════════════════════════
+${oppContext || `Title: ${opportunity.title}\nAgency: ${opportunity.agency}\nDescription: ${opportunity.description?.substring(0, 2000)}`}
 
-QUESTION: ${question}`
+═══════════════════════════════════════════
+QUESTION: ${question}
+
+Answer based strictly on the data above. If the information is not available in the data, clearly state "This information is not available in the current contract data — check the full solicitation documents on SAM.gov."`
     );
   } catch (error) {
     console.error('AI Q&A error:', error.message);
@@ -273,24 +458,84 @@ QUESTION: ${question}`
 };
 
 /**
- * Competitive Analysis
+ * Competitive Analysis — uses REAL competitor data from USASpending
  */
-export const competitiveAnalysis = async (opportunity, userProfile) => {
+export const competitiveAnalysis = async (opportunity, userProfile, oppContext, compContext, companyProfile) => {
   try {
     return await chat(
-      'You are a federal contracting competitive intelligence analyst.',
-      `Analyze competition for this contract:
+      `You are a federal market intelligence analyst specializing in competitive positioning for small business government contractors. You analyze REAL award data to build competitor profiles, identify incumbents, and develop win strategies. Every company you name must come from the USASpending data provided — never invent a company name.`,
+      `Build a complete competitive intelligence report for this opportunity. Read the FULL description to understand what the agency needs, then analyze who has won similar work.
 
-OPPORTUNITY: ${opportunity.title} | Agency: ${opportunity.agency} | NAICS: ${opportunity.naicsCode} | Set-Aside: ${opportunity.setAside || 'Full and Open'} | Value: $${opportunity.estimatedValue?.toLocaleString() || 'Unknown'}
-COMPANY: ${userProfile.businessName || 'Small Business'} | NAICS: ${userProfile.naicsCodes?.join(', ') || 'Various'}
+═══════════════════════════════════════════
+OUR COMPANY
+═══════════════════════════════════════════
+${companyProfile || `Company: ${userProfile.businessName || 'Small Business'}\nNAICS: ${userProfile.naicsCodes?.join(', ') || 'N/A'}\nType: ${userProfile.businessType || 'Small Business'}`}
 
-Provide:
-1. Likely Competitor Types
-2. Our Competitive Advantages
-3. Weaknesses to Address
-4. Differentiation Strategy
-5. Key Win Themes
-6. Price Positioning (Low/Medium/High)`
+═══════════════════════════════════════════
+TARGET OPPORTUNITY (FROM SAM.GOV)
+═══════════════════════════════════════════
+${oppContext || `Title: ${opportunity.title}\nAgency: ${opportunity.agency}\nNAICS: ${opportunity.naicsCode}\nSet-Aside: ${opportunity.setAside || 'Full and Open'}\nValue: $${opportunity.estimatedValue?.toLocaleString() || 'Unknown'}`}
+
+═══════════════════════════════════════════
+REAL AWARD HISTORY (FROM USASPENDING.GOV)
+═══════════════════════════════════════════
+${compContext || 'No historical data available.'}
+
+═══════════════════════════════════════════
+PRODUCE THIS INTELLIGENCE REPORT:
+═══════════════════════════════════════════
+
+## 1. COMPETITOR PROFILES
+For EACH company in the USASpending data, create a mini-profile:
+- Company name
+- Number of contracts won in this NAICS
+- Total award value
+- Agencies they serve
+- Their likely strengths (based on contract volume and value)
+- Threat level to us: HIGH / MEDIUM / LOW
+
+## 2. INCUMBENT IDENTIFICATION
+- Who is MOST LIKELY the current contract holder (based on agency match + recent awards)?
+- What is their estimated contract value?
+- How long have they held this or similar contracts?
+- Incumbent displacement difficulty: EASY / MODERATE / HARD
+
+## 3. MARKET SIZING & PRICING
+- Total market size for this NAICS (based on USASpending award totals)
+- Award value distribution: smallest, average, median, largest
+- Price bands: where do most awards cluster?
+- **Recommended price range for this specific opportunity**
+
+## 4. OUR COMPETITIVE POSITION (honest assessment)
+
+| Factor | Our Company | Top Competitor | Gap |
+|--------|------------|----------------|-----|
+| Federal contract wins | X | Y | +/- |
+| Total award value | $X | $Y | +/- |
+| Agency experience | X | Y | +/- |
+| Set-aside eligibility | X | Y | +/- |
+| NAICS match | X | Y | +/- |
+
+## 5. SWOT ANALYSIS
+- **Strengths** (our real advantages from company profile)
+- **Weaknesses** (honest gaps vs. competitors — cite specific data)
+- **Opportunities** (market gaps, set-aside advantages, teaming possibilities)
+- **Threats** (incumbent advantage, large competitors, pricing pressure)
+
+## 6. WIN STRATEGY
+Based on all the real data above:
+- Should we bid as Prime or Subcontractor?
+- If teaming: what type of partner do we need? (cite capabilities gap)
+- Price-to-win recommendation (specific $ range with evidence)
+- Key differentiators to emphasize
+- Win themes (3 main messages for our proposal)
+
+## 7. TEAMING RECOMMENDATIONS
+If we're outmatched as a solo bidder:
+- What type of teaming partner should we seek?
+- What capabilities do we bring to a team?
+- Suggested teaming arrangement (prime/sub split, JV, mentor-protege)`,
+      HEAVY, 3000
     );
   } catch (error) {
     console.error('AI competitive analysis error:', error.message);
@@ -345,7 +590,7 @@ Quick assessment: Should a company with NAICS ${companyNaics} bid on this? State
 
 ## RED FLAGS
 Any unusual requirements, tight timelines, or incumbent advantages noted.`,
-    'gpt-4o'
+    HEAVY
   );
 };
 
@@ -386,7 +631,7 @@ Write the capability statement with these sections:
 6. CONTACT INFORMATION
 
 Keep it to one page length. Use professional, action-oriented language appropriate for federal procurement officers.`,
-      'gpt-4o'
+      LIGHT
     );
   } catch (error) {
     console.error('Capability statement error:', error.message);
@@ -395,25 +640,92 @@ Keep it to one page length. Use professional, action-oriented language appropria
 };
 
 /**
- * Risk Assessment
+ * Risk Assessment — uses real contract data and competitive landscape
  */
-export const riskAssessment = async (opportunity) => {
+export const riskAssessment = async (opportunity, oppContext, compContext, companyProfile) => {
   try {
     return await chat(
-      'You are a federal contracting risk assessment expert.',
-      `Assess risks for this contract:
+      `You are a federal contracting risk manager who assesses bid and performance risks using real data. You read the FULL SOW/description to identify technical, compliance, and operational risks. Every risk you identify must be tied to specific evidence from the data — never list generic risks.`,
+      `Perform a comprehensive risk assessment for this opportunity. Read the FULL description/SOW to identify specific risks, then cross-reference against our company capabilities and the competitive landscape.
 
-CONTRACT: ${opportunity.title}
-AGENCY: ${opportunity.agency}
-VALUE: $${opportunity.estimatedValue?.toLocaleString() || 'Unknown'}
-DESCRIPTION: ${opportunity.description?.substring(0, 1000)}
+═══════════════════════════════════════════
+COMPLETE OPPORTUNITY (FROM SAM.GOV)
+═══════════════════════════════════════════
+${oppContext || `Title: ${opportunity.title}\nAgency: ${opportunity.agency}\nValue: $${opportunity.estimatedValue?.toLocaleString() || 'Unknown'}\nDescription: ${opportunity.description?.substring(0, 4000)}`}
 
-Rate each risk LOW/MEDIUM/HIGH and provide mitigation:
-1. Technical Risks
-2. Financial Risks
-3. Schedule Risks
-4. Compliance Risks
-5. Performance Risks`
+═══════════════════════════════════════════
+COMPETITORS (FROM USASPENDING.GOV)
+═══════════════════════════════════════════
+${compContext || 'No historical data available.'}
+
+${companyProfile ? `═══════════════════════════════════════════\nOUR COMPANY\n═══════════════════════════════════════════\n${companyProfile}` : ''}
+
+═══════════════════════════════════════════
+PRODUCE THIS RISK ASSESSMENT:
+═══════════════════════════════════════════
+
+## OVERALL RISK RATING: LOW / MEDIUM / HIGH / CRITICAL
+One-line summary of the overall risk posture.
+
+## RISK MATRIX
+
+### 1. TECHNICAL RISK: [LOW/MEDIUM/HIGH]
+- **What the SOW requires** (cite specific technical requirements from the description)
+- **Our capability match** (based on our company profile and past wins)
+- **Gap analysis** (what we can do vs. what's needed)
+- **Mitigation** (specific actions: hiring, teaming, training)
+
+### 2. FINANCIAL RISK: [LOW/MEDIUM/HIGH]
+- **Contract value** vs. our largest past win (cite real numbers)
+- **Historical pricing** from USASpending (are we in range or reaching?)
+- **Cash flow risk** (contract duration, payment terms — Net-30/60/90)
+- **Mitigation** (pricing strategy, phased approach, bonding)
+
+### 3. SCHEDULE/TIMELINE RISK: [LOW/MEDIUM/HIGH]
+- **Response deadline** (how many days to prepare our submission?)
+- **Performance period** (is it realistic given the scope?)
+- **Ramp-up requirements** (personnel clearances, equipment, facilities)
+- **Mitigation** (fast-track actions, pre-positioned resources)
+
+### 4. COMPETITIVE RISK: [LOW/MEDIUM/HIGH]
+- **Number of likely competitors** (from USASpending data)
+- **Incumbent strength** (name them, their win history, their advantages)
+- **Our competitive gaps** (where we fall short vs. real winners)
+- **Mitigation** (teaming, price strategy, differentiators)
+
+### 5. COMPLIANCE RISK: [LOW/MEDIUM/HIGH]
+- **Set-aside eligibility** (does our business type qualify?)
+- **Required certifications** mentioned in the SOW
+- **SAM.gov registration status** (active? expiring soon?)
+- **FAR/DFARS clauses** that may apply
+- **Mitigation** (certification renewal, compliance review)
+
+### 6. PERFORMANCE/DELIVERY RISK: [LOW/MEDIUM/HIGH]
+- **Performance location** vs. our location (remote possible? travel required?)
+- **Staffing requirements** (do we have the people? need clearances?)
+- **Subcontracting complexity** (if we need to sub, what are the risks?)
+- **Past performance gaps** (have we done this exact type of work before?)
+- **Mitigation** (local partnerships, pre-identified staff, clearance timelines)
+
+### 7. PROTEST RISK: [LOW/MEDIUM/HIGH]
+- **Likelihood of protest** (sole source? controversial set-aside? large value?)
+- **Our vulnerability** (are we the likely target or beneficiary of a protest?)
+- **Mitigation** (bulletproof proposal, compliance documentation)
+
+## RISK SUMMARY TABLE
+| Risk Category | Level | Top Risk | Top Mitigation |
+|--------------|-------|----------|----------------|
+| Technical | X | ... | ... |
+| Financial | X | ... | ... |
+| Schedule | X | ... | ... |
+| Competitive | X | ... | ... |
+| Compliance | X | ... | ... |
+| Performance | X | ... | ... |
+| Protest | X | ... | ... |
+
+## GO/NO-GO RECOMMENDATION BASED ON RISK
+Should we proceed given this risk profile? What conditions must be met?`,
+      HEAVY, 3000
     );
   } catch (error) {
     console.error('AI risk assessment error:', error.message);
@@ -473,7 +785,7 @@ Write a complete Sources Sought response with these sections:
 (One paragraph confirming intent to bid on the resulting solicitation)
 
 Keep the tone professional, specific, and tailored to a federal contracting officer audience.`,
-    'gpt-4o',
+    LIGHT,
     2000
   );
 };

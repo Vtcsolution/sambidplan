@@ -3,41 +3,38 @@
 // Credits are deducted per AI feature call; reset monthly per billing cycle.
 
 // ── Monthly credit allocation per plan ────────────────────────────────────────
-// 10% of each plan's monthly opportunity fetch limit
-// starter: 500 opps → 50 | pro: 3000 opps → 300 | enterprise: unlimited → 1000 cap
+// Each AI call = 15 credits, so allocations reflect realistic usage
 export const PLAN_AI_CREDITS = {
-  trial:       10,   // small demo allocation
-  free:         0,   // no AI access
-  starter:     50,   // 10% of 500
-  pro:        300,   // 10% of 3000
-  enterprise: 1000,  // 10% of ~10,000 effective cap
+  trial:       30,    // 2 AI calls to try
+  free:         0,    // no AI access
+  starter:    150,    // ~10 AI calls/month
+  pro:        600,    // ~40 AI calls/month
+  enterprise: 3000,   // ~200 AI calls/month
   expired:      0,
 };
 
 // ── Credits consumed per feature call ────────────────────────────────────────
+// All Claude API features = 15 credits per request (covers API cost)
+// GPT-based features (if any) = 10 credits per request
 export const FEATURE_COSTS = {
-  // Light (1–2 credits)
-  summarize:            1,
-  ask_question:         1,
-  bid_analysis:         2,
-  risk_assessment:      2,
-  go_no_go:             2,
-  past_performance:     2,
-  analyze_attachment:   2,
+  // Claude Sonnet 4.6 features (15 credits — Claude API)
+  summarize:            15,
+  ask_question:         15,
+  capability_statement: 15,
+  sources_sought:       15,
+  past_performance:     15,
+  analyze_attachment:   15,
+  market_research:      15,
 
-  // Medium (3 credits)
-  capability_statement: 3,
-  rfp_analyzer:         3,
-  sources_sought:       3,
-  competitive_analysis: 3,
-  incumbent:            3,
-
-  // Heavy (5 credits)
-  full_proposal:        5,
-  ai_predictions:       5,
-
-  // Very heavy (10 credits)
-  market_research:      10,
+  // Claude Opus 4.8 features (15 credits — Claude API)
+  bid_analysis:         15,
+  risk_assessment:      15,
+  competitive_analysis: 15,
+  rfp_analyzer:         15,
+  incumbent:            15,
+  ai_predictions:       15,
+  full_proposal:        15,
+  go_no_go:             15,
 };
 
 // Human-readable label for each feature (used in error messages)

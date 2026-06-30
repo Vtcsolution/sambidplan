@@ -11,13 +11,16 @@ const api = axios.create({
   },
 });
 
-// Add token to every request
+// Add token to every request — workspace token (sessionStorage, per-tab) takes priority
+// so a workspace tab never accidentally sends the owner's token
 api.interceptors.request.use(
   (config) => {
+    try {
+      const ws = JSON.parse(sessionStorage.getItem('workspaceSession') || 'null');
+      if (ws?.token) { config.headers.Authorization = `Bearer ${ws.token}`; return config; }
+    } catch {}
     const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => Promise.reject(error)
@@ -41,9 +44,13 @@ api.interceptors.response.use(
     const isLoginRequest = error.config?.url?.includes('/auth/login');
 
     if (error.response?.status === 401 && !isLoginRequest && !redirectingToLogin) {
+      // Don't redirect if in workspace mode — workspace token is the auth mechanism
+      try {
+        const ws = JSON.parse(sessionStorage.getItem('workspaceSession') || 'null');
+        if (ws?.token) return Promise.reject(error);
+      } catch {}
       redirectingToLogin = true;
       clearAuthStorage();
-      // Small delay so any in-flight state updates finish before reload
       setTimeout(() => {
         window.location.href = '/login';
         redirectingToLogin = false;
@@ -122,6 +129,8 @@ export const paymentAPI = {
   createPlanRequest:   (data)    => api.post('/payment/plan-requests', data),
   getMyPlanRequests:   ()        => api.get('/payment/plan-requests'),
   submitPaymentProof:  (id, data)=> api.post(`/payment/plan-requests/${id}/submit-proof`, data),
+  getGateways: () => api.get('/payment/gateways'),
+  stripeCreateIntent: (data) => api.post('/payment/stripe/create-intent', data),
 };
 
 // Admin APIs
@@ -289,6 +298,21 @@ export const companyAPI = {
   updateRole:   (memberId, role) => api.put(`/company/members/${memberId}/role`, { role }),
   removeMember: (memberId)      => api.delete(`/company/members/${memberId}`),
   leave:        ()              => api.delete('/company/leave'),
+
+  // Workspace users
+  workspaceLogin:        (data)   => api.post('/company/workspace/login', data),
+  listWorkspaceUsers:    ()       => api.get('/company/workspace/users'),
+  createWorkspaceUser:   (data)   => api.post('/company/workspace/users', data),
+  updateWorkspaceUser:   (id, d)  => api.put(`/company/workspace/users/${id}`, d),
+  deleteWorkspaceUser:   (id)     => api.delete(`/company/workspace/users/${id}`),
+
+  // Managed service
+  applyManagedService: ()   => api.post('/managed-service'),
+  getManagedService:   ()   => api.get('/managed-service/me'),
+  getMyProjects:       ()   => api.get('/managed-service/projects'),
+  getMyProjectDetail:  (id) => api.get(`/managed-service/projects/${id}`),
+  payInvoiceStripe:     (invoiceId)         => api.post(`/managed-service/invoices/${invoiceId}/pay-stripe`),
+  confirmInvoiceStripe: (invoiceId, data)   => api.post(`/managed-service/invoices/${invoiceId}/confirm-stripe`, data),
 
   // Documents
   listDocs:     (params)        => api.get('/company/documents', { params }),

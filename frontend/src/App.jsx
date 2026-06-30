@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, Suspense, lazy } from 'react';
 import { Helmet } from 'react-helmet-async';
 import Navbar from './components/Navbar';
+import UserNotificationDropdown from './components/UserNotificationDropdown';
 
 // Deferred layout components — not needed for first paint
 const Sidebar       = lazy(() => import('./components/Sidebar'));
@@ -76,6 +77,8 @@ const AdminCampaigns        = lazy(() => import('./pages/admin/AdminCampaigns'))
 const AdminPlatformHealth   = lazy(() => import('./pages/admin/AdminPlatformHealth'));
 const AdminRevenueForecast  = lazy(() => import('./pages/admin/AdminRevenueForecast'));
 const AdminContentGenerator = lazy(() => import('./pages/admin/AdminContentGenerator'));
+const AdminCreditUsage     = lazy(() => import('./pages/admin/AdminCreditUsage'));
+const AdminAIKeys          = lazy(() => import('./pages/admin/AdminAIKeys'));
 const AdminTickets          = lazy(() => import('./pages/admin/AdminTickets'));
 const AdminSuggestions      = lazy(() => import('./pages/admin/AdminSuggestions'));
 const AdminUsers            = lazy(() => import('./pages/admin/AdminUsers'));
@@ -89,6 +92,11 @@ const AdminSupportManagement = lazy(() => import('./pages/admin/AdminSupportMana
 const AdminSupportGuide     = lazy(() => import('./pages/admin/AdminSupportGuide'));
 const AdminMediaManager        = lazy(() => import('./pages/admin/AdminMediaManager'));
 const AdminCompanyWorkspaces   = lazy(() => import('./pages/admin/AdminCompanyWorkspaces'));
+const AdminManagedService      = lazy(() => import('./pages/admin/AdminManagedService'));
+const AdminManagedProjects     = lazy(() => import('./pages/admin/AdminManagedProjects'));
+const AdminFeatureShowcase     = lazy(() => import('./pages/admin/AdminFeatureShowcase'));
+const ManagedServicePage       = lazy(() => import('./pages/company/ManagedService'));
+const FeatureShowcase          = lazy(() => import('./pages/FeatureShowcase'));
 
 const Features          = lazy(() => import('./pages/Features'));
 const FAQ               = lazy(() => import('./pages/FAQ'));
@@ -96,10 +104,13 @@ const CompanyProfile    = lazy(() => import('./pages/company/CompanyProfile'));
 const TeamManagement    = lazy(() => import('./pages/company/TeamManagement'));
 const DocumentLibrary   = lazy(() => import('./pages/company/DocumentLibrary'));
 const CompanyJoin       = lazy(() => import('./pages/company/CompanyJoin'));
+const WorkspaceLogin    = lazy(() => import('./pages/WorkspaceLogin'));
 
 // Eagerly loaded — truly tiny, always visible
 import ScrollToTop from './components/ScrollToTop';
 import Footer from './components/Footer';
+import WorkspaceRoute from './components/WorkspaceRoute';
+const ChatBot = lazy(() => import('./components/ChatBot'));
 
 // Minimal spinner shown while lazy chunks load
 function PageLoader() {
@@ -114,7 +125,10 @@ function App() {
   const location = useLocation();
   const isProtectedRoute = !['/', '/pricing', '/about', '/how-it-works', '/contact',
     '/signup', '/login', '/forgot-password', '/reset-password', '/terms', '/privacy',
-    '/annual-plan-request', '/features', '/faq'].some(p => location.pathname === p || location.pathname.startsWith('/verify-email') || location.pathname.startsWith('/company/join'));
+    '/annual-plan-request', '/features', '/faq'].some(p => location.pathname === p
+      || location.pathname.startsWith('/features/')
+      || location.pathname.startsWith('/verify-email')
+      || location.pathname.startsWith('/company/join'));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -136,19 +150,20 @@ function App() {
     const userName = localStorage.getItem('userName');
     const role = localStorage.getItem('userRole') || sessionStorage.getItem('userRole');
 
-    console.log('App loaded - User role:', role);
-    console.log('App loaded - Token exists:', !!token);
-    console.log('App loaded - Current path:', window.location.pathname);
-
     setUserRole(role);
 
     if (token && userEmail) {
       setIsAuthenticated(true);
-      setUser({
-        email: userEmail,
-        name: userName || userEmail.split('@')[0],
-        role: role
-      });
+      setUser({ email: userEmail, name: userName || userEmail.split('@')[0], role });
+    } else {
+      // Workspace mode — per-tab session in sessionStorage
+      try {
+        const ws = JSON.parse(sessionStorage.getItem('workspaceSession') || 'null');
+        if (ws?.token) {
+          setIsAuthenticated(true);
+          setUser({ email: '', name: ws.displayName || ws.username, role: 'workspace_user' });
+        }
+      } catch {}
     }
   }, []);
 
@@ -200,6 +215,8 @@ function App() {
             <Route path="platform-health"   element={<AdminPlatformHealth />} />
             <Route path="revenue-forecast"  element={<AdminRevenueForecast />} />
             <Route path="content-generator" element={<AdminContentGenerator />} />
+            <Route path="credit-usage"     element={<AdminCreditUsage />} />
+            <Route path="ai-keys"          element={<AdminAIKeys />} />
             <Route path="tickets"           element={<AdminTickets />} />
             <Route path="suggestions"       element={<AdminSuggestions />} />
             <Route path="users"             element={<AdminUsers />} />
@@ -215,6 +232,9 @@ function App() {
             <Route path="marketing-panel"   element={<AdminMarketingPanel />} />
             <Route path="media-manager"        element={<AdminMediaManager />} />
             <Route path="company-workspaces"   element={<AdminCompanyWorkspaces />} />
+            <Route path="managed-service"      element={<AdminManagedService />} />
+            <Route path="managed-projects"     element={<AdminManagedProjects />} />
+            <Route path="feature-showcase"     element={<AdminFeatureShowcase />} />
           </Route>
         </Routes>
       </Suspense>
@@ -230,15 +250,7 @@ function App() {
           <meta name="robots" content="noindex, nofollow" />
         </Helmet>
       )}
-      <Navbar
-        isAuthenticated={isAuthenticated}
-        setIsAuthenticated={setIsAuthenticated}
-        setUser={setUser}
-        user={user}
-        onMenuClick={() => setSidebarOpen(true)}
-      />
-
-      {/* Sidebar - ONLY shown on dashboard pages, NOT on public pages like Home, About, etc. */}
+      {/* Sidebar - shown on dashboard pages */}
       {shouldShowSidebar && (
         <Sidebar
           isOpen={sidebarOpen}
@@ -249,13 +261,24 @@ function App() {
         />
       )}
 
+      {/* Navbar — always visible, shifts right when sidebar is showing */}
+      <div className={`sticky top-0 z-50 ${shouldShowSidebar ? 'md:ml-72' : ''}`}>
+        <Navbar
+          isAuthenticated={isAuthenticated}
+          setIsAuthenticated={setIsAuthenticated}
+          setUser={setUser}
+          user={user}
+          onMenuClick={() => setSidebarOpen(true)}
+        />
+      </div>
+
       {/* Main content area - add margin ONLY when sidebar is visible */}
       {/* AI support chatbot — shown on all non-admin pages */}
       <ScrollToTop />
       <SupportChatbot />
       <CookieConsent />
 
-      <main className={shouldShowSidebar ? 'md:ml-72 transition-all duration-300' : ''}>
+      <main className={shouldShowSidebar ? 'md:ml-72 transition-all duration-300 dashboard-main' : ''}>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* Public Routes - Always accessible */}
@@ -270,45 +293,50 @@ function App() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/how-it-works" element={<HowItWorks />} />
             <Route path="/features" element={<Features />} />
+            <Route path="/features/:slug" element={<FeatureShowcase />} />
             <Route path="/faq" element={<FAQ />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/annual-plan-request" element={<AnnualPlanRequest />} />
 
-            {/* Protected Routes (Dashboard area) */}
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/opportunities" element={<Opportunities />} />
-            <Route path="/opportunity/:id" element={<OpportunityDetail />} />
-            <Route path="/saved" element={<SavedOpportunities />} />
-            <Route path="/alerts" element={<Alerts />} />
-            <Route path="/winning-bids" element={<WinningBidsPage />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/help" element={<Help />} />
-            <Route path="/pipeline"              element={<BidPipeline />} />
-            <Route path="/calendar"             element={<DeadlineCalendar />} />
-            <Route path="/capability-statement" element={<CapabilityStatement />} />
-            <Route path="/rfp-analyzer"         element={<RFPAnalyzer />} />
-            <Route path="/go-no-go"             element={<GoNoGo />} />
-            <Route path="/teaming-finder"       element={<TeamingFinder />} />
-            <Route path="/contract-vehicles"    element={<ContractVehicles />} />
-            <Route path="/market-research"      element={<MarketResearch />} />
+            {/* Protected Routes (Dashboard area) — wrapped with WorkspaceRoute for page-level access control */}
+            <Route path="/dashboard"            element={<WorkspaceRoute><Dashboard /></WorkspaceRoute>} />
+            <Route path="/opportunities"        element={<WorkspaceRoute><Opportunities /></WorkspaceRoute>} />
+            <Route path="/opportunity/:id"      element={<OpportunityDetail />} />
+            <Route path="/saved"                element={<WorkspaceRoute><SavedOpportunities /></WorkspaceRoute>} />
+            <Route path="/alerts"               element={<WorkspaceRoute><Alerts /></WorkspaceRoute>} />
+            <Route path="/winning-bids"         element={<WinningBidsPage />} />
+            <Route path="/settings"             element={<Settings />} />
+            <Route path="/profile"              element={<Profile />} />
+            <Route path="/notifications"        element={<Notifications />} />
+            <Route path="/help"                 element={<Help />} />
+            <Route path="/pipeline"             element={<WorkspaceRoute><BidPipeline /></WorkspaceRoute>} />
+            <Route path="/calendar"             element={<WorkspaceRoute><DeadlineCalendar /></WorkspaceRoute>} />
+            <Route path="/capability-statement" element={<WorkspaceRoute><CapabilityStatement /></WorkspaceRoute>} />
+            <Route path="/rfp-analyzer"         element={<WorkspaceRoute><RFPAnalyzer /></WorkspaceRoute>} />
+            <Route path="/go-no-go"             element={<WorkspaceRoute><GoNoGo /></WorkspaceRoute>} />
+            <Route path="/teaming-finder"       element={<WorkspaceRoute><TeamingFinder /></WorkspaceRoute>} />
+            <Route path="/contract-vehicles"    element={<WorkspaceRoute><ContractVehicles /></WorkspaceRoute>} />
+            <Route path="/market-research"      element={<WorkspaceRoute><MarketResearch /></WorkspaceRoute>} />
             <Route path="/referral"             element={<ReferralPage />} />
             <Route path="/billing"              element={<Billing />} />
-            <Route path="/proposal-builder"    element={<ProposalBuilder />} />
-            <Route path="/terms"               element={<TermsOfService />} />
-            <Route path="/privacy"             element={<PrivacyPolicy />} />
+            <Route path="/proposal-builder"     element={<WorkspaceRoute><ProposalBuilder /></WorkspaceRoute>} />
+            <Route path="/terms"                element={<TermsOfService />} />
+            <Route path="/privacy"              element={<PrivacyPolicy />} />
             <Route path="/payment/payoneer/return" element={<PayoneerReturn />} />
-            <Route path="/suggestions" element={<Suggestions />} />
-            <Route path="/past-performance"  element={<PastPerformance />} />
-            <Route path="/sources-sought"   element={<SourcesSought />} />
-            <Route path="/ai-predictions"   element={<AIPredictions />} />
+            <Route path="/suggestions"          element={<Suggestions />} />
+            <Route path="/past-performance"     element={<WorkspaceRoute><PastPerformance /></WorkspaceRoute>} />
+            <Route path="/sources-sought"       element={<WorkspaceRoute><SourcesSought /></WorkspaceRoute>} />
+            <Route path="/ai-predictions"       element={<WorkspaceRoute><AIPredictions /></WorkspaceRoute>} />
 
             {/* Company Workspace */}
-            <Route path="/company/profile"   element={<CompanyProfile />} />
-            <Route path="/company/team"      element={<TeamManagement />} />
-            <Route path="/company/documents" element={<DocumentLibrary />} />
+            <Route path="/company/profile"   element={<WorkspaceRoute><CompanyProfile /></WorkspaceRoute>} />
+            <Route path="/company/team"            element={<TeamManagement />} />
+            <Route path="/company/managed-service" element={<ManagedServicePage />} />
+            <Route path="/company/documents" element={<WorkspaceRoute><DocumentLibrary /></WorkspaceRoute>} />
             <Route path="/company/join"      element={<CompanyJoin />} />
+
+            {/* Company Workspace login — public, no auth */}
+            <Route path="/workspace/login"   element={<WorkspaceLogin />} />
 
             {/* Support Portal — separate from admin panel and user dashboard */}
             <Route path="/support/login"     element={<SupportLogin />} />
@@ -317,6 +345,9 @@ function App() {
         </Suspense>
       </main>
       {!shouldShowSidebar && !currentPath.startsWith('/support') && <Footer />}
+      {isAuthenticated && shouldShowSidebar && (
+        <Suspense fallback={null}><ChatBot /></Suspense>
+      )}
     </div>
   );
 }

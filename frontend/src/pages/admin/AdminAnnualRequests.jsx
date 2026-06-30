@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   CheckCircle, XCircle, DollarSign, RefreshCw, Clock, AlertTriangle,
   Mail, X, Send, Loader2, BadgeCheck, ShieldCheck, Eye, ChevronDown, ChevronUp, Headphones,
@@ -427,7 +428,7 @@ export default function AdminAnnualRequests() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Annual Plan Requests</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Annual Plan Requests<AdminHowItWorks page="annualRequests" /></h1>
           <p className="text-sm text-gray-500 mt-1">Manual payment flow · Starter ($278/yr) · Pro ($758/yr) · Enterprise ($4,788/yr)</p>
         </div>
         <button onClick={handleRefreshAll} className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm self-start">

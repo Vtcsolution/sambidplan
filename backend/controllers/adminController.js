@@ -1,4 +1,5 @@
 // backend/controllers/adminController.js
+import nodemailer from 'nodemailer';
 import PlanRequest from '../models/PlanRequest.js';
 import User from '../models/User.js';
 import Invoice from '../models/Invoice.js';
@@ -649,17 +650,140 @@ export const updateUserRole = async (req, res) => {
 export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const user = await User.findByIdAndDelete(id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    
+
     console.log(`🗑️ Admin deleted user ${user.email}`);
-    
+
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     console.error('Delete user error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Grant bonus AI credits to a user
+// @route   PUT /api/admin/users/:id/grant-credits
+export const grantCredits = async (req, res) => {
+  try {
+    const { credits, reason } = req.body;
+    const amount = parseInt(credits);
+    if (!amount || amount < 1 || amount > 10000) {
+      return res.status(400).json({ success: false, message: 'Credits must be between 1 and 10,000.' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    user.bonusAICredits = (user.bonusAICredits || 0) + amount;
+    await user.save();
+
+    // Notify user
+    try {
+      const { default: UserNotification } = await import('../models/UserNotification.js');
+      await UserNotification.create({
+        user: user._id,
+        type: 'general',
+        title: `${amount} AI Credits Granted`,
+        message: `You received ${amount} bonus AI credits${reason ? `: ${reason}` : ''}. These don't expire with your monthly reset.`,
+        link: '/opportunities',
+      });
+    } catch {}
+
+    console.log(`🎁 Admin granted ${amount} credits to ${user._id}${reason ? ` (${reason})` : ''}`);
+    res.json({
+      success: true,
+      message: `Granted ${amount} bonus AI credits to ${user.name || user.email}.`,
+      data: { bonusCredits: user.bonusAICredits, totalRemaining: (user.bonusAICredits || 0) },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Unlock/activate plan for a user (with optional credits)
+// @route   PUT /api/admin/users/:id/unlock
+export const unlockUser = async (req, res) => {
+  try {
+    const { plan, durationDays, credits, reason } = req.body;
+    const validPlans = ['trial', 'free', 'starter', 'pro', 'enterprise'];
+    if (plan && !validPlans.includes(plan)) {
+      return res.status(400).json({ success: false, message: `Invalid plan. Must be one of: ${validPlans.join(', ')}` });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    const oldPlan = user.plan;
+    const changes = [];
+
+    // Update plan
+    if (plan) {
+      user.plan = plan;
+      changes.push(`Plan: ${oldPlan} → ${plan}`);
+
+      // Set expiry
+      const days = parseInt(durationDays) || 30;
+      user.planExpiresAt = new Date(Date.now() + days * 86400000);
+      changes.push(`Expires: ${user.planExpiresAt.toLocaleDateString()}`);
+
+      // Reset trial flags if needed
+      if (plan !== 'trial') {
+        user.isTrialActive = false;
+      }
+      if (plan === 'trial') {
+        user.isTrialActive = true;
+        user.trialStartDate = new Date();
+        user.trialEndDate = new Date(Date.now() + days * 86400000);
+      }
+
+      // Reset monthly usage counters
+      user.monthlyMatchesUsed = 0;
+      user.dailyMatchesUsed = 0;
+      user.monthlyAIGenerationsUsed = 0;
+    }
+
+    // Grant bonus credits
+    const bonusCredits = parseInt(credits) || 0;
+    if (bonusCredits > 0) {
+      user.bonusAICredits = (user.bonusAICredits || 0) + bonusCredits;
+      changes.push(`+${bonusCredits} bonus AI credits`);
+    }
+
+    await user.save();
+
+    // Distribute opportunities for new plan
+    if (plan && ['starter', 'pro', 'enterprise'].includes(plan)) {
+      try {
+        const { distributeToUser } = await import('../services/schedulerService.js');
+        await distributeToUser(user);
+      } catch {}
+    }
+
+    // Notify user
+    try {
+      const { default: UserNotification } = await import('../models/UserNotification.js');
+      await UserNotification.create({
+        user: user._id,
+        type: 'plan_activated',
+        title: plan ? `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Activated` : 'Account Updated',
+        message: changes.join(' | ') + (reason ? ` — ${reason}` : ''),
+        link: '/dashboard',
+      });
+    } catch {}
+
+    // Send email
+    try {
+      const { sendPlanActivatedEmail } = await import('../services/emailService.js');
+      await sendPlanActivatedEmail(user, plan || user.plan);
+    } catch {}
+
+    console.log(`🔓 Admin unlocked user ${user._id}: ${changes.join(', ')}`);
+    res.json({ success: true, message: `User unlocked: ${changes.join(' | ')}`, data: user });
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -995,7 +1119,81 @@ export const sendPlanPaymentInstructions = async (req, res) => {
   }
 };
 
-// backend/controllers/adminController.js - Update getAdminStats function
+// @desc    Get monthly analytics for dashboard charts
+// @route   GET /api/admin/analytics
+export const getDashboardAnalytics = async (req, res) => {
+  try {
+    const months = Number(req.query.months) || 12;
+    const now = new Date();
+    const series = [];
+
+    for (let i = months - 1; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const label = start.toLocaleString('en-US', { month: 'short', year: '2-digit' });
+
+      const [newUsers, revenue, paidInvoices, aiCredits] = await Promise.all([
+        User.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+        Invoice.aggregate([
+          { $match: { status: 'paid', paidAt: { $gte: start, $lt: end } } },
+          { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+        ]),
+        Invoice.countDocuments({ status: 'paid', paidAt: { $gte: start, $lt: end } }),
+        (async () => {
+          try {
+            const CreditUsageLog = (await import('../models/CreditUsageLog.js')).default;
+            const agg = await CreditUsageLog.aggregate([
+              { $match: { createdAt: { $gte: start, $lt: end } } },
+              { $group: { _id: null, total: { $sum: '$creditsUsed' }, calls: { $sum: 1 } } },
+            ]);
+            return { credits: agg[0]?.total || 0, calls: agg[0]?.calls || 0 };
+          } catch { return { credits: 0, calls: 0 }; }
+        })(),
+      ]);
+
+      series.push({
+        month: label,
+        newUsers,
+        revenue: revenue[0]?.total || 0,
+        invoices: paidInvoices,
+        aiCredits: aiCredits.credits,
+        aiCalls: aiCredits.calls,
+      });
+    }
+
+    // Cumulative user count at end of each month
+    let cumUsers = await User.countDocuments({ createdAt: { $lt: new Date(now.getFullYear(), now.getMonth() - months + 1, 1) } });
+    for (const s of series) {
+      cumUsers += s.newUsers;
+      s.totalUsers = cumUsers;
+    }
+
+    // Plan distribution right now
+    const [trial, free, starter, pro, enterprise] = await Promise.all([
+      User.countDocuments({ plan: 'trial' }),
+      User.countDocuments({ plan: 'free' }),
+      User.countDocuments({ plan: 'starter' }),
+      User.countDocuments({ plan: 'pro' }),
+      User.countDocuments({ plan: 'enterprise' }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        series,
+        planDistribution: { trial, free, starter, pro, enterprise },
+        totals: {
+          users: series.reduce((s, m) => s + m.newUsers, 0),
+          revenue: series.reduce((s, m) => s + m.revenue, 0),
+          aiCredits: series.reduce((s, m) => s + m.aiCredits, 0),
+          aiCalls: series.reduce((s, m) => s + m.aiCalls, 0),
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 // @desc    Get dashboard stats for admin
 // @route   GET /api/admin/stats
@@ -1312,9 +1510,14 @@ export const getNotifications = async (req, res) => {
       return obj;
     });
 
+    // Also return the unread count so page badge stays in sync with sidebar
+    const unreadQuery = { ...query, 'readBy.user': { $ne: adminId } };
+    const unreadCount = await AdminNotification.countDocuments(unreadQuery);
+
     res.json({
       success: true,
       data,
+      unreadCount,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1754,16 +1957,13 @@ export const triggerCompanySync = async (req, res) => {
     .catch(err => console.error('Sync chain error:', err));
 };
 
-// POST /api/admin/companies/clear  — delete all companies (with confirmation)
+// POST /api/admin/companies/clear  — BLOCKED: government-sourced data is protected
 export const clearAllCompanies = async (req, res) => {
   try {
-    const { confirmed } = req.body;
-    if (!confirmed) {
-      return res.status(400).json({ success: false, message: 'Set confirmed:true in request body to confirm deletion' });
-    }
-    const result = await SamCompany.deleteMany({});
-    console.log(`🗑️  Admin cleared company database: ${result.deletedCount} records deleted`);
-    res.json({ success: true, message: `Deleted ${result.deletedCount} companies`, deletedCount: result.deletedCount });
+    return res.status(403).json({
+      success: false,
+      message: 'Company data from SAM.gov, USASpending, FPDS, and SBA is protected and cannot be deleted. This data is a core platform asset.',
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -1865,30 +2065,27 @@ export const getPendingCounts = async (req, res) => {
   try {
     const adminId   = req.user._id;
     const adminRole = req.admin?.role;
+    const isSupport = adminRole === 'support';
 
     // Notification query: per-admin unread, role-filtered for support
     const notifQuery = { 'readBy.user': { $ne: adminId } };
-    if (adminRole === 'support') {
+    if (isSupport) {
       notifQuery.type = { $in: SUPPORT_NOTIFICATION_TYPES };
     }
 
-    const [
-      planRequests,
-      annualRequests,
-      creditRequests,
-      contactInquiries,
-      tickets,
-      suggestions,
-      notifications,
-    ] = await Promise.all([
-      PlanRequest.countDocuments({ status: 'pending', billingCycle: 'monthly' }),
-      PlanRequest.countDocuments({ status: 'pending', billingCycle: 'yearly' }),
-      CreditPurchase.countDocuments({ status: 'pending' }),
-      ContactInquiry.countDocuments({ status: 'new' }),
-      Ticket.countDocuments({ status: { $in: ['open', 'in_progress'] } }),
-      Suggestion.countDocuments({ status: 'pending' }),
-      AdminNotification.countDocuments(notifQuery),
-    ]);
+    // Count notifications + items the role can see
+    const notificationsP = AdminNotification.countDocuments(notifQuery);
+    const ticketsP       = Ticket.countDocuments({ status: { $in: ['open', 'in_progress'] } });
+    const suggestionsP   = Suggestion.countDocuments({ status: 'pending' });
+    const contactP       = ContactInquiry.countDocuments({ status: 'new' });
+    const annualP        = PlanRequest.countDocuments({ status: 'pending', billingCycle: 'yearly' });
+
+    // Support users can't see plan-requests or credit-requests
+    const planP   = isSupport ? Promise.resolve(0) : PlanRequest.countDocuments({ status: 'pending', billingCycle: 'monthly' });
+    const creditP = isSupport ? Promise.resolve(0) : CreditPurchase.countDocuments({ status: 'pending' });
+
+    const [notifications, tickets, suggestions, contactInquiries, annualRequests, planRequests, creditRequests] =
+      await Promise.all([notificationsP, ticketsP, suggestionsP, contactP, annualP, planP, creditP]);
 
     res.json({
       success: true,

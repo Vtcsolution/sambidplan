@@ -1,10 +1,12 @@
 // frontend/src/pages/Opportunities.jsx
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Clock, Search, Filter, ChevronRight, AlertCircle, Briefcase, History, Database, Crown, CheckCircle, ExternalLink, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
+import { Clock, Search, Filter, ChevronRight, AlertCircle, Briefcase, History, Database, Crown, CheckCircle, ExternalLink, SlidersHorizontal, X, ChevronDown, CalendarDays, Hash, Building, Tag } from 'lucide-react';
 import { opportunityAPI } from '../services/api';
 import ExportButton from '../components/ExportButton';
 import { exportOpportunitiesPDF, exportOpportunitiesCSV } from '../utils/exportUtils';
+import HowItWorks from '../components/HowItWorks';
+import { usePlans } from '../hooks/usePlans';
 
 const SET_ASIDE_OPTIONS = [
   { value: '', label: 'Any' },
@@ -16,7 +18,29 @@ const SET_ASIDE_OPTIONS = [
   { value: 'VOSB', label: 'Veteran-Owned' },
 ];
 
+const NOTICE_TYPE_OPTIONS = [
+  { value: '', label: 'All Types' },
+  { value: 'Solicitation', label: 'Solicitation' },
+  { value: 'Combined Synopsis/Solicitation', label: 'Combined Synopsis' },
+  { value: 'Presolicitation', label: 'Presolicitation' },
+  { value: 'Sources Sought', label: 'Sources Sought' },
+  { value: 'Award Notice', label: 'Award Notice' },
+  { value: 'Special Notice', label: 'Special Notice' },
+  { value: 'Justification and Authorization', label: 'Justification' },
+];
+
+const toDateStr = (d) => d.toISOString().slice(0, 10);
+
+const DUE_DATE_PRESETS = [
+  { label: 'Next 7 days',  from: () => toDateStr(new Date()), to: () => toDateStr(new Date(Date.now() + 7 * 86400000)) },
+  { label: 'Next 15 days', from: () => toDateStr(new Date()), to: () => toDateStr(new Date(Date.now() + 15 * 86400000)) },
+  { label: 'Next 30 days', from: () => toDateStr(new Date()), to: () => toDateStr(new Date(Date.now() + 30 * 86400000)) },
+  { label: 'Next 60 days', from: () => toDateStr(new Date()), to: () => toDateStr(new Date(Date.now() + 60 * 86400000)) },
+  { label: 'Next 90 days', from: () => toDateStr(new Date()), to: () => toDateStr(new Date(Date.now() + 90 * 86400000)) },
+];
+
 export default function Opportunities() {
+  const { plans: livePlans } = usePlans();
   const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,10 +60,19 @@ export default function Opportunities() {
   const [setAsideFilter, setSetAsideFilter] = useState('');
   const [sortBy, setSortBy] = useState('matchScore');
 
+  // Smart filters
+  const [dueDateFrom, setDueDateFrom] = useState('');
+  const [dueDateTo, setDueDateTo] = useState('');
+  const [postedFrom, setPostedFrom] = useState('');
+  const [postedTo, setPostedTo] = useState('');
+  const [naicsFilter, setNaicsFilter] = useState('');
+  const [noticeTypeFilter, setNoticeTypeFilter] = useState('');
+  const [agencyFilter, setAgencyFilter] = useState('');
+  const [activePreset, setActivePreset] = useState('');
+
   const location = useLocation();
 
   useEffect(() => {
-    // Show plan-activated banner when redirected from payment success
     const params = new URLSearchParams(location.search);
     if (params.get('activated') === '1') {
       setActivatedBanner(true);
@@ -47,7 +80,7 @@ export default function Opportunities() {
       window.history.replaceState({}, '', '/opportunities');
     }
     fetchOpportunities();
-  }, [pagination.page, pageSize, searchTerm, statusFilter, minValue, maxValue, setAsideFilter, sortBy]);
+  }, [pagination.page, pageSize, searchTerm, statusFilter, minValue, maxValue, setAsideFilter, sortBy, dueDateFrom, dueDateTo, postedFrom, postedTo, naicsFilter, noticeTypeFilter, agencyFilter]);
 
   const resetFilters = () => {
     setSearchTerm('');
@@ -56,10 +89,33 @@ export default function Opportunities() {
     setMaxValue('');
     setSetAsideFilter('');
     setSortBy('matchScore');
+    setDueDateFrom('');
+    setDueDateTo('');
+    setPostedFrom('');
+    setPostedTo('');
+    setNaicsFilter('');
+    setNoticeTypeFilter('');
+    setAgencyFilter('');
+    setActivePreset('');
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
-  const hasActiveFilters = searchTerm || statusFilter !== 'all' || minValue || maxValue || setAsideFilter || sortBy !== 'matchScore';
+  const applyDueDatePreset = (preset) => {
+    setDueDateFrom(preset.from());
+    setDueDateTo(preset.to());
+    setActivePreset(preset.label);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const clearDueDateRange = () => {
+    setDueDateFrom('');
+    setDueDateTo('');
+    setActivePreset('');
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const hasActiveFilters = searchTerm || statusFilter !== 'all' || minValue || maxValue || setAsideFilter || sortBy !== 'matchScore' || dueDateFrom || dueDateTo || postedFrom || postedTo || naicsFilter || noticeTypeFilter || agencyFilter;
+  const activeFilterCount = [searchTerm, statusFilter !== 'all', minValue, maxValue, setAsideFilter, dueDateFrom, dueDateTo, postedFrom, postedTo, naicsFilter, noticeTypeFilter, agencyFilter].filter(Boolean).length;
 
   const fetchOpportunities = async () => {
     setLoading(true);
@@ -74,6 +130,13 @@ export default function Opportunities() {
         ...(maxValue && { maxValue }),
         ...(setAsideFilter && { setAside: setAsideFilter }),
         ...(sortBy !== 'matchScore' && { sortBy }),
+        ...(dueDateFrom && { dueDateFrom }),
+        ...(dueDateTo && { dueDateTo }),
+        ...(postedFrom && { postedFrom }),
+        ...(postedTo && { postedTo }),
+        ...(naicsFilter && { naicsCode: naicsFilter }),
+        ...(noticeTypeFilter && { noticeType: noticeTypeFilter }),
+        ...(agencyFilter && { agency: agencyFilter }),
       };
       const response = await opportunityAPI.getAll(params);
       console.log('API Response:', response.data);
@@ -147,15 +210,34 @@ export default function Opportunities() {
     if (!userProfile) return '';
     const { monthlyLimit, remainingThisMonth, plan } = userProfile;
     if (plan === 'enterprise' || monthlyLimit === 'Unlimited') return '♾️ Unlimited matches';
-    if (plan === 'trial') return `${remainingThisMonth ?? 0} of 15 trial matches remaining`;
+    if (plan === 'trial' || plan === 'free') return `${remainingThisMonth ?? 0} of ${monthlyLimit ?? 3} matches remaining today`;
     return `${remainingThisMonth ?? 0} matches remaining this month`;
+  };
+
+  // Build the plan-limits banner text live from admin-configured Plan data
+  const getPlanLimitsBannerText = () => {
+    if (!livePlans?.length) return '';
+    const byName = (n) => livePlans.find(p => p.name === n);
+    const free = byName('free');
+    const starter = byName('starter');
+    const pro = byName('pro');
+    const enterprise = byName('enterprise');
+
+    const dailyTxt = free?.dailyLimit > 0 ? `${free.dailyLimit} matches/day` : '3 matches/day';
+    const fmtMonthly = (p, fallback) => {
+      const v = p?.opportunitiesPerMonth;
+      if (v === undefined || v === null) return fallback;
+      return v > 0 ? `${v.toLocaleString()}/month` : 'Unlimited';
+    };
+
+    return `Trial: ${dailyTxt} • Free: ${dailyTxt} • Starter: ${fmtMonthly(starter, '500/month')} • Pro: ${fmtMonthly(pro, '3,000/month')} • Enterprise: ${fmtMonthly(enterprise, 'Unlimited')}`;
   };
 
   const isAdmin = localStorage.getItem('userRole') === 'admin';
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Plan activation banner */}
         {activatedBanner && (
@@ -174,6 +256,31 @@ export default function Opportunities() {
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
               <Briefcase className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
               Contract Opportunities
+              <HowItWorks
+                title="Contract Opportunities"
+                steps={[
+                  { title: 'Auto-matched to your NAICS', description: 'System fetches opportunities from SAM.gov every hour and matches them to your registered NAICS codes' },
+                  { title: 'AI Match Score', description: 'Each opportunity is scored 0-100% based on NAICS fit, set-aside eligibility, value range, and your past performance' },
+                  { title: 'Smart Filters', description: 'Filter by due date (presets: next 7/15/30/60/90 days), NAICS code, notice type, agency, set-aside, value range' },
+                  { title: 'View Details', description: 'Click any opportunity to see full SAM.gov data, run AI analysis, save to your list, or add deadline to calendar' },
+                ]}
+                dataUsed={['SAM.gov API', 'Your NAICS Codes', 'USASpending Awards']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Opportunity Detail</strong> → click any contract to see full SAM.gov data + run AI analysis</li>
+                  <li><strong>Saved Opportunities</strong> → save contracts here, they appear in your saved list and all AI tools</li>
+                  <li><strong>Go/No-Go</strong> → select any opportunity for a full bid decision analysis</li>
+                  <li><strong>Deadline Calendar</strong> → due dates from this feed populate your calendar</li>
+                  <li><strong>Alerts</strong> → new matches trigger email/push notifications based on your settings</li>
+                </ul>
+                <p className="text-sm font-semibold text-gray-700 mt-2">How matching works:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li>System fetches from SAM.gov every 60 minutes for your NAICS codes</li>
+                  <li>Each opportunity scored 0-100%: NAICS match + set-aside fit + value range + agency alignment</li>
+                  <li>Enterprise: sees ALL active contracts. Other plans: distributed based on monthly limits</li>
+                </ul>
+              </HowItWorks>
             </h1>
             <p className="text-sm sm:text-base text-gray-600 mt-1">
               Federal contracts matched to your NAICS codes
@@ -228,7 +335,7 @@ export default function Opportunities() {
         <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start">
           <Database className="w-5 h-5 text-blue-500 mr-2 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-blue-700">
-            <strong>Trial: 15 matches over 3 days • Free: 50/month • Starter: 500/month • Pro: 3,000/month • Enterprise: Unlimited</strong><br />
+            <strong>{getPlanLimitsBannerText()}</strong><br />
             {!isAdmin && 'Showing all open opportunities from the database matched to your NAICS codes. Due dates are always in the future.'}
             {isAdmin && 'As admin, use "Fetch from SAM.gov" to pull the latest opportunities into the master store.'}
           </div>
@@ -269,20 +376,19 @@ export default function Opportunities() {
 
         {/* Search and Filter */}
         <div className="bg-white rounded-xl shadow-sm p-3 sm:p-4 mb-5 sm:mb-6">
-          {/* Row 1: search + advanced toggle */}
+          {/* Row 1: search + sort + toggle */}
           <div className="flex flex-col gap-2 sm:gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by title, agency…"
+                placeholder="Search by title, agency, description…"
                 value={searchTerm}
                 onChange={e => { setSearchTerm(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
                 className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              {/* Sort */}
               <select
                 value={sortBy}
                 onChange={e => { setSortBy(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
@@ -293,7 +399,6 @@ export default function Opportunities() {
                 <option value="value">Highest Value</option>
                 <option value="posted">Newest</option>
               </select>
-              {/* Status tabs — admins see historical records too; regular users only see active */}
               {(isAdmin ? ['all','active','historical'] : ['all','active']).map(s => (
                 <button key={s} onClick={() => { setStatusFilter(s); setPagination(p => ({...p, page:1})); }}
                   className={`px-2.5 sm:px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
@@ -305,43 +410,198 @@ export default function Opportunities() {
                 className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-lg text-xs sm:text-sm font-medium border transition-colors ${showAdvanced ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden xs:inline sm:inline">Filters</span>
-                {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+                Smart Filters
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 w-5 h-5 flex items-center justify-center rounded-full bg-indigo-500 text-white text-xs font-bold">{activeFilterCount}</span>
+                )}
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
               </button>
+              {hasActiveFilters && (
+                <button onClick={resetFilters}
+                  className="flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition">
+                  <X className="w-3.5 h-3.5" /> Clear All
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Row 2: advanced filter panel */}
+          {/* Smart Filters Panel */}
           {showAdvanced && (
-            <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+
+              {/* ── Due Date Range with Quick Presets ──────────────── */}
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Set-Aside Type</label>
-                <select value={setAsideFilter} onChange={e => { setSetAsideFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500">
-                  {SET_ASIDE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                  <CalendarDays className="w-3.5 h-3.5 text-indigo-500" /> Due Date Range
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {DUE_DATE_PRESETS.map(p => (
+                    <button key={p.label} onClick={() => applyDueDatePreset(p)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${activePreset === p.label ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-indigo-700'}`}>
+                      {p.label}
+                    </button>
+                  ))}
+                  {(dueDateFrom || dueDateTo) && (
+                    <button onClick={clearDueDateRange}
+                      className="px-2 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-0.5">From</label>
+                    <input type="date" value={dueDateFrom}
+                      onChange={e => { setDueDateFrom(e.target.value); setActivePreset(''); setPagination(p => ({...p, page:1})); }}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-0.5">To</label>
+                    <input type="date" value={dueDateTo}
+                      onChange={e => { setDueDateTo(e.target.value); setActivePreset(''); setPagination(p => ({...p, page:1})); }}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Min Value ($)</label>
-                <input type="number" placeholder="e.g. 50000" value={minValue}
-                  onChange={e => { setMinValue(e.target.value); setPagination(p => ({...p, page:1})); }}
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+
+              {/* ── Main Filters Grid ─────────────────────────────── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+
+                {/* NAICS Code Filter */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
+                    <Hash className="w-3.5 h-3.5 text-purple-500" /> NAICS Code
+                  </label>
+                  <select value={naicsFilter} onChange={e => { setNaicsFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500">
+                    <option value="">All My NAICS</option>
+                    {userProfile?.naicsCodes?.map(code => (
+                      <option key={code} value={code}>{code}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Notice Type */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
+                    <Tag className="w-3.5 h-3.5 text-blue-500" /> Notice Type
+                  </label>
+                  <select value={noticeTypeFilter} onChange={e => { setNoticeTypeFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500">
+                    {NOTICE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Set-Aside Type */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
+                    <Briefcase className="w-3.5 h-3.5 text-green-500" /> Set-Aside
+                  </label>
+                  <select value={setAsideFilter} onChange={e => { setSetAsideFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500">
+                    {SET_ASIDE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Agency Search */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
+                    <Building className="w-3.5 h-3.5 text-orange-500" /> Agency
+                  </label>
+                  <input type="text" placeholder="e.g. Defense, NASA…" value={agencyFilter}
+                    onChange={e => { setAgencyFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Max Value ($)</label>
-                <input type="number" placeholder="e.g. 5000000" value={maxValue}
-                  onChange={e => { setMaxValue(e.target.value); setPagination(p => ({...p, page:1})); }}
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+
+              {/* ── Value Range + Posted Date ─────────────────────── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Min Value ($)</label>
+                  <input type="number" placeholder="e.g. 50,000" value={minValue}
+                    onChange={e => { setMinValue(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Max Value ($)</label>
+                  <input type="number" placeholder="e.g. 5,000,000" value={maxValue}
+                    onChange={e => { setMaxValue(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Posted From</label>
+                  <input type="date" value={postedFrom}
+                    onChange={e => { setPostedFrom(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Posted To</label>
+                  <input type="date" value={postedTo}
+                    onChange={e => { setPostedTo(e.target.value); setPagination(p => ({...p, page:1})); }}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500" />
+                </div>
               </div>
-              <div className="flex items-end">
-                {hasActiveFilters && (
-                  <button onClick={resetFilters}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm hover:bg-red-100 transition">
-                    <X className="w-3.5 h-3.5" /> Clear All Filters
-                  </button>
-                )}
-              </div>
+
+              {/* ── Active Filter Tags ────────────────────────────── */}
+              {hasActiveFilters && (
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
+                  <span className="text-xs text-gray-400 py-1">Active:</span>
+                  {dueDateFrom && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
+                      Due from {dueDateFrom}
+                      <button onClick={() => { setDueDateFrom(''); setActivePreset(''); }} className="hover:text-indigo-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {dueDateTo && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
+                      Due until {dueDateTo}
+                      <button onClick={() => { setDueDateTo(''); setActivePreset(''); }} className="hover:text-indigo-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {naicsFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium">
+                      NAICS: {naicsFilter}
+                      <button onClick={() => setNaicsFilter('')} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {noticeTypeFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                      {noticeTypeFilter}
+                      <button onClick={() => setNoticeTypeFilter('')} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {setAsideFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium">
+                      {SET_ASIDE_OPTIONS.find(o => o.value === setAsideFilter)?.label || setAsideFilter}
+                      <button onClick={() => setSetAsideFilter('')} className="hover:text-green-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {agencyFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-50 text-orange-700 rounded-full text-xs font-medium">
+                      Agency: {agencyFilter}
+                      <button onClick={() => setAgencyFilter('')} className="hover:text-orange-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {minValue && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">
+                      Min ${Number(minValue).toLocaleString()}
+                      <button onClick={() => setMinValue('')} className="hover:text-emerald-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {maxValue && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">
+                      Max ${Number(maxValue).toLocaleString()}
+                      <button onClick={() => setMaxValue('')} className="hover:text-emerald-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {(postedFrom || postedTo) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+                      Posted: {postedFrom || '…'} to {postedTo || '…'}
+                      <button onClick={() => { setPostedFrom(''); setPostedTo(''); }} className="hover:text-gray-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -403,6 +663,19 @@ export default function Opportunities() {
                       {/* Agency */}
                       <p className="text-sm text-gray-600 mb-2">{opp.agency}</p>
 
+                      {/* Notice type badge */}
+                      {opp.noticeType && (
+                        <span className={`inline-block mb-1.5 px-2 py-0.5 rounded text-xs font-medium ${
+                          opp.noticeType === 'Award Notice' ? 'bg-green-100 text-green-700' :
+                          opp.noticeType === 'Solicitation' || opp.noticeType === 'Combined Synopsis/Solicitation' ? 'bg-blue-100 text-blue-700' :
+                          opp.noticeType === 'Presolicitation' ? 'bg-yellow-100 text-yellow-700' :
+                          opp.noticeType === 'Sources Sought' ? 'bg-purple-100 text-purple-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {opp.noticeType}
+                        </span>
+                      )}
+
                       {/* Meta row */}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
                         {opp.estimatedValue && (
@@ -411,16 +684,23 @@ export default function Opportunities() {
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           <span className={opp.dueDate ? getDaysLeft(opp.dueDate) : ''}>
-                            Due: {opp.dueDate ? new Date(opp.dueDate).toLocaleDateString() : 'N/A'}
+                            Due: {opp.dueDate ? new Date(opp.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
                           </span>
+                        </span>
+                        <span className="text-gray-400">
+                          Posted: {new Date(opp.postedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                         </span>
                         {opp.naicsCode && opp.naicsCode !== '000000' && (
                           <span>NAICS: <span className="font-mono">{opp.naicsCode}</span></span>
                         )}
-                        {/* Solicitation number — key for SAM.gov search */}
                         {opp.sourceId && !opp.sourceId.startsWith('sam_') && (
                           <span className="font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">
                             {opp.sourceId}
+                          </span>
+                        )}
+                        {opp.award?.awardee?.name && (
+                          <span className="text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">
+                            Awarded: {opp.award.awardee.name}
                           </span>
                         )}
                       </div>
@@ -445,9 +725,11 @@ export default function Opportunities() {
                       </Link>
                       {(opp.sourceId || (opp.url && opp.url !== '#')) && (
                         <a
-                          href={opp.sourceId
-                            ? `https://sam.gov/opp/${opp.sourceId}/view`
-                            : `https://sam.gov/search/?keywords=${encodeURIComponent(opp.title || '')}`}
+                          href={opp.url && opp.url !== '#' && opp.url.includes('sam.gov')
+                            ? opp.url
+                            : opp.sourceId
+                              ? `https://sam.gov/search/?index=opp&q=${encodeURIComponent(opp.sourceId)}&is_active=true&sort=-relevance`
+                              : `https://sam.gov/search/?index=opp&q=${encodeURIComponent(opp.title || '')}&is_active=true&sort=-relevance`}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={e => e.stopPropagation()}

@@ -195,6 +195,16 @@ const COLOR_MAP = {
   teal:   { bg: 'bg-teal-50',   icon: 'text-teal-600',   border: 'border-teal-200' },
 };
 
+const FAQ_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: CATEGORIES.flatMap(cat => cat.faqs).map(faq => ({
+    '@type': 'Question',
+    name: faq.q,
+    acceptedAnswer: { '@type': 'Answer', text: faq.a },
+  })),
+};
+
 export default function FAQ() {
   const { isAuthenticated } = useAuth();
   const ctaTo = isAuthenticated ? '/dashboard' : '/signup';
@@ -210,8 +220,9 @@ export default function FAQ() {
       <SEOHead
         title="FAQ — Sambid Federal Contract Platform"
         description="Frequently asked questions about Sambid — federal contract discovery, SAM.gov automation, AI proposal tools, pricing, and account setup."
-        keywords="Sambid FAQ, federal contracting software questions, SAM.gov platform help, federal contract alerts FAQ"
+        keywords="Sambid FAQ, federal contracting software questions, SAM.gov platform help, federal contract alerts FAQ, how does Sambid work, federal contract software comparison, SAM.gov automation tool questions"
         canonical="https://sambid.co/faq"
+        jsonLd={FAQ_JSON_LD}
       />
 
       {/* ── Hero ── */}

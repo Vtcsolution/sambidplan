@@ -33,6 +33,11 @@ export const ENV_MAP = {
   'api.samApiUrl':                 'SAM_API_URL',
   'api.usaspendingApiUrl':         'USASPENDING_API_URL',
 
+  // Payment gateway toggles (admin can enable/disable each gateway)
+  'payment.enableStripe':          'ENABLE_STRIPE',
+  'payment.enablePaypal':          'ENABLE_PAYPAL',
+  'payment.enablePayoneer':        'ENABLE_PAYONEER',
+
   // Stripe
   'payment.stripeSecretKey':       'STRIPE_SECRET_KEY',
   'payment.stripePublicKey':       'STRIPE_PUBLISHABLE_KEY',
@@ -47,6 +52,9 @@ export const ENV_MAP = {
   'payment.payoneerClientId':      'PAYONEER_CLIENT_ID',
   'payment.payoneerClientSecret':  'PAYONEER_CLIENT_SECRET',
   'payment.payoneerProgramId':     'PAYONEER_PROGRAM_ID',
+
+  // Anthropic (Claude AI)
+  'api.anthropicApiKey':           'ANTHROPIC_API_KEY',
 };
 
 // Apply a flat { 'group.key': value } object to process.env.

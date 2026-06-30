@@ -1,8 +1,9 @@
 // frontend/src/components/admin/AdminHeader.jsx
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, LogOut, Settings, Shield } from 'lucide-react';
+import { Menu, LogOut, Settings } from 'lucide-react';
 import NotificationDropdown from './NotificationDropdown';
+import SambidLogo from '../../components/SambidLogo';
 
 export default function AdminHeader({ admin, onMenuClick }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -24,7 +25,7 @@ export default function AdminHeader({ admin, onMenuClick }) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-white shadow-sm z-40">
+    <header className="fixed top-0 left-0 right-0 lg:left-72 bg-white shadow-sm z-40">
       <div className="flex items-center justify-between px-4 py-3 lg:px-6">
         {/* Left side - Menu button & Title */}
         <div className="flex items-center gap-3">
@@ -35,8 +36,9 @@ export default function AdminHeader({ admin, onMenuClick }) {
             <Menu className="w-5 h-5" />
           </button>
           <div className="hidden lg:flex items-center gap-2">
-            <Shield className="w-5 h-5 text-indigo-600" />
-            <span className="text-sm text-gray-500">Admin Panel</span>
+            <SambidLogo size={28} />
+            <span className="text-sm font-semibold text-gray-700">Sambid</span>
+            <span className="text-sm text-gray-400">Admin Panel</span>
           </div>
         </div>
         

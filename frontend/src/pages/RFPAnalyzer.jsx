@@ -1,8 +1,11 @@
 import { useState, useRef } from 'react';
 import { ScanSearch, Upload, FileText, Loader2, Copy, Download, CheckCircle, Lock, RefreshCw, AlertCircle } from 'lucide-react';
 import { aiAPI } from '../services/api';
+import AIResponseRenderer from '../components/AIResponseRenderer';
 import { useUserPlan } from '../hooks/useUserPlan';
 import { AICreditsBar } from '../components/AICreditsBar';
+import HowItWorks from '../components/HowItWorks';
+import OpportunitySelector from '../components/OpportunitySelector';
 import jsPDF from 'jspdf';
 
 export default function RFPAnalyzer() {
@@ -111,15 +114,36 @@ export default function RFPAnalyzer() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <AICreditsBar feature="rfp_analyzer" />
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
             <ScanSearch className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">AI RFP Analyzer</h1>
-            <p className="text-gray-500 text-sm">Paste or upload an RFP — AI extracts deadlines, requirements, and compliance checklist in seconds.</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900">AI RFP Analyzer</h1>
+              <HowItWorks
+                title="RFP Analyzer"
+                steps={[
+                  { title: 'Select opportunity, paste text, or upload PDF', description: 'Choose from your saved opportunities to auto-load the SOW, or paste/upload RFP text manually' },
+                  { title: 'AI parses the full document', description: 'Extracts requirements, evaluation criteria, deadlines, compliance items, and red flags' },
+                  { title: 'Get compliance checklist', description: '15-20 specific items your proposal must address, plus a GO/NO-GO recommendation' },
+                  { title: 'Export or copy', description: 'Download as PDF or copy to clipboard for your proposal team' },
+                ]}
+                dataUsed={['RFP/SOW Text', 'Your NAICS Codes', 'Your Company Profile']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Saved Opportunities</strong> → select a saved opportunity to auto-load its SOW text</li>
+                  <li><strong>Opportunity Detail</strong> → "Analyze with AI" on attachments sends the document here</li>
+                  <li><strong>Proposal Builder</strong> → use the compliance checklist to guide your proposal writing</li>
+                  <li><strong>Go/No-Go</strong> → the GO/NO-GO recommendation here feeds your bid decision</li>
+                  <li><strong>Document Library</strong> → upload RFP documents for your team, then analyze</li>
+                </ul>
+              </HowItWorks>
+            </div>
+            <p className="text-gray-500 text-sm">Select an opportunity, paste text, or upload a PDF — AI extracts everything you need.</p>
           </div>
         </div>
 
@@ -128,15 +152,26 @@ export default function RFPAnalyzer() {
           <div className="space-y-4">
             {/* Mode Toggle */}
             <div className="flex gap-2 bg-gray-100 p-1 rounded-xl w-fit">
-              {['paste', 'upload'].map(m => (
+              {['opportunity', 'paste', 'upload'].map(m => (
                 <button key={m} onClick={() => setMode(m)}
                   className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${mode === m ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-                  {m === 'paste' ? 'Paste Text' : 'Upload File'}
+                  {m === 'opportunity' ? 'Select Opportunity' : m === 'paste' ? 'Paste Text' : 'Upload File'}
                 </button>
               ))}
             </div>
 
-            {mode === 'paste' ? (
+            {mode === 'opportunity' ? (
+              <div className="bg-white rounded-2xl border p-4">
+                <OpportunitySelector
+                  selected={null}
+                  onSelect={(opp) => {
+                    setRfpText(opp.description || '');
+                    setMode('paste');
+                  }}
+                  onClear={() => {}}
+                />
+              </div>
+            ) : mode === 'paste' ? (
               <div className="bg-white rounded-2xl border border-gray-200 p-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">RFP / Solicitation Text</label>
                 <textarea
@@ -204,7 +239,7 @@ export default function RFPAnalyzer() {
                     </button>
                   </div>
                 </div>
-                <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700 leading-relaxed bg-gray-50 rounded-xl p-4 max-h-[620px] overflow-y-auto border border-gray-100">{result}</pre>
+                <div className="bg-gray-50 rounded-xl p-4 max-h-[620px] overflow-y-auto border border-gray-100"><AIResponseRenderer content={result} /></div>
               </div>
             ) : (
               <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-10 flex flex-col items-center justify-center min-h-[400px] text-center">

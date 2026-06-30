@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { Zap, CheckCircle, XCircle, Clock, RefreshCw, ChevronDown, ChevronUp, Search, AlertCircle } from 'lucide-react';
 import { adminCreditAPI } from '../../services/adminApi';
 
@@ -217,7 +218,7 @@ export default function AdminCreditRequests() {
             <Zap className="w-5 h-5 text-indigo-600" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 truncate">Credit Top-Up Requests</h1>
+            <h1 className="text-xl font-bold text-gray-900 truncate">Credit Top-Up Requests<AdminHowItWorks page="creditRequests" /></h1>
             <p className="text-sm text-gray-500">
               {pendingCount > 0
                 ? <span className="text-amber-600 font-medium">{pendingCount} pending approval</span>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Mail, Send, Loader2, CheckCircle, Users, AlertCircle, Sparkles,
   ChevronDown, Search, X, Eye, EyeOff, User, RefreshCw, Target,
@@ -1017,7 +1018,7 @@ export default function AdminCampaigns() {
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Email Campaigns</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Email Campaigns<AdminHowItWorks page="campaigns" /></h1>
           <p className="text-gray-500 text-sm mt-1">Send targeted, personalised emails to user segments with AI-powered templates.</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2">

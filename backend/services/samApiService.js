@@ -22,12 +22,99 @@ const formatDate = (date) => {
 };
 
 // Build proper SAM.gov URL
+// SAM.gov direct links use the internal noticeId (UUID), not the solicitation number.
+// The API provides uiLink with the correct URL. If unavailable, use search URL.
 const buildSamUrl = (opp) => {
-  const identifier = safeString(opp.solicitationNumber) || safeString(opp.noticeId);
-  if (identifier && !identifier.includes('SAMPLE')) {
-    return `https://sam.gov/opp/${identifier}/view`;
+  // Best: use the uiLink provided by the API (contains correct noticeId)
+  if (opp.uiLink) {
+    const link = safeString(opp.uiLink);
+    if (link.includes('sam.gov')) return link;
+    if (link) return `https://sam.gov${link.startsWith('/') ? '' : '/'}${link}`;
+  }
+  // Fallback: build a search URL that auto-searches by solicitation number
+  const sol = safeString(opp.solicitationNumber) || safeString(opp.noticeId);
+  if (sol && !sol.includes('SAMPLE')) {
+    return `https://sam.gov/search/?index=opp&q=${encodeURIComponent(sol)}&is_active=true&sort=-relevance`;
   }
   return null;
+};
+
+// Map SAM.gov type codes to human-readable notice types
+const NOTICE_TYPE_MAP = {
+  'o': 'Solicitation',
+  'p': 'Presolicitation',
+  'k': 'Combined Synopsis/Solicitation',
+  'r': 'Sources Sought',
+  's': 'Special Notice',
+  'i': 'Intent to Bundle',
+  'a': 'Award Notice',
+  'u': 'Justification and Authorization',
+  'g': 'Sale of Surplus Property',
+  'f': 'Foreign Government Standard',
+};
+
+const mapNoticeType = (type) => NOTICE_TYPE_MAP[type] || safeString(type) || '';
+
+// Fetch real description text when the API returns a URL instead of text
+const fetchDescription = async (apiKey, descriptionOrUrl) => {
+  const desc = safeString(descriptionOrUrl);
+  if (!desc) return 'No description available';
+
+  // If it's a URL (SAM.gov returns description link for long descriptions)
+  if (desc.startsWith('http') && desc.includes('api.sam.gov')) {
+    try {
+      const separator = desc.includes('?') ? '&' : '?';
+      const url = `${desc}${separator}api_key=${apiKey}`;
+      const res = await axios.get(url, { timeout: 15000, headers: { Accept: 'application/json, text/plain, text/html, */*' } });
+      if (typeof res.data === 'string') return res.data.substring(0, 15000);
+      if (res.data?.description) return safeString(res.data.description).substring(0, 15000);
+      if (res.data?.content) return safeString(res.data.content).substring(0, 15000);
+      return JSON.stringify(res.data).substring(0, 15000);
+    } catch (e) {
+      console.error('  Description fetch failed:', e.message);
+      return desc;
+    }
+  }
+  return desc.substring(0, 15000);
+};
+
+// Fetch attachments/resource links for an opportunity
+const fetchResourceLinks = async (apiKey, noticeId) => {
+  if (!noticeId) return [];
+  try {
+    const url = `https://api.sam.gov/opportunities/v1/resources?api_key=${apiKey}&noticeid=${noticeId}&postedFrom=01/01/2020`;
+    const res = await axios.get(url, { timeout: 10000, headers: { Accept: 'application/json' } });
+    const files = res.data?.resources || res.data?.attachments || res.data || [];
+    if (!Array.isArray(files)) return [];
+    return files.map(f => ({
+      name: f.name || f.fileName || f.title || 'Document',
+      url: f.downloadUrl || f.resourceUrl || f.url || f.uri || '',
+      size: f.size || f.fileSize || '',
+      type: f.type || f.mimeType || '',
+    })).filter(f => f.url || f.name);
+  } catch {
+    return [];
+  }
+};
+
+// Parse fullParentPathName which uses dot separators: "DEPT OF DEFENSE.DEPT OF THE NAVY.NAVAL SEA SYSTEMS COMMAND"
+const parseAgencyChain = (opp) => {
+  const full = safeString(opp.fullParentPathName);
+  if (full) {
+    const parts = full.split('.');
+    return {
+      agency: full.replace(/\./g, ' > '),
+      department: parts[0]?.trim() || '',
+      subTier: parts[1]?.trim() || '',
+      office: parts[2]?.trim() || safeString(opp.office) || '',
+    };
+  }
+  return {
+    agency: safeString(opp.departmentOrAgency) || safeString(opp.department) || 'Federal Agency',
+    department: safeString(opp.department) || '',
+    subTier: safeString(opp.subTier) || '',
+    office: safeString(opp.office) || '',
+  };
 };
 
 // ─── Core fetch helper: one page from SAM.gov ─────────────────────────────────
@@ -103,41 +190,141 @@ export const fetchSAMOpportunities = async (naicsCode = null, limit = 200) => {
       return [];
     }
 
-    // Transform opportunities
+    // Transform opportunities — fetch descriptions and attachments
     const transformed = [];
+
     for (const opp of allRaw) {
       try {
-        // Skip if missing essential fields
         if (!opp.title && !opp.description) continue;
+
+        // Fetch the REAL description text (SAM API often returns a URL instead of text)
+        const rawDesc = safeString(opp.description);
+        let fullDescription;
+        if (rawDesc.startsWith('http') && rawDesc.includes('api.sam.gov')) {
+          fullDescription = await fetchDescription(apiKey, rawDesc);
+        } else {
+          fullDescription = rawDesc || 'No description available';
+        }
+
+        // Parse agency chain from fullParentPathName (uses dots: "DEPT OF DEFENSE.DEPT OF THE NAVY.OFFICE")
+        const agencyInfo = parseAgencyChain(opp);
+
+        // Extract place of performance with full details
+        const pop = opp.placeOfPerformance || {};
+        const popCity = typeof pop.city === 'object' ? (pop.city?.name || '') : safeString(pop.city);
+        const popState = typeof pop.state === 'object' ? (pop.state?.name || pop.state?.code || '') : safeString(pop.state);
+        const popCountry = typeof pop.country === 'object' ? (pop.country?.name || '') : safeString(pop.country);
+
+        // Extract award details
+        const awardData = opp.award || {};
+        const awardeeData = awardData.awardee || {};
+        const awardeeLoc = awardeeData.location || {};
+
+        // Extract ALL point of contacts
+        const contacts = Array.isArray(opp.pointOfContact)
+          ? opp.pointOfContact
+          : opp.pointOfContact ? [opp.pointOfContact] : [];
+
+        // Extract office address
+        const offAddr = opp.officeAddress || {};
+
+        // Fetch resource links/attachments (if noticeId available)
+        const noticeId = safeString(opp.noticeId);
+        let resourceLinks = (opp.resourceLinks || []).map(r => ({
+          url:  typeof r === 'string' ? r : (r.url || r.uri || ''),
+          name: typeof r === 'string' ? r.split('/').pop() : (r.name || r.text || r.title || 'Document'),
+        })).filter(r => r.url);
+
+        // If no resource links from the search response, try fetching from resources API
+        if (resourceLinks.length === 0 && noticeId) {
+          const fetched = await fetchResourceLinks(apiKey, noticeId);
+          if (fetched.length > 0) resourceLinks = fetched;
+        }
 
         const transformedOpp = {
           source: 'sam',
           sourceId: safeString(opp.solicitationNumber) || safeString(opp.noticeId) || `sam_${Date.now()}_${Math.random()}`,
           title: safeString(opp.title) || 'Untitled Opportunity',
-          description: (safeString(opp.description) || 'No description').substring(0, 5000),
-          agency: safeString(opp.departmentOrAgency) || safeString(opp.department) || 'Federal Agency',
-          estimatedValue: opp.estimatedTotalValue || null,
+          description: fullDescription.substring(0, 15000),
+          agency: agencyInfo.agency,
+          estimatedValue: awardData.amount || opp.estimatedTotalValue || null,
           postedDate: opp.postedDate ? new Date(opp.postedDate) : new Date(),
           dueDate: opp.responseDeadLine ? new Date(opp.responseDeadLine) : null,
           naicsCode: safeString(opp.naicsCode) || naicsCode || '000000',
-          pscCode: safeString(opp.pscCode) || '',
-          setAside: safeString(opp.typeOfSetAside) || safeString(opp.setAside) || '',
+          pscCode: safeString(opp.classificationCode) || safeString(opp.pscCode) || '',
+          setAside: safeString(opp.typeOfSetAsideDescription) || safeString(opp.typeOfSetAside) || safeString(opp.setAside) || '',
           placeOfPerformance: {
-            city: safeString(opp.placeOfPerformance?.city),
-            state: safeString(opp.placeOfPerformance?.state),
-            zipCode: safeString(opp.placeOfPerformance?.zipCode)
+            city: popCity,
+            state: popState,
+            zipCode: safeString(pop.zip || pop.zipCode),
+            country: popCountry,
+            congressionalDistrict: safeString(pop.congressionalDistrict),
+            county: safeString(pop.county)
           },
           contactInfo: {
-            name: safeString(opp.pointOfContact?.name || opp.pointOfContact?.fullname),
-            email: safeString(opp.pointOfContact?.email),
-            phone: safeString(opp.pointOfContact?.phone)
+            name: safeString(contacts[0]?.fullName || contacts[0]?.name || contacts[0]?.fullname),
+            email: safeString(contacts[0]?.email),
+            phone: safeString(contacts[0]?.phone)
           },
           url: buildSamUrl(opp) || '#',
-          resourceLinks: (opp.resourceLinks || []).map(r => ({
-            url:  typeof r === 'string' ? r : (r.url || r.uri || ''),
-            name: typeof r === 'string' ? r.split('/').pop() : (r.name || r.text || r.title || 'Document'),
-          })).filter(r => r.url),
-          lastFetched: new Date()
+          resourceLinks,
+          lastFetched: new Date(),
+
+          // Extended fields
+          noticeType: mapNoticeType(opp.type),
+          archiveDate: opp.archiveDate ? new Date(opp.archiveDate) : null,
+          archiveType: safeString(opp.archiveType),
+          modifiedDate: opp.modifiedDate ? new Date(opp.modifiedDate) : null,
+          department: agencyInfo.department,
+          subTier: agencyInfo.subTier,
+          office: agencyInfo.office,
+          officeAddress: {
+            city: safeString(offAddr.city),
+            state: safeString(offAddr.state),
+            zipCode: safeString(offAddr.zipcode || offAddr.zipCode),
+            country: safeString(offAddr.countryCode || offAddr.country)
+          },
+          naicsDescription: safeString(opp.naicsDescription),
+          pscDescription: safeString(opp.pscDescription) || safeString(opp.classificationDescription),
+          additionalInfoLink: safeString(opp.additionalInfoLink),
+          organizationType: safeString(opp.organizationType),
+
+          // Award details
+          award: {
+            date: awardData.date ? new Date(awardData.date) : null,
+            number: safeString(awardData.number),
+            amount: Number(awardData.amount) || null,
+            awardee: {
+              name: safeString(awardeeData.name),
+              uei: safeString(awardeeData.ueiSAM || awardeeData.uei),
+              cageCode: safeString(awardeeData.cageCode),
+              duns: safeString(awardeeData.duns),
+              location: {
+                streetAddress: safeString(awardeeLoc.streetAddress),
+                city: typeof awardeeLoc.city === 'object' ? safeString(awardeeLoc.city?.name) : safeString(awardeeLoc.city),
+                state: typeof awardeeLoc.state === 'object' ? safeString(awardeeLoc.state?.name || awardeeLoc.state?.code) : safeString(awardeeLoc.state),
+                zipCode: safeString(awardeeLoc.zip || awardeeLoc.zipCode),
+                country: typeof awardeeLoc.country === 'object' ? safeString(awardeeLoc.country?.name) : safeString(awardeeLoc.country),
+                congressionalDistrict: safeString(awardeeLoc.congressionalDistrict)
+              }
+            }
+          },
+
+          // Performance period
+          performancePeriod: {
+            startDate: opp.performanceStartDate ? new Date(opp.performanceStartDate) : null,
+            endDate: opp.performanceEndDate ? new Date(opp.performanceEndDate) : null
+          },
+
+          // All points of contact
+          pointOfContacts: contacts.map(c => ({
+            type: safeString(c.type),
+            fullName: safeString(c.fullName || c.name || c.fullname),
+            title: safeString(c.title),
+            email: safeString(c.email),
+            phone: safeString(c.phone),
+            fax: safeString(c.fax)
+          })).filter(c => c.fullName || c.email)
         };
         transformed.push(transformedOpp);
       } catch (itemErr) {

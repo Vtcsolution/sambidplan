@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/AdminProspectOutreach.jsx
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {

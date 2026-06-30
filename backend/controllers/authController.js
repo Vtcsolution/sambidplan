@@ -26,7 +26,7 @@ import { createUserNotification } from '../services/notificationService.js';
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '30d'
+    expiresIn: process.env.JWT_EXPIRE || '7d'
   });
 };
 
@@ -205,22 +205,36 @@ export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log(`🔐 Login attempt: ${email}`);
+    const user = await User.findOne({ email }).select('+password +twoFactorEnabled +failedLoginAttempts +lockUntil');
 
-    // Check if user exists
-    const user = await User.findOne({ email }).select('+password +twoFactorEnabled');
-
+    // Timing-safe: always run bcrypt even if user not found (prevents email enumeration)
     if (!user) {
-      console.log(`❌ User not found: ${email}`);
+      await bcrypt.compare(password || '', '$2b$10$invalidhashplaceholderxxxxxxxxxxxxxxxxxxxxxxxxxxx');
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Check password
+    // Account lockout check
+    if (user.lockUntil && user.lockUntil > new Date()) {
+      const mins = Math.ceil((user.lockUntil - new Date()) / 60000);
+      return res.status(423).json({ success: false, message: `Account locked. Try again in ${mins} minute(s).` });
+    }
+
     const isMatch = await user.matchPassword(password);
 
     if (!isMatch) {
-      console.log(`❌ Invalid password for: ${email}`);
+      const attempts = (user.failedLoginAttempts || 0) + 1;
+      const update = { failedLoginAttempts: attempts };
+      if (attempts >= 5) {
+        update.lockUntil = new Date(Date.now() + 15 * 60 * 1000); // lock 15 min
+        update.failedLoginAttempts = 0;
+      }
+      await User.findByIdAndUpdate(user._id, update);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    // Reset failed attempts on successful login
+    if (user.failedLoginAttempts > 0) {
+      await User.findByIdAndUpdate(user._id, { failedLoginAttempts: 0, lockUntil: null });
     }
 
     // If 2FA is enabled, issue a short-lived temp token instead of a full JWT
@@ -258,13 +272,15 @@ export const loginUser = async (req, res) => {
   }
 };
 
+const SENSITIVE_FIELDS = '-password -twoFactorSecret -twoFactorBackupCodes -twoFactorTempToken -emailVerificationToken -emailVerificationExpires -resetPasswordToken -resetPasswordExpires';
+
 export const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id).select(SENSITIVE_FIELDS);
     res.json({ success: true, data: user });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: 'Failed to load profile.' });
   }
 };
 

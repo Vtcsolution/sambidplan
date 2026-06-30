@@ -8,7 +8,9 @@ import { aiAPI, savedAPI } from '../services/api';
 import { AICreditsBar } from '../components/AICreditsBar';
 import { useUserPlan } from '../hooks/useUserPlan';
 import { usePlans } from '../hooks/usePlans';
+import HowItWorks from '../components/HowItWorks';
 import jsPDF from 'jspdf';
+import AIResponseRenderer from '../components/AIResponseRenderer';
 
 // ── Section meta ──────────────────────────────────────────────────────────────
 const SECTION_META = [
@@ -286,10 +288,42 @@ function ProposalField({ icon: Icon, label, fieldKey, value, placeholder, fields
   );
 }
 
-// ── Section preview card ──────────────────────────────────────────────────────
-function SectionCard({ section, index, editFields }) {
+// ── Section preview card with inline editing ─────────────────────────────────
+function SectionCard({ section, index, editFields, onBodyChange }) {
   const [expanded, setExpanded] = useState(true);
+  const [editing, setEditing]   = useState(false);
+  const [draft, setDraft]       = useState('');
+  const textareaRef = useRef(null);
   const Icon = section.icon;
+
+  const startEdit = () => {
+    setDraft(applyEdits(section.body, editFields).trim());
+    setEditing(true);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+        textareaRef.current.focus();
+      }
+    }, 50);
+  };
+
+  const saveEdit = () => {
+    onBodyChange(index, draft);
+    setEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraft('');
+  };
+
+  const handleTextareaInput = (e) => {
+    setDraft(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
+  };
+
   return (
     <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
       <button onClick={() => setExpanded(!expanded)}
@@ -303,13 +337,44 @@ function SectionCard({ section, index, editFields }) {
             <p className="text-sm font-semibold text-gray-900">{section.title}</p>
           </div>
         </div>
-        {expanded ? <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />}
+        <div className="flex items-center gap-2">
+          {!editing && expanded && (
+            <span onClick={(e) => { e.stopPropagation(); startEdit(); }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors cursor-pointer">
+              <Pencil className="w-3 h-3" /> Edit
+            </span>
+          )}
+          {expanded ? <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />}
+        </div>
       </button>
       {expanded && (
         <div className="px-5 pb-5 border-t border-gray-50">
-          <div className="mt-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-            {applyEdits(section.body, editFields).trim()}
-          </div>
+          {editing ? (
+            <div className="mt-3">
+              <textarea
+                ref={textareaRef}
+                value={draft}
+                onChange={handleTextareaInput}
+                className="w-full text-sm text-gray-700 leading-relaxed border border-indigo-200 rounded-xl p-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none bg-indigo-50/30 font-[inherit]"
+                style={{ minHeight: '120px' }}
+              />
+              <div className="flex items-center gap-2 mt-3">
+                <button onClick={saveEdit}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors">
+                  <CheckCircle className="w-3.5 h-3.5" /> Save Changes
+                </button>
+                <button onClick={cancelEdit}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors">
+                  <X className="w-3.5 h-3.5" /> Cancel
+                </button>
+                <span className="text-xs text-gray-400 ml-2">Edit the text directly — changes apply to PDF export</span>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3">
+              <AIResponseRenderer content={applyEdits(section.body, editFields).trim()} />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -317,7 +382,7 @@ function SectionCard({ section, index, editFields }) {
 }
 
 // ── PDF generation ─────────────────────────────────────────────────────────────
-function generateProposalPDF({ proposal, fields, theme, selected, aiProvider }) {
+function generateProposalPDF({ proposal, fields, theme, selected, aiProvider, sectionEdits = {} }) {
   const doc   = new jsPDF({ unit: 'mm', format: 'a4' });
   const W     = doc.internal.pageSize.getWidth();
   const H     = doc.internal.pageSize.getHeight();
@@ -574,27 +639,23 @@ function generateProposalPDF({ proposal, fields, theme, selected, aiProvider }) 
   // ── Render each section ────────────────────────────────────────────────────
   const sections = parseSections(proposal);
   sections.forEach((section, idx) => {
-    maybeNewPage(65); // ensure header never orphans at bottom — needs room for header + first paragraph
+    maybeNewPage(65);
 
     // Section header band
     doc.setFillColor(lr, lg, lb);
     doc.rect(0, y - 6, W, 17, 'F');
-    // Bold left stripe
     doc.setFillColor(pr, pg, pb);
     doc.rect(0, y - 6, 5, 17, 'F');
 
-    // Section number (e.g. 01, 02)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(mr2, mg2, mb2);
     doc.text(String(idx + 1).padStart(2, '0'), 9, y + 4);
 
-    // Section title
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(pr, pg, pb);
     doc.text(section.title.toUpperCase(), 21, y + 4);
 
     y += 20;
 
-    // Body text
-    const body = applyEdits(section.body, fields).trim();
+    const body = sectionEdits[idx] !== undefined ? sectionEdits[idx] : applyEdits(section.body, fields).trim();
     renderBody(body);
 
     y += secGap;
@@ -651,6 +712,7 @@ export default function ProposalBuilder() {
   const [selected, setSelected] = useState(null);
   const [manualId, setManualId] = useState('');
   const [proposal,   setProposal]   = useState('');
+  const [sectionEdits, setSectionEdits] = useState({});
   const [aiProvider, setAiProvider] = useState('');
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState('');
@@ -672,7 +734,7 @@ export default function ProposalBuilder() {
 
   const handleGenerate = async () => {
     if (!opportunityId) { setError('Please select a contract or enter an opportunity ID.'); return; }
-    setLoading(true); setError(''); setProposal('');
+    setLoading(true); setError(''); setProposal(''); setSectionEdits({});
     try {
       const res = await aiAPI.fullProposal(opportunityId);
       setProposal(res.data.data.proposal);
@@ -685,8 +747,21 @@ export default function ProposalBuilder() {
     }
   };
 
+  const handleSectionBodyChange = (sectionIndex, newBody) => {
+    setSectionEdits(prev => ({ ...prev, [sectionIndex]: newBody }));
+  };
+
+  const getEditedProposal = () => {
+    if (Object.keys(sectionEdits).length === 0) return applyEdits(proposal, fields);
+    const sections = parseSections(proposal);
+    return sections.map((s, i) => {
+      const body = sectionEdits[i] !== undefined ? sectionEdits[i] : applyEdits(s.body, fields).trim();
+      return `## ${s.title}\n${body}`;
+    }).join('\n\n');
+  };
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(applyEdits(proposal, fields));
+    navigator.clipboard.writeText(getEditedProposal());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -713,8 +788,8 @@ export default function ProposalBuilder() {
   };
 
   const handleDownloadPDF = useCallback(() => {
-    generateProposalPDF({ proposal, fields, theme, selected, aiProvider });
-  }, [proposal, fields, theme, selected, aiProvider]);
+    generateProposalPDF({ proposal, fields, theme, selected, aiProvider, sectionEdits });
+  }, [proposal, fields, theme, selected, aiProvider, sectionEdits]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (planLoading) return (
@@ -730,7 +805,7 @@ export default function ProposalBuilder() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
       <AICreditsBar feature="full_proposal" />
 
       {/* Page header */}
@@ -740,7 +815,29 @@ export default function ProposalBuilder() {
             <FileEdit className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Full AI Proposal Builder</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900">Full AI Proposal Builder</h1>
+              <HowItWorks
+                title="AI Proposal Builder"
+                steps={[
+                  { title: 'Select or enter opportunity', description: 'Choose from saved opportunities (auto-fills all fields) or enter contract details manually' },
+                  { title: 'AI generates 7-section proposal', description: 'Cover Letter, Executive Summary, Technical Approach, Management Plan, Past Performance, Pricing Strategy, Conclusion' },
+                  { title: 'Uses your REAL data', description: 'Your actual past wins from USASpending, real competitor pricing, verified company profile — not generic templates' },
+                  { title: 'Export branded PDF', description: 'Choose from 6 color themes (Indigo, Navy, Forest, Crimson, Slate, Teal) and download professional PDF' },
+                ]}
+                dataUsed={['SAM.gov (full SOW)', 'USASpending (competitors)', 'Your Past Wins', 'Your Certifications']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Opportunity Detail</strong> → "Write Full Proposal" button sends you here with data pre-loaded</li>
+                  <li><strong>Past Performance</strong> → your stored contracts appear in the Past Performance section of the proposal</li>
+                  <li><strong>Winning Bids</strong> → competitor pricing data informs the Pricing Strategy section</li>
+                  <li><strong>Company Profile</strong> → your UEI, CAGE, certifications auto-fill the Cover Letter</li>
+                  <li>Run <strong>Go/No-Go</strong> first → only build proposals for contracts scored GO</li>
+                  <li>Run <strong>RFP Analyzer</strong> first → get the compliance checklist before writing</li>
+                </ul>
+              </HowItWorks>
+            </div>
             <p className="text-sm text-gray-500">Fill in the 3 steps below, then generate and download your branded PDF</p>
           </div>
         </div>
@@ -967,7 +1064,7 @@ export default function ProposalBuilder() {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Generated Proposal</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Powered by {aiProvider} · All your details have been applied</p>
+              <p className="text-xs text-gray-400 mt-0.5">All your details have been applied</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button onClick={handleCopy}
@@ -990,12 +1087,17 @@ export default function ProposalBuilder() {
           {sections.length > 0 ? (
             <div className="space-y-3">
               {sections.map((section, i) => (
-                <SectionCard key={i} section={section} index={i} editFields={fields} />
+                <SectionCard key={i}
+                  section={sectionEdits[i] !== undefined ? { ...section, body: sectionEdits[i] } : section}
+                  index={i}
+                  editFields={sectionEdits[i] !== undefined ? {} : fields}
+                  onBodyChange={handleSectionBodyChange}
+                />
               ))}
             </div>
           ) : (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{applyEdits(proposal, fields)}</pre>
+              <AIResponseRenderer content={applyEdits(proposal, fields)} />
             </div>
           )}
 

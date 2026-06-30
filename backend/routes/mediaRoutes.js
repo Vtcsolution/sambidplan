@@ -56,8 +56,9 @@ router.post('/upload', flexAdmin, mediaUpload.single('file'), async (req, res) =
     // Delete old file from disk if replacing
     const existing = await PageMedia.findOne({ page, slot, type });
     if (existing) {
-      const oldPath = path.join(__dirname, '..', existing.url);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      const uploadsBase = path.resolve(__dirname, '..', 'uploads');
+      const oldPath = path.resolve(__dirname, '..', existing.url);
+      if (oldPath.startsWith(uploadsBase) && fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
 
     const record = await PageMedia.findOneAndUpdate(
@@ -80,8 +81,9 @@ router.delete('/:id', flexAdmin, async (req, res) => {
     const record = await PageMedia.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: 'Media not found.' });
 
-    const filePath = path.join(__dirname, '..', record.url);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const uploadsBase2 = path.resolve(__dirname, '..', 'uploads');
+    const filePath = path.resolve(__dirname, '..', record.url);
+    if (filePath.startsWith(uploadsBase2) && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     await record.deleteOne();
 
     res.json({ success: true, message: 'Deleted.' });

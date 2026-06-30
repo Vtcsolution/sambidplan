@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { authAPI } from '../services/api';
 import { NAICS_CODES } from '../data/naicsCodes';
+import HowItWorks from '../components/HowItWorks';
 
 const planColors = {
   trial:      'bg-gray-100 text-gray-700 border-gray-200',
@@ -47,11 +48,23 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-5 sm:mb-8 gap-3">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">My Profile</h1>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">My Profile
+            <HowItWorks title="My Profile" steps={[
+              { title: 'View your info', description: 'See your name, email, business details, plan, and NAICS codes at a glance' },
+              { title: 'Edit in Settings', description: 'Click "Edit Profile" to update your details, NAICS codes, and notification preferences' },
+            ]} dataUsed={['Your Account Data']} >
+              <p className="text-sm font-semibold text-gray-700 mt-2">Your profile powers everything:</p>
+              <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                <li><strong>NAICS codes</strong> → determine which contracts match in your feed</li>
+                <li><strong>Business type</strong> → affects set-aside eligibility scoring in AI features</li>
+                <li><strong>Plan level</strong> → determines monthly match limits and AI credit allocation</li>
+              </ul>
+            </HowItWorks>
+          </h1>
           <Link to="/settings" className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors whitespace-nowrap">
             <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span className="hidden sm:inline">Edit Settings</span>

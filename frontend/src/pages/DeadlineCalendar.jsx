@@ -12,6 +12,7 @@ import { dashboardAPI } from '../services/api';
 import { downloadICS } from '../utils/calendarUtils';
 import { useUserPlan } from '../hooks/useUserPlan';
 import PlanGate from '../components/PlanGate';
+import HowItWorks from '../components/HowItWorks';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const MONTHS = ['January','February','March','April','May','June',
@@ -236,16 +237,34 @@ export default function DeadlineCalendar() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
         <div className="mb-5 sm:mb-6">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
             <CalendarDays className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 shrink-0" />
             Deadline Calendar
+            <HowItWorks
+              title="Deadline Calendar"
+              steps={[
+                { title: 'Deadlines from your feed', description: 'Shows response due dates for all opportunities matched to your NAICS codes — both from your personal feed and saved list' },
+                { title: 'Color-coded urgency', description: 'Red = 3 days or less (critical), Orange = 7 days (urgent), Yellow = 14 days (soon), Green = 14+ days (on track), Gray = expired' },
+                { title: 'Click any date', description: 'See all contracts due that day — title, agency, value, days remaining, and direct link to opportunity detail' },
+                { title: 'Sync to your calendar', description: 'Download .ICS file to import all deadlines into Google Calendar, Outlook, or Apple Calendar with one click' },
+              ]}
+              dataUsed={['Your Matched Opportunities', 'Your Saved Opportunities', 'SAM.gov Due Dates']}
+            >
+              <p className="text-sm font-semibold text-gray-700 mt-2">How deadlines are selected:</p>
+              <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                <li>Only contracts matching YOUR registered NAICS codes appear</li>
+                <li>Enterprise plan: shows ALL active solicitations in your NAICS codes</li>
+                <li>Other plans: shows opportunities distributed to your personal feed</li>
+                <li>Saved opportunities with due dates always appear regardless of plan</li>
+              </ul>
+            </HowItWorks>
           </h1>
           <p className="text-gray-500 mt-0.5 sm:mt-1 text-xs sm:text-sm">
-            All contract response deadlines from your opportunity feed.
+            All contract response deadlines from your matched feed and saved list.
           </p>
         </div>
 

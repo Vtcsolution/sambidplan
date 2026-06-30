@@ -210,11 +210,10 @@ export const resumeProspectSyncHandler = async (req, res) => {
 export const stopProspectSyncHandler    = (req, res) => { stopProspectSync(); res.json({ success: true, message: 'Stop signal sent' }); };
 export const getProspectSyncStatus      = (req, res) => res.json({ success: true, data: prospectSyncState });
 export const clearAllProspects = async (req, res) => {
-  try {
-    if (!req.body?.confirmed) return res.status(400).json({ success: false, message: 'Send { confirmed: true }' });
-    const r = await Prospect.deleteMany({});
-    res.json({ success: true, deleted: r.deletedCount });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  return res.status(403).json({
+    success: false,
+    message: 'Prospect data collected from Google, Gemini AI, and OpenAI is protected and cannot be bulk-deleted. This data is a core platform asset.',
+  });
 };
 
 // ── CRM actions ───────────────────────────────────────────────────────────────
@@ -245,8 +244,10 @@ export const updateResponseStatus = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 export const deleteProspect = async (req, res) => {
-  try { await Prospect.findByIdAndDelete(req.params.id); res.json({ success: true }); }
-  catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  return res.status(403).json({
+    success: false,
+    message: 'Individual prospect records are protected and cannot be deleted. You can update their status instead.',
+  });
 };
 
 // ── AI Website Finder ─────────────────────────────────────────────────────────

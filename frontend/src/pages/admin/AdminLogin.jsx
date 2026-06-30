@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 import { adminAuthAPI } from '../../services/adminApi';
+import SambidLogo from '../../components/SambidLogo';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -38,8 +39,8 @@ export default function AdminLogin() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl backdrop-blur mb-4">
-            <Shield className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <SambidLogo size={56} />
           </div>
           <h1 className="text-3xl font-bold text-white">Sambid Notify</h1>
           <p className="text-indigo-300 mt-1">Admin Control Panel</p>

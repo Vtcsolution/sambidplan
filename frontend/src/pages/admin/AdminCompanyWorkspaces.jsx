@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Building2, Users, FileText, ShieldCheck, Search, Trash2, Eye,
   ChevronLeft, CheckCircle, XCircle, Loader, AlertTriangle, FolderOpen,
-  Crown, Shield, Briefcase, FileEdit, User, X, RefreshCw
+  Crown, Shield, Briefcase, FileEdit, User, X, RefreshCw, KeyRound, ToggleRight, ToggleLeft
 } from 'lucide-react';
 import { adminPanelAPI } from '../../services/adminApi';
 
@@ -240,6 +241,41 @@ function DetailModal({ companyId, onClose, onVerify, onDelete }) {
               </div>
             </div>
 
+            {/* Workspace Access Users */}
+            <div>
+              <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-indigo-500" /> Workspace Access Users ({company.workspaceUsers?.length || 0})
+              </h3>
+              {!company.workspaceUsers?.length ? (
+                <p className="text-sm text-gray-400">No workspace access users created.</p>
+              ) : (
+                <div className="space-y-2">
+                  {company.workspaceUsers.map(wu => (
+                    <div key={wu._id} className="py-2.5 px-3 bg-gray-50 rounded-xl">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div>
+                          <span className="text-sm font-semibold text-gray-900">{wu.displayName || wu.username}</span>
+                          <span className="text-xs text-gray-500 ml-1.5">@{wu.username}</span>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${wu.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {wu.isActive ? <ToggleRight className="w-3 h-3" /> : <ToggleLeft className="w-3 h-3" />}
+                          {wu.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {wu.allowedPages?.length === 0
+                          ? <span className="text-xs text-gray-400">No pages assigned</span>
+                          : wu.allowedPages?.map(p => (
+                              <span key={p} className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{p}</span>
+                            ))
+                        }
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Documents */}
             <div>
               <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
@@ -304,7 +340,7 @@ export default function AdminCompanyWorkspaces() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Company Workspaces</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Company Workspaces<AdminHowItWorks page="companyWorkspaces" /></h1>
           <p className="text-sm text-gray-500 mt-0.5">All company workspaces created by users</p>
         </div>
         <button onClick={() => { loadStats(); loadList(); }}
@@ -314,11 +350,12 @@ export default function AdminCompanyWorkspaces() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Workspaces"  value={stats?.totalCompanies} icon={Building2}   color="bg-indigo-100 text-indigo-600" />
-        <StatCard label="UEI Verified"      value={stats?.verifiedCount}  icon={ShieldCheck}  color="bg-green-100 text-green-600" />
-        <StatCard label="Total Members"     value={stats?.totalMembers}   icon={Users}        color="bg-blue-100 text-blue-600" />
-        <StatCard label="Total Documents"   value={stats?.totalDocs}      icon={FileText}     color="bg-amber-100 text-amber-600" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard label="Total Workspaces"    value={stats?.totalCompanies} icon={Building2}  color="bg-indigo-100 text-indigo-600" />
+        <StatCard label="UEI Verified"        value={stats?.verifiedCount}  icon={ShieldCheck} color="bg-green-100 text-green-600" />
+        <StatCard label="Team Members"        value={stats?.totalMembers}   icon={Users}       color="bg-blue-100 text-blue-600" />
+        <StatCard label="Workspace Users"     value={stats?.totalWsUsers}   icon={KeyRound}    color="bg-purple-100 text-purple-600" />
+        <StatCard label="Total Documents"     value={stats?.totalDocs}      icon={FileText}    color="bg-amber-100 text-amber-600" />
       </div>
 
       {/* Filters */}
@@ -360,6 +397,7 @@ export default function AdminCompanyWorkspaces() {
                   <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide hidden md:table-cell">Owner</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide hidden lg:table-cell">UEI</th>
                   <th className="text-center px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide">Members</th>
+                  <th className="text-center px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide hidden sm:table-cell">WS Users</th>
                   <th className="text-center px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Docs</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Created</th>
                   <th className="px-4 py-3"></th>
@@ -410,6 +448,11 @@ export default function AdminCompanyWorkspaces() {
                       {c.pendingInvites > 0 && (
                         <p className="text-[10px] text-amber-500">{c.pendingInvites} pending</p>
                       )}
+                    </td>
+                    <td className="px-4 py-4 text-center hidden sm:table-cell">
+                      <span className={`inline-flex items-center gap-1 text-sm font-semibold ${c.workspaceUserCount > 0 ? 'text-purple-700' : 'text-gray-400'}`}>
+                        <KeyRound className="w-3 h-3" />{c.workspaceUserCount || 0}
+                      </span>
                     </td>
                     <td className="px-4 py-4 text-center hidden sm:table-cell">
                       <span className="text-sm font-semibold text-gray-700">{c.docCount}</span>

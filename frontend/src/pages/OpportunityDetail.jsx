@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Clock, DollarSign, Building, FileText, Save, Sparkles, ChevronLeft, BookmarkCheck, ExternalLink, Search, Download, Copy, CheckCheck, Paperclip, AlertCircle, FileEdit, CalendarPlus, ChevronDown, Loader2, ScanSearch } from 'lucide-react';
+import { Clock, DollarSign, Building, FileText, Save, Sparkles, ChevronLeft, BookmarkCheck, ExternalLink, Search, Download, Copy, CheckCheck, Paperclip, AlertCircle, FileEdit, CalendarPlus, ChevronDown, Loader2, ScanSearch, MapPin, User, Phone, Mail, Award, Calendar, Briefcase, Shield, Hash, Globe, Users } from 'lucide-react';
 import { opportunityAPI, savedAPI, aiAPI } from '../services/api';
 import { googleCalendarUrl, outlookCalendarUrl, downloadICS } from '../utils/calendarUtils';
 import { useUserPlan } from '../hooks/useUserPlan';
@@ -8,6 +8,8 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import AIPanel from '../components/AIPanel';
 import { exportSingleOpportunityPDF } from '../utils/exportUtils';
+import AIResponseRenderer from '../components/AIResponseRenderer';
+import HowItWorks from '../components/HowItWorks';
 
 export default function OpportunityDetail() {
   const { id } = useParams();
@@ -119,11 +121,11 @@ export default function OpportunityDetail() {
     return null;
   };
 
-  // Build a SAM.gov search URL using the solicitation number
+  // Build SAM.gov search URL that auto-searches by solicitation number
   const getSamSearchUrl = () => {
-    const solicitationNumber = getSolicitationNumber();
-    if (solicitationNumber) {
-      return `https://sam.gov/search/?page=1&searchType=opps&keyword=${encodeURIComponent(solicitationNumber)}`;
+    const sol = getSolicitationNumber();
+    if (sol) {
+      return `https://sam.gov/search/?index=opp&q=${encodeURIComponent(sol)}&is_active=true&sort=-relevance`;
     }
     return null;
   };
@@ -148,14 +150,13 @@ export default function OpportunityDetail() {
   };
 
   // Direct link to the opportunity on SAM.gov.
-  // Only use the stored url when it is actually a sam.gov link — records from
-  // USASpending store a usaspending.gov URL which must not appear here.
+  // SAM.gov direct view requires the internal noticeId (UUID), not the solicitation number.
+  // If we have a stored sam.gov URL with the correct noticeId, use it.
+  // Otherwise fall back to the search URL which auto-searches by solicitation number.
   const getSamDirectUrl = () => {
     if (opportunity.url && opportunity.url !== '#' && opportunity.url.includes('sam.gov')) {
       return opportunity.url;
     }
-    const sol = getSolicitationNumber();
-    if (sol) return `https://sam.gov/opp/${sol}/view`;
     return getSamSearchUrl();
   };
 
@@ -191,7 +192,7 @@ export default function OpportunityDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         {/* Back Button */}
         <button
           onClick={() => navigate('/opportunities')}
@@ -203,49 +204,128 @@ export default function OpportunityDetail() {
 
         {/* Main Card */}
         <Card className="mb-5 sm:mb-6">
+          {/* Header with title, match score, and notice type badge */}
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 sm:gap-4 mb-4">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">{opportunity.title}</h1>
+            <div className="flex-1">
+              <div className="flex items-start gap-2">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">{opportunity.title}</h1>
+              <HowItWorks title="Opportunity Detail" steps={[
+                { title: 'Full SAM.gov data', description: 'All 40+ fields: dates, contracting office chain, award details, awardee, contacts, performance period, place of performance' },
+                { title: 'Run AI analysis', description: '5 AI tools: Summarize, Bid Analysis, Competitive Analysis, Risk Assessment, Q&A — all powered by real USASpending + SAM.gov data' },
+                { title: 'Save & track', description: 'Save to your list, add deadline to Google/Outlook/Apple calendar, export as PDF' },
+                { title: 'View on SAM.gov', description: 'One-click auto-search on SAM.gov — downloads official documents directly' },
+              ]} dataUsed={['SAM.gov (40+ fields)', 'USASpending (competitors)', 'Your Company Profile']} >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Saved Opportunities</strong> → "Save to My List" adds it to your saved list and all AI tools</li>
+                  <li><strong>Go/No-Go</strong> → run a full bid decision from here</li>
+                  <li><strong>Proposal Builder</strong> → "Write Full Proposal" sends all data to the proposal builder</li>
+                  <li><strong>Deadline Calendar</strong> → "Add to Calendar" syncs with Google/Outlook/Apple</li>
+                  <li><strong>Bid Pipeline</strong> → saved contracts appear as pipeline cards</li>
+                </ul>
+              </HowItWorks>
+            </div>
+              {opportunity.noticeType && (
+                <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${
+                  opportunity.noticeType === 'Award Notice' ? 'bg-green-100 text-green-700' :
+                  opportunity.noticeType === 'Solicitation' || opportunity.noticeType === 'Combined Synopsis/Solicitation' ? 'bg-blue-100 text-blue-700' :
+                  opportunity.noticeType === 'Presolicitation' ? 'bg-yellow-100 text-yellow-700' :
+                  opportunity.noticeType === 'Sources Sought' ? 'bg-purple-100 text-purple-700' :
+                  'bg-gray-100 text-gray-700'
+                }`}>
+                  {opportunity.noticeType}
+                </span>
+              )}
+            </div>
             {opportunity.aiMatchScore && (
-              <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getMatchColor(opportunity.aiMatchScore)}`}>
+              <span className={`px-3 py-1 rounded-full text-sm font-semibold shrink-0 ${getMatchColor(opportunity.aiMatchScore)}`}>
                 {opportunity.aiMatchScore}% Match Score
               </span>
             )}
           </div>
 
+          {/* ── Overview Grid ─────────────────────────────────────────── */}
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             <div className="space-y-3">
-              <div className="flex items-center text-gray-600">
-                <Building className="w-5 h-5 mr-2 text-indigo-500" />
-                <span className="font-medium">Agency:</span>
-                <span className="ml-2">{opportunity.agency}</span>
+              <div className="flex items-start text-gray-600">
+                <Building className="w-5 h-5 mr-2 text-indigo-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-medium">Agency:</span>
+                  <span className="ml-2">{opportunity.agency}</span>
+                </div>
               </div>
               {opportunity.estimatedValue && (
                 <div className="flex items-center text-gray-600">
-                  <DollarSign className="w-5 h-5 mr-2 text-green-500" />
-                  <span className="font-medium">Estimated Value:</span>
+                  <DollarSign className="w-5 h-5 mr-2 text-green-500 shrink-0" />
+                  <span className="font-medium">Total Value:</span>
                   <span className="ml-2 text-green-600 font-semibold">
                     ${opportunity.estimatedValue.toLocaleString()}
                   </span>
                 </div>
               )}
               <div className="flex items-center text-gray-600">
-                <Clock className="w-5 h-5 mr-2 text-orange-500" />
-                <span className="font-medium">Due Date:</span>
+                <Clock className="w-5 h-5 mr-2 text-orange-500 shrink-0" />
+                <span className="font-medium">Response Due:</span>
                 <span className="ml-2">
-                  {opportunity.dueDate ? new Date(opportunity.dueDate).toLocaleDateString() : 'N/A'}
+                  {opportunity.dueDate
+                    ? new Date(opportunity.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                    : 'N/A'}
                 </span>
               </div>
+              <div className="flex items-center text-gray-600">
+                <Calendar className="w-5 h-5 mr-2 text-blue-500 shrink-0" />
+                <span className="font-medium">Posted:</span>
+                <span className="ml-2">
+                  {new Date(opportunity.postedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </span>
+              </div>
+              {opportunity.modifiedDate && (
+                <div className="flex items-center text-gray-600">
+                  <Calendar className="w-5 h-5 mr-2 text-gray-400 shrink-0" />
+                  <span className="font-medium">Last Updated:</span>
+                  <span className="ml-2">
+                    {new Date(opportunity.modifiedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                  </span>
+                </div>
+              )}
+              {opportunity.archiveDate && (
+                <div className="flex items-center text-gray-600">
+                  <Calendar className="w-5 h-5 mr-2 text-red-400 shrink-0" />
+                  <span className="font-medium">Archive Date:</span>
+                  <span className="ml-2">
+                    {new Date(opportunity.archiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="space-y-3">
               {opportunity.naicsCode && opportunity.naicsCode !== '000000' && (
-                <div className="flex items-center text-gray-600">
-                  <FileText className="w-5 h-5 mr-2 text-purple-500" />
-                  <span className="font-medium">NAICS Code:</span>
-                  <span className="ml-2">{opportunity.naicsCode}</span>
+                <div className="flex items-start text-gray-600">
+                  <Hash className="w-5 h-5 mr-2 text-purple-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-medium">NAICS Code:</span>
+                    <span className="ml-2 font-mono">{opportunity.naicsCode}</span>
+                    {opportunity.naicsDescription && (
+                      <p className="text-xs text-gray-500 mt-0.5">{opportunity.naicsDescription}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {opportunity.pscCode && (
+                <div className="flex items-start text-gray-600">
+                  <Hash className="w-5 h-5 mr-2 text-teal-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-medium">PSC Code:</span>
+                    <span className="ml-2 font-mono">{opportunity.pscCode}</span>
+                    {opportunity.pscDescription && (
+                      <p className="text-xs text-gray-500 mt-0.5">{opportunity.pscDescription}</p>
+                    )}
+                  </div>
                 </div>
               )}
               {opportunity.setAside && (
                 <div className="flex items-center text-gray-600">
+                  <Shield className="w-5 h-5 mr-2 text-blue-500 shrink-0" />
                   <span className="font-medium">Set-Aside:</span>
                   <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-sm">
                     {opportunity.setAside}
@@ -254,14 +334,237 @@ export default function OpportunityDetail() {
               )}
               {solicitationNumber && (
                 <div className="flex items-center text-gray-600">
+                  <FileText className="w-5 h-5 mr-2 text-indigo-500 shrink-0" />
                   <span className="font-medium">Solicitation #:</span>
                   <span className="ml-2 font-mono text-sm bg-gray-100 px-2 py-1 rounded">
                     {solicitationNumber}
                   </span>
                 </div>
               )}
+              {opportunity.organizationType && (
+                <div className="flex items-center text-gray-600">
+                  <Briefcase className="w-5 h-5 mr-2 text-gray-500 shrink-0" />
+                  <span className="font-medium">Org Type:</span>
+                  <span className="ml-2 text-sm">{opportunity.organizationType}</span>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* ── Contracting Office Hierarchy ───────────────────────── */}
+          {(opportunity.department || opportunity.subTier || opportunity.office) && (
+            <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 mb-3">
+                <Building className="w-4 h-4 text-slate-500" /> Contracting Organization
+              </h3>
+              <div className="grid sm:grid-cols-3 gap-3 text-sm">
+                {opportunity.department && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Department</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{opportunity.department}</p>
+                  </div>
+                )}
+                {opportunity.subTier && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sub-Tier</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{opportunity.subTier}</p>
+                  </div>
+                )}
+                {opportunity.office && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Office</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{opportunity.office}</p>
+                  </div>
+                )}
+              </div>
+              {opportunity.officeAddress && (opportunity.officeAddress.city || opportunity.officeAddress.state) && (
+                <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  {[opportunity.officeAddress.city, opportunity.officeAddress.state, opportunity.officeAddress.zipCode].filter(Boolean).join(', ')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Award Details ──────────────────────────────────────── */}
+          {opportunity.award?.awardee?.name && (
+            <div className="mb-6 p-4 bg-green-50 rounded-xl border border-green-200">
+              <h3 className="text-sm font-semibold text-green-800 flex items-center gap-2 mb-3">
+                <Award className="w-4 h-4 text-green-600" /> Contract Award Details
+              </h3>
+              <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Awardee</p>
+                    <p className="text-green-900 font-semibold mt-0.5">{opportunity.award.awardee.name}</p>
+                  </div>
+                  {opportunity.award.awardee.uei && (
+                    <div>
+                      <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Unique Entity ID (UEI)</p>
+                      <p className="text-green-800 font-mono text-xs mt-0.5">{opportunity.award.awardee.uei}</p>
+                    </div>
+                  )}
+                  {opportunity.award.awardee.cageCode && (
+                    <div>
+                      <p className="text-xs font-medium text-green-600 uppercase tracking-wide">CAGE Code</p>
+                      <p className="text-green-800 font-mono text-xs mt-0.5">{opportunity.award.awardee.cageCode}</p>
+                    </div>
+                  )}
+                  {opportunity.award.awardee.location?.city && (
+                    <div>
+                      <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Awardee Location</p>
+                      <p className="text-green-800 text-xs mt-0.5 flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {[
+                          opportunity.award.awardee.location.streetAddress,
+                          opportunity.award.awardee.location.city,
+                          opportunity.award.awardee.location.state,
+                          opportunity.award.awardee.location.zipCode,
+                          opportunity.award.awardee.location.country
+                        ].filter(Boolean).join(', ')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {opportunity.award.date && (
+                    <div>
+                      <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Award Date</p>
+                      <p className="text-green-900 font-semibold mt-0.5">
+                        {new Date(opportunity.award.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </p>
+                    </div>
+                  )}
+                  {opportunity.award.amount && (
+                    <div>
+                      <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Award Amount</p>
+                      <p className="text-green-900 font-bold text-lg mt-0.5">${opportunity.award.amount.toLocaleString()}</p>
+                    </div>
+                  )}
+                  {opportunity.award.number && (
+                    <div>
+                      <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Award Number</p>
+                      <p className="text-green-800 font-mono text-xs mt-0.5">{opportunity.award.number}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Performance Period ─────────────────────────────────── */}
+          {(opportunity.performancePeriod?.startDate || opportunity.performancePeriod?.endDate) && (
+            <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <h3 className="text-sm font-semibold text-blue-800 flex items-center gap-2 mb-3">
+                <Calendar className="w-4 h-4 text-blue-600" /> Period of Performance
+              </h3>
+              <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                {opportunity.performancePeriod.startDate && (
+                  <div>
+                    <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Start Date</p>
+                    <p className="text-blue-900 font-semibold mt-0.5">
+                      {new Date(opportunity.performancePeriod.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>
+                  </div>
+                )}
+                {opportunity.performancePeriod.endDate && (
+                  <div>
+                    <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Estimated Completion Date</p>
+                    <p className="text-blue-900 font-semibold mt-0.5">
+                      {new Date(opportunity.performancePeriod.endDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Place of Performance ──────────────────────────────── */}
+          {(opportunity.placeOfPerformance?.city || opportunity.placeOfPerformance?.state) && (
+            <div className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-200">
+              <h3 className="text-sm font-semibold text-amber-800 flex items-center gap-2 mb-3">
+                <MapPin className="w-4 h-4 text-amber-600" /> Place of Performance
+              </h3>
+              <div className="grid sm:grid-cols-2 gap-3 text-sm">
+                {opportunity.placeOfPerformance.city && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">City</p>
+                    <p className="text-amber-900 mt-0.5">{opportunity.placeOfPerformance.city}</p>
+                  </div>
+                )}
+                {opportunity.placeOfPerformance.state && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">State</p>
+                    <p className="text-amber-900 mt-0.5">{opportunity.placeOfPerformance.state}</p>
+                  </div>
+                )}
+                {opportunity.placeOfPerformance.zipCode && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">ZIP Code</p>
+                    <p className="text-amber-900 mt-0.5">{opportunity.placeOfPerformance.zipCode}</p>
+                  </div>
+                )}
+                {opportunity.placeOfPerformance.country && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">Country</p>
+                    <p className="text-amber-900 mt-0.5">{opportunity.placeOfPerformance.country}</p>
+                  </div>
+                )}
+                {opportunity.placeOfPerformance.congressionalDistrict && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">Congressional District</p>
+                    <p className="text-amber-900 mt-0.5">{opportunity.placeOfPerformance.congressionalDistrict}</p>
+                  </div>
+                )}
+                {opportunity.placeOfPerformance.county && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">County</p>
+                    <p className="text-amber-900 mt-0.5">{opportunity.placeOfPerformance.county}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Point of Contact ──────────────────────────────────── */}
+          {((opportunity.pointOfContacts && opportunity.pointOfContacts.length > 0) || opportunity.contactInfo?.name) && (
+            <div className="mb-6 p-4 bg-violet-50 rounded-xl border border-violet-200">
+              <h3 className="text-sm font-semibold text-violet-800 flex items-center gap-2 mb-3">
+                <Users className="w-4 h-4 text-violet-600" /> Point(s) of Contact
+              </h3>
+              <div className="grid sm:grid-cols-2 gap-4">
+                {(opportunity.pointOfContacts && opportunity.pointOfContacts.length > 0
+                  ? opportunity.pointOfContacts
+                  : opportunity.contactInfo?.name ? [{ fullName: opportunity.contactInfo.name, email: opportunity.contactInfo.email, phone: opportunity.contactInfo.phone }] : []
+                ).map((contact, i) => (
+                  <div key={i} className="bg-white rounded-lg p-3 border border-violet-100">
+                    {contact.type && <p className="text-xs font-medium text-violet-500 uppercase tracking-wide mb-1">{contact.type}</p>}
+                    {contact.fullName && (
+                      <p className="text-sm font-semibold text-violet-900 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-violet-400" /> {contact.fullName}
+                      </p>
+                    )}
+                    {contact.title && <p className="text-xs text-violet-600 ml-5">{contact.title}</p>}
+                    {contact.email && (
+                      <a href={`mailto:${contact.email}`} className="text-xs text-violet-700 hover:underline flex items-center gap-1.5 mt-1">
+                        <Mail className="w-3 h-3" /> {contact.email}
+                      </a>
+                    )}
+                    {contact.phone && (
+                      <p className="text-xs text-violet-700 flex items-center gap-1.5 mt-0.5">
+                        <Phone className="w-3 h-3" /> {contact.phone}
+                      </p>
+                    )}
+                    {contact.fax && (
+                      <p className="text-xs text-violet-600 flex items-center gap-1.5 mt-0.5">
+                        <Phone className="w-3 h-3" /> Fax: {contact.fax}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           <div className="mb-6">
@@ -479,7 +782,7 @@ export default function OpportunityDetail() {
                   <p className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-1.5">
                     <ScanSearch className="w-3.5 h-3.5" /> AI Analysis — {opportunity.resourceLinks.find(r => r.url === url)?.name || 'Document'}
                   </p>
-                  <pre className="whitespace-pre-wrap font-sans text-xs text-gray-700 leading-relaxed max-h-80 overflow-y-auto">{analysis}</pre>
+                  <div className="max-h-80 overflow-y-auto"><AIResponseRenderer content={analysis} className="text-xs" /></div>
                 </div>
               ))}
             </div>
@@ -510,10 +813,8 @@ export default function OpportunityDetail() {
               <Sparkles className="w-5 h-5 mr-2 text-indigo-500" />
               AI Proposal Outline
             </h2>
-            <div className="prose prose-indigo max-w-none">
-              <pre className="whitespace-pre-wrap font-sans text-gray-700 bg-gray-50 p-4 rounded-lg">
-                {proposalOutline}
-              </pre>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <AIResponseRenderer content={proposalOutline} />
             </div>
             <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
               <p className="text-sm text-yellow-800">

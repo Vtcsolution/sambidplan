@@ -10,6 +10,7 @@ import { dashboardAPI, contactAPI, authAPI } from '../services/api';
 import PushNotificationToggle from '../components/PushNotificationToggle';
 import AIPredictionsWidget from '../components/AIPredictionsWidget';
 import TrialBanner from '../components/TrialBanner';
+import HowItWorks from '../components/HowItWorks';
 
 // ── Helper: days-left colour ──────────────────────────────────────────────
 const deadlineColor = (days) => {
@@ -122,7 +123,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* ── Trial expiry banner ── */}
         <TrialBanner userProfile={user} />
@@ -153,13 +154,30 @@ export default function Dashboard() {
             <div className="flex items-start sm:items-center gap-3">
               <Target className="w-5 h-5 shrink-0 text-indigo-600 mt-0.5 sm:mt-0" />
               <div>
-                <p className="text-sm font-semibold">Set up your NAICS codes to see matched opportunities</p>
+                <p className="text-sm font-semibold">Step 1: Set up your NAICS codes to see matched opportunities</p>
                 <p className="text-xs opacity-75 mt-0.5">Tell us your industry codes so we can show contracts that match your business.</p>
               </div>
             </div>
             <a href="/settings?tab=naics"
               className="self-start sm:self-auto shrink-0 text-xs font-semibold px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition">
               Add NAICS Codes →
+            </a>
+          </div>
+        )}
+
+        {/* ── Company profile setup nudge ── */}
+        {!loading && user?.naicsCodes?.length > 0 && !user?.businessName && (
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 rounded-xl border bg-emerald-50 border-emerald-200 text-emerald-900">
+            <div className="flex items-start sm:items-center gap-3">
+              <CheckCircle className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5 sm:mt-0" />
+              <div>
+                <p className="text-sm font-semibold">Step 2: Set up your Company Profile for better AI analysis</p>
+                <p className="text-xs opacity-75 mt-0.5">Add your UEI, CAGE code, certifications (8(a), WOSB, HUBZone, SDVOSB) — AI uses this to check set-aside eligibility and write personalized proposals.</p>
+              </div>
+            </div>
+            <a href="/company/profile"
+              className="self-start sm:self-auto shrink-0 text-xs font-semibold px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition">
+              Set Up Company Profile →
             </a>
           </div>
         )}
@@ -258,14 +276,36 @@ export default function Dashboard() {
                 {user.plan?.charAt(0).toUpperCase() + user.plan?.slice(1)} Plan
               </span>
               {user.naicsCodes?.length > 0 && (
-                <span className="text-gray-400 hidden sm:inline">· NAICS: {user.naicsCodes.slice(0, 2).join(', ')}{user.naicsCodes.length > 2 ? ` +${user.naicsCodes.length - 2}` : ''}</span>
+                <span className="text-gray-400 hidden sm:inline">· NAICS: {user.naicsCodes.join(', ')}</span>
               )}
             </p>
           </div>
-          <button onClick={loadStats} className="shrink-0 flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-indigo-600 border border-gray-200 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg hover:border-indigo-300 transition-colors">
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <HowItWorks
+              title="Dashboard"
+              steps={[
+                { title: 'Auto-matched contracts', description: 'Opportunities from SAM.gov are automatically matched to your NAICS codes and scored by AI' },
+                { title: 'Track your pipeline', description: 'See contracts in your feed, saved opportunities, upcoming deadlines, and active alerts' },
+                { title: 'AI predictions', description: 'Win probability scores for upcoming contracts based on your company profile and past performance' },
+                { title: 'Quick actions', description: 'Jump to any feature — browse contracts, manage alerts, analyze winning bids, or generate proposals' },
+              ]}
+              dataUsed={['SAM.gov', 'Your NAICS Codes', 'Your Plan Limits']}
+            >
+              <p className="text-sm font-semibold text-gray-700 mt-2">Your starting point — connected to everything:</p>
+              <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                <li><strong>Opportunities</strong> → your matched contracts feed (click stat card to go there)</li>
+                <li><strong>Saved Opportunities</strong> → bookmarked contracts you're tracking</li>
+                <li><strong>Deadline Calendar</strong> → upcoming deadlines visual (from "Upcoming Deadlines" widget)</li>
+                <li><strong>Alerts</strong> → new match notifications</li>
+                <li><strong>AI Predictions</strong> → win probability shown in the predictions widget</li>
+                <li><strong>Bid Pipeline</strong> → your active bids across all stages</li>
+              </ul>
+            </HowItWorks>
+            <button onClick={loadStats} className="flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-indigo-600 border border-gray-200 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg hover:border-indigo-300 transition-colors">
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
         </div>
 
         {/* ── Stat cards ── */}
@@ -397,7 +437,20 @@ export default function Dashboard() {
                       {opp.dueDate && (
                         <span className={`flex items-center gap-1 ${opp.isActive ? 'text-orange-600' : 'text-gray-400'}`}>
                           <Clock className="w-3 h-3" />
-                          {new Date(opp.dueDate).toLocaleDateString()}
+                          Due: {new Date(opp.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                      {opp.postedDate && (
+                        <span className="text-gray-400">
+                          Posted: {new Date(opp.postedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                      {opp.noticeType && (
+                        <span className={`px-1.5 py-0.5 rounded text-xs ${
+                          opp.noticeType === 'Award Notice' ? 'bg-green-50 text-green-600' :
+                          'bg-gray-50 text-gray-500'
+                        }`}>
+                          {opp.noticeType}
                         </span>
                       )}
                       {opp.setAside && (

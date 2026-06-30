@@ -12,16 +12,21 @@ export const getWorkspaceStats = async (req, res) => {
       CompanyDocument.countDocuments(),
     ]);
 
-    // Total accepted members across all companies
-    const memberAgg = await Company.aggregate([
-      { $project: { memberCount: { $size: { $filter: { input: '$members', as: 'm', cond: { $eq: ['$$m.inviteStatus', 'accepted'] } } } } } },
-      { $group: { _id: null, total: { $sum: '$memberCount' } } },
+    const agg = await Company.aggregate([
+      {
+        $project: {
+          memberCount: { $size: { $filter: { input: '$members', as: 'm', cond: { $eq: ['$$m.inviteStatus', 'accepted'] } } } },
+          wsUserCount: { $size: { $ifNull: ['$workspaceUsers', []] } },
+        },
+      },
+      { $group: { _id: null, totalMembers: { $sum: '$memberCount' }, totalWsUsers: { $sum: '$wsUserCount' } } },
     ]);
-    const totalMembers = memberAgg[0]?.total || 0;
+    const totalMembers  = agg[0]?.totalMembers  || 0;
+    const totalWsUsers  = agg[0]?.totalWsUsers  || 0;
 
     res.json({
       success: true,
-      data: { totalCompanies, verifiedCount, totalMembers, totalDocs },
+      data: { totalCompanies, verifiedCount, totalMembers, totalDocs, totalWsUsers },
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -59,9 +64,10 @@ export const listAllCompanies = async (req, res) => {
 
     const enriched = companies.map(c => ({
       ...c,
-      memberCount:    (c.members || []).filter(m => m.inviteStatus === 'accepted').length,
-      pendingInvites: (c.members || []).filter(m => m.inviteStatus === 'pending').length,
-      docCount:       docMap[c._id.toString()] || 0,
+      memberCount:      (c.members || []).filter(m => m.inviteStatus === 'accepted').length,
+      pendingInvites:   (c.members || []).filter(m => m.inviteStatus === 'pending').length,
+      workspaceUserCount: (c.workspaceUsers || []).length,
+      docCount:         docMap[c._id.toString()] || 0,
     }));
 
     res.json({ success: true, data: enriched, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
@@ -85,7 +91,13 @@ export const getCompanyById = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json({ success: true, data: company, docs });
+    // Strip passwordHash before sending to admin — never expose it
+    const companyObj = company.toObject();
+    companyObj.workspaceUsers = (companyObj.workspaceUsers || []).map(
+      ({ passwordHash: _ph, ...wu }) => wu
+    );
+
+    res.json({ success: true, data: companyObj, docs });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -1,4 +1,5 @@
 ﻿// frontend/src/pages/admin/AdminInvoices.jsx
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { useState, useEffect } from 'react';
 import PermissionGuard from '../../components/admin/PermissionGuard';
 import { 
@@ -127,7 +128,7 @@ export default function AdminInvoices() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Invoices</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Invoices<AdminHowItWorks page="invoices" /></h1>
             <p className="text-gray-600 text-sm">Manage and track all invoices</p>
           </div>
           <button

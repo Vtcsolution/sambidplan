@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import PermissionGuard from '../../components/admin/PermissionGuard';
 import { Activity, CheckCircle, AlertTriangle, XCircle, Loader2, RefreshCw, Database, Zap } from 'lucide-react';
 import { adminAIAPI } from '../../services/adminApi';
@@ -47,7 +48,7 @@ export default function AdminPlatformHealth() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Platform Health</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Platform Health<AdminHowItWorks page="platformHealth" /></h1>
           <p className="text-gray-500 text-sm mt-1">Real-time status of all platform components and external APIs.</p>
         </div>
         <div className="flex items-center gap-3 shrink-0 self-start sm:self-auto">

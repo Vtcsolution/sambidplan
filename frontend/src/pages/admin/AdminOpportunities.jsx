@@ -1,4 +1,5 @@
 ﻿// frontend/src/pages/admin/AdminOpportunities.jsx
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { useState, useEffect } from 'react';
 import { 
   RefreshCw, 
@@ -35,7 +36,6 @@ export default function AdminOpportunities() {
 
   useEffect(() => {
     fetchAllOpportunities();
-    fetchStats();
   }, [pagination.page, pageSize]);
 
   const fetchAllOpportunities = async () => {
@@ -52,7 +52,7 @@ export default function AdminOpportunities() {
           total: response.data.pagination?.total || 0,
           pages: response.data.pagination?.pages || 1
         }));
-        
+
         if (response.data.stats) {
           setStats({
             total: response.data.stats.total || 0,
@@ -66,22 +66,6 @@ export default function AdminOpportunities() {
       console.error('Error fetching opportunities:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchStats = async () => {
-    try {
-      const response = await opportunityAPI.getAll({ limit: 1 });
-      if (response.data.success && response.data.stats) {
-        setStats({
-          total: response.data.stats.total || 0,
-          active: response.data.stats.activeOpportunities || 0,
-          historical: (response.data.stats.total || 0) - (response.data.stats.activeOpportunities || 0),
-          lastFetched: new Date()
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching stats:', error);
     }
   };
 
@@ -99,10 +83,9 @@ export default function AdminOpportunities() {
           count: response.data.count,
           saved: response.data.totalSaved
         });
-        
+
         setTimeout(() => {
           fetchAllOpportunities();
-          fetchStats();
         }, 2000);
       } else {
         setFetchResult({
@@ -124,7 +107,6 @@ export default function AdminOpportunities() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await fetchAllOpportunities();
-    await fetchStats();
     setRefreshing(false);
   };
 
@@ -162,7 +144,7 @@ export default function AdminOpportunities() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Opportunities Management</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Opportunities Management<AdminHowItWorks page="opportunities" /></h1>
           <p className="text-gray-600 mt-1 text-sm">Fetch and manage contract opportunities from SAM.gov</p>
         </div>
         <div className="flex gap-3 shrink-0 flex-wrap">

@@ -6,6 +6,7 @@ import { savedAPI } from '../services/api';
 import Card from '../components/Card';
 import ExportButton from '../components/ExportButton';
 import ConfirmModal from '../components/ConfirmModal';
+import HowItWorks from '../components/HowItWorks';
 import { exportSavedCSV, exportSavedPDF } from '../utils/exportUtils';
 
 export default function SavedOpportunities() {
@@ -64,22 +65,35 @@ export default function SavedOpportunities() {
 
   const getStatusBadge = (status) => {
     const badges = {
-      saved: 'bg-gray-100 text-gray-600',
-      applied: 'bg-blue-100 text-blue-600',
-      won: 'bg-green-100 text-green-600',
-      lost: 'bg-red-100 text-red-600'
+      saved:          'bg-gray-100 text-gray-600',
+      researching:    'bg-blue-100 text-blue-700',
+      proposal_draft: 'bg-indigo-100 text-indigo-700',
+      submitted:      'bg-amber-100 text-amber-700',
+      won:            'bg-green-100 text-green-700',
+      lost:           'bg-red-100 text-red-600',
     };
     return badges[status] || badges.saved;
   };
 
   const getStatusIcon = (status) => {
     const icons = {
-      saved: '📌',
-      applied: '📝',
-      won: '🏆',
-      lost: '❌'
+      saved:          '📌',
+      researching:    '🔍',
+      proposal_draft: '📝',
+      submitted:      '📤',
+      won:            '🏆',
+      lost:           '❌',
     };
     return icons[status] || '📌';
+  };
+
+  const STATUS_LABEL = {
+    saved:          'Saved',
+    researching:    'Researching',
+    proposal_draft: 'Drafting Proposal',
+    submitted:      'Submitted',
+    won:            'Won',
+    lost:           'Lost',
   };
 
   const totalPages = Math.ceil(savedOpportunities.length / pageSize);
@@ -104,10 +118,32 @@ export default function SavedOpportunities() {
         onConfirm={() => doUnsave(confirmDlg?.savedId)}
         onCancel={() => setConfirmDlg(null)}
       />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <div className="mb-5 sm:mb-8 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">Saved Opportunities</h1>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
+              Saved Opportunities
+              <HowItWorks
+                title="Saved Opportunities"
+                steps={[
+                  { title: 'Save contracts', description: 'Click "Save to My List" on any opportunity to bookmark it for later' },
+                  { title: 'Track status', description: 'Move through stages: Saved → Researching → Drafting Proposal → Submitted → Won/Lost' },
+                  { title: 'Add notes', description: 'Add private notes to each saved opportunity for your team' },
+                  { title: 'Use in AI tools', description: 'Your saved opportunities appear in Go/No-Go, Proposal Builder, and other AI tools for quick selection' },
+                ]}
+                dataUsed={['Your Bookmarks', 'SAM.gov Data']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Go/No-Go</strong> → your saved list appears as "My Saved" tab for quick selection</li>
+                  <li><strong>Proposal Builder</strong> → select saved opportunity to auto-fill proposal fields</li>
+                  <li><strong>RFP Analyzer</strong> → select saved opportunity to auto-load SOW text for analysis</li>
+                  <li><strong>Sources Sought</strong> → select saved opportunity to auto-fill response fields</li>
+                  <li><strong>Bid Pipeline</strong> → saved opportunities flow into your kanban board</li>
+                  <li><strong>Deadline Calendar</strong> → saved contract deadlines appear on your calendar</li>
+                </ul>
+              </HowItWorks>
+            </h1>
             <p className="text-sm sm:text-base text-gray-600 mt-0.5 sm:mt-1">
               {savedOpportunities.length} saved contract{savedOpportunities.length !== 1 ? 's' : ''}
             </p>
@@ -148,7 +184,7 @@ export default function SavedOpportunities() {
                           {item.opportunity?.title || 'Unknown Opportunity'}
                         </h3>
                         <span className={`px-2 py-0.5 rounded text-xs font-semibold shrink-0 ${getStatusBadge(item.status)}`}>
-                          {getStatusIcon(item.status)} {item.status.toUpperCase()}
+                          {getStatusIcon(item.status)} {STATUS_LABEL[item.status] || item.status}
                         </span>
                       </div>
                       <p className="text-xs sm:text-sm text-gray-600">{item.opportunity?.agency || 'Unknown Agency'}</p>
@@ -192,7 +228,9 @@ export default function SavedOpportunities() {
                       className="flex-1 min-w-0 px-2.5 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                     >
                       <option value="saved">📌 Saved</option>
-                      <option value="applied">📝 Applied</option>
+                      <option value="researching">🔍 Researching</option>
+                      <option value="proposal_draft">📝 Drafting Proposal</option>
+                      <option value="submitted">📤 Submitted</option>
                       <option value="won">🏆 Won</option>
                       <option value="lost">❌ Lost</option>
                     </select>

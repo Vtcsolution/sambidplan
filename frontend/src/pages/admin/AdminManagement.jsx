@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Shield, ShieldCheck, UserPlus, Edit2, Trash2, RefreshCw,
   Eye, EyeOff, CheckCircle, XCircle, X, Loader2, AlertCircle,
@@ -467,7 +468,7 @@ export default function AdminManagement() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Admin Management</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Admin Management<AdminHowItWorks page="adminManagement" /></h1>
           <p className="text-gray-500 text-sm mt-0.5">
             Manage admin accounts, roles, and permissions. Only super admins can access this page.
           </p>

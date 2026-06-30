@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { BarChart3, Sparkles, Loader2, Lock, Copy, CheckCircle, Download, RefreshCw } from 'lucide-react';
 import { aiAPI } from '../services/api';
+import AIResponseRenderer from '../components/AIResponseRenderer';
 import { useUserPlan } from '../hooks/useUserPlan';
 import { usePlans } from '../hooks/usePlans';
+import HowItWorks from '../components/HowItWorks';
 import jsPDF from 'jspdf';
 
 export default function MarketResearch() {
@@ -71,14 +73,28 @@ export default function MarketResearch() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center">
               <BarChart3 className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">AI Market Research Report</h1>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">AI Market Research Report
+                <HowItWorks title="Market Research" steps={[
+                  { title: 'Analyzes your NAICS codes', description: 'AI researches the federal market landscape for your specific industry codes' },
+                  { title: 'Award trends & agency spend', description: 'Which agencies spend the most in your NAICS, trending up or down, typical award sizes' },
+                  { title: 'Competitive landscape', description: 'How many competitors exist, market density, set-aside trends' },
+                  { title: 'Actionable recommendations', description: 'Specific BD actions: which agencies to target, which contract vehicles to pursue, upcoming opportunities' },
+                ]} dataUsed={['Your NAICS Codes', 'USASpending Data', 'SAM.gov Trends']} >
+                  <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                  <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                    <li><strong>Winning Bids</strong> → see actual award data behind the trends</li>
+                    <li><strong>Contract Vehicles</strong> → pursue the vehicles the report recommends</li>
+                    <li><strong>Teaming Finder</strong> → find partners in the identified market gaps</li>
+                  </ul>
+                </HowItWorks>
+              </h1>
               <p className="text-gray-500 text-sm">AI-generated intelligence report tailored to your NAICS codes.</p>
             </div>
           </div>
@@ -134,9 +150,9 @@ export default function MarketResearch() {
                 </button>
               </div>
             </div>
-            <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700 leading-relaxed bg-gray-50 rounded-xl p-5 border border-gray-100 max-h-[700px] overflow-y-auto">
-              {report}
-            </pre>
+            <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 max-h-[700px] overflow-y-auto">
+              <AIResponseRenderer content={report} />
+            </div>
           </div>
         )}
 

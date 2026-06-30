@@ -1,8 +1,34 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, Crown, Shield, Briefcase, FileEdit, Eye, User, Loader, Trash2, Copy, CheckCircle, XCircle, Clock, LogOut, AlertTriangle } from 'lucide-react';
+import { Users, UserPlus, Crown, Shield, Briefcase, FileEdit, Eye, User, Loader, Trash2, Copy, CheckCircle, XCircle, Clock, LogOut, AlertTriangle, KeyRound, Link2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { companyAPI } from '../../services/api';
 import { useUserPlan } from '../../hooks/useUserPlan';
 import PlanGate from '../../components/PlanGate';
+import HowItWorks from '../../components/HowItWorks';
+
+const ALL_PAGES = [
+  { key: 'dashboard',            label: 'Dashboard' },
+  { key: 'opportunities',        label: 'Find Contracts' },
+  { key: 'saved',                label: 'Saved Contracts' },
+  { key: 'bid-pipeline',         label: 'Bid Pipeline' },
+  { key: 'calendar',             label: 'Deadline Calendar' },
+  { key: 'alerts',               label: 'Smart Alerts' },
+  { key: 'winning-bids',         label: 'Who Won Contracts' },
+  { key: 'referral',             label: 'Earn by Referring' },
+  { key: 'proposal-builder',     label: 'Proposal Builder' },
+  { key: 'rfp-analyzer',         label: 'RFP Analyzer' },
+  { key: 'go-no-go',             label: 'Go/No-Go' },
+  { key: 'teaming-finder',       label: 'Teaming Finder' },
+  { key: 'contract-vehicles',    label: 'Contract Vehicles' },
+  { key: 'market-research',      label: 'Market Research' },
+  { key: 'past-performance',     label: 'Past Performance' },
+  { key: 'sources-sought',       label: 'Sources Sought' },
+  { key: 'ai-predictions',       label: 'AI Predictions' },
+  { key: 'capability-statement',    label: 'Capability Statement' },
+  { key: 'company-profile',      label: 'Company Profile' },
+  { key: 'company-team',         label: 'Team Members' },
+  { key: 'company-documents',    label: 'Document Library' },
+  { key: 'company-managed-service', label: 'Managed Winning' },
+];
 
 const TEAM_LIMITS = { starter: 3, pro: 10, enterprise: Infinity };
 
@@ -140,6 +166,68 @@ export default function TeamManagement() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ── Workspace Users ────────────────────────────────────────────────────────
+  const [wsUsers,      setWsUsers]      = useState([]);
+  const [wsLoading,    setWsLoading]    = useState(false);
+  const [wsCompanyId,  setWsCompanyId]  = useState('');
+  const [showWsForm,   setShowWsForm]   = useState(false);
+  const [wsForm,       setWsForm]       = useState({ username: '', password: '', displayName: '', allowedPages: [] });
+  const [wsSaving,     setWsSaving]     = useState(false);
+  const [wsEditId,     setWsEditId]     = useState(null);
+  const [wsCopied,     setWsCopied]     = useState(false);
+
+  useEffect(() => { if (myRole === 'owner') loadWsUsers(); }, [myRole]);
+
+  const loadWsUsers = async () => {
+    setWsLoading(true);
+    try {
+      const res = await companyAPI.listWorkspaceUsers();
+      if (res.data.success) { setWsUsers(res.data.data); setWsCompanyId(res.data.companyId); }
+    } catch { /* silent */ }
+    finally { setWsLoading(false); }
+  };
+
+  const wsLoginUrl = wsCompanyId ? `${window.location.origin}/workspace/login?c=${wsCompanyId}` : '';
+
+  const togglePage = (key) => setWsForm(f => ({
+    ...f, allowedPages: f.allowedPages.includes(key) ? f.allowedPages.filter(p => p !== key) : [...f.allowedPages, key],
+  }));
+
+  const handleWsSave = async () => {
+    if (!wsForm.username.trim() || !wsForm.password) { showToast('Username and password are required.', 'error'); return; }
+    setWsSaving(true);
+    try {
+      if (wsEditId) {
+        await companyAPI.updateWorkspaceUser(wsEditId, { displayName: wsForm.displayName, allowedPages: wsForm.allowedPages, password: wsForm.password || undefined });
+        showToast('Workspace user updated.');
+      } else {
+        await companyAPI.createWorkspaceUser(wsForm);
+        showToast('Workspace user created.');
+      }
+      setWsForm({ username: '', password: '', displayName: '', allowedPages: [] });
+      setShowWsForm(false); setWsEditId(null);
+      loadWsUsers();
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to save.', 'error');
+    } finally { setWsSaving(false); }
+  };
+
+  const handleWsEdit = (wu) => {
+    setWsForm({ username: wu.username, password: '', displayName: wu.displayName, allowedPages: wu.allowedPages });
+    setWsEditId(wu._id); setShowWsForm(true);
+  };
+
+  const handleWsDelete = async (id, username) => {
+    if (!window.confirm(`Remove workspace user "${username}"?`)) return;
+    try {
+      await companyAPI.deleteWorkspaceUser(id);
+      showToast('Workspace user removed.');
+      loadWsUsers();
+    } catch { showToast('Failed to remove.', 'error'); }
+  };
+
+  const copyWsUrl = () => { navigator.clipboard.writeText(wsLoginUrl); setWsCopied(true); setTimeout(() => setWsCopied(false), 2000); };
+
   if (loading || planLoading) return (
     <div className="min-h-screen flex items-center justify-center">
       <Loader className="w-7 h-7 text-indigo-600 animate-spin" />
@@ -183,7 +271,21 @@ export default function TeamManagement() {
               <Users className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Team Members</h1>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">Team Members
+                <HowItWorks title="Team Management" steps={[
+                  { title: 'Invite team members', description: 'Add people by email — they get an invite to join your company workspace' },
+                  { title: 'Assign roles', description: 'Owner, Admin, Capture Manager, Proposal Writer, Reviewer, or Member — each role has different page access' },
+                  { title: 'Page-level access control', description: 'Control which pages each member can see (opportunities, proposals, pipeline, etc.)' },
+                  { title: 'Workspace users', description: 'Create workspace logins with restricted access — separate from main SamBid accounts' },
+                ]} dataUsed={['Your Company Workspace', 'Member Invites']} >
+                  <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                  <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                    <li><strong>Document Library</strong> → shared docs accessible to all team members</li>
+                    <li><strong>Company Profile</strong> → team members share the same UEI, certs, and NAICS</li>
+                    <li><strong>Managed Service</strong> → team sees bid status and project progress</li>
+                  </ul>
+                </HowItWorks>
+              </h1>
               <p className="text-sm text-gray-500">{company.name} · {accepted.length + 1} active member{accepted.length !== 0 ? 's' : ''}</p>
             </div>
           </div>
@@ -352,6 +454,109 @@ export default function TeamManagement() {
           </div>
         )}
       </div>
+
+      {/* ── Workspace Access Control (owner only) ────────────────────── */}
+      {myRole === 'owner' && (
+        <div className="bg-white rounded-2xl border border-indigo-100 p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-gray-900 flex items-center gap-2"><KeyRound className="w-4 h-4 text-indigo-500" /> Workspace Access</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Create login accounts with custom page permissions for external collaborators.</p>
+            </div>
+            <button onClick={() => { setShowWsForm(!showWsForm); setWsEditId(null); setWsForm({ username: '', password: '', displayName: '', allowedPages: [] }); }}
+              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 transition">
+              <UserPlus className="w-3.5 h-3.5" /> New User
+            </button>
+          </div>
+
+          {/* Login URL */}
+          {wsLoginUrl && (
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+              <Link2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <span className="text-xs text-gray-600 truncate flex-1">{wsLoginUrl}</span>
+              <button onClick={copyWsUrl} className="text-xs text-indigo-600 font-semibold shrink-0 hover:text-indigo-800">
+                {wsCopied ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          )}
+
+          {/* Create/Edit form */}
+          {showWsForm && (
+            <div className="border border-indigo-100 rounded-2xl p-4 space-y-4 bg-indigo-50/40">
+              <p className="text-sm font-semibold text-gray-800">{wsEditId ? 'Edit Workspace User' : 'Create Workspace User'}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Username</label>
+                  <input value={wsForm.username} onChange={e => setWsForm(f => ({ ...f, username: e.target.value }))}
+                    disabled={!!wsEditId} placeholder="e.g. john.doe"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-gray-100" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Display Name</label>
+                  <input value={wsForm.displayName} onChange={e => setWsForm(f => ({ ...f, displayName: e.target.value }))}
+                    placeholder="John Doe"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">{wsEditId ? 'New Password (leave blank to keep)' : 'Password'}</label>
+                  <input type="password" value={wsForm.password} onChange={e => setWsForm(f => ({ ...f, password: e.target.value }))}
+                    placeholder={wsEditId ? 'Leave blank to keep' : 'Min 6 chars'}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                </div>
+              </div>
+
+              {/* Page permissions */}
+              <div>
+                <p className="text-xs font-semibold text-gray-700 mb-2">Allowed Pages <span className="text-gray-400 font-normal">— only checked pages will be visible</span></p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {ALL_PAGES.map(p => (
+                    <label key={p.key} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border cursor-pointer text-xs transition ${wsForm.allowedPages.includes(p.key) ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-medium' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      <input type="checkbox" checked={wsForm.allowedPages.includes(p.key)} onChange={() => togglePage(p.key)} className="accent-indigo-600 w-3.5 h-3.5" />
+                      {p.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setShowWsForm(false); setWsEditId(null); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50">Cancel</button>
+                <button onClick={handleWsSave} disabled={wsSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 font-semibold">
+                  {wsSaving ? <Loader className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  {wsEditId ? 'Save Changes' : 'Create User'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Workspace users list */}
+          {wsLoading ? (
+            <div className="flex justify-center py-4"><Loader className="w-5 h-5 text-indigo-400 animate-spin" /></div>
+          ) : wsUsers.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">No workspace users yet. Create one above.</p>
+          ) : (
+            <div className="space-y-2">
+              {wsUsers.map(wu => (
+                <div key={wu._id} className="flex items-center justify-between py-3 px-4 bg-gray-50 rounded-xl border border-gray-100">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{wu.displayName || wu.username}</p>
+                    <p className="text-xs text-gray-500">@{wu.username} · {wu.allowedPages.length} pages</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wu.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {wu.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                    <button onClick={() => handleWsEdit(wu)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded-lg hover:bg-indigo-50">Edit</button>
+                    <button onClick={() => handleWsDelete(wu._id, wu.username)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>

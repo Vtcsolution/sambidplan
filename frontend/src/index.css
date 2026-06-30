@@ -20,6 +20,11 @@ img, video, iframe, svg {
   height: auto;
 }
 
+/* ─── Dashboard pages: fill available width instead of capping at 1280px ──── */
+.dashboard-main .max-w-7xl {
+  max-width: 100%;
+}
+
 /* ─── Global typography ───────────────────────────────────────────────────── */
 html {
   -webkit-font-smoothing: antialiased;

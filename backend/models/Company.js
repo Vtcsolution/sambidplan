@@ -1,5 +1,25 @@
 import mongoose from 'mongoose';
 
+// Pages a workspace user may be granted access to
+export const WORKSPACE_PAGE_KEYS = [
+  'dashboard','opportunities','saved','bid-pipeline','calendar','alerts',
+  'winning-bids','referral',
+  'proposal-builder','rfp-analyzer','go-no-go','teaming-finder',
+  'contract-vehicles','market-research','past-performance','sources-sought',
+  'ai-predictions','capability-statement',
+  'company-profile','company-team','company-documents',
+  'company-managed-service',
+];
+
+const workspaceUserSchema = new mongoose.Schema({
+  username:     { type: String, required: true, trim: true },
+  passwordHash: { type: String, required: true },
+  displayName:  { type: String, trim: true, default: '' },
+  allowedPages: [{ type: String, enum: WORKSPACE_PAGE_KEYS }],
+  isActive:     { type: Boolean, default: true },
+  createdAt:    { type: Date, default: Date.now },
+}, { _id: true });
+
 const memberSchema = new mongoose.Schema({
   user:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   role:          { type: String, enum: ['owner','admin','capture_manager','proposal_writer','reviewer','member'], default: 'member' },
@@ -43,6 +63,7 @@ const companySchema = new mongoose.Schema({
   capabilities:   { type: String, trim: true, default: '' },
   owner:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   members:        [memberSchema],
+  workspaceUsers: [workspaceUserSchema],
 }, { timestamps: true });
 
 companySchema.index({ owner: 1 });

@@ -4,6 +4,7 @@ import {
   Clock, AlertCircle, TrendingUp, Link2, Banknote, Wallet
 } from 'lucide-react';
 import { referralAPI } from '../services/referralApi';
+import HowItWorks from '../components/HowItWorks';
 
 const PLAN_COLORS = {
   starter: 'bg-blue-100 text-blue-700',
@@ -85,12 +86,24 @@ export default function ReferralPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-5 sm:space-y-6">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-5 sm:space-y-6">
 
       {/* Header */}
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Gift className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 shrink-0" /> Referral Program
+          <HowItWorks title="Referral Program" steps={[
+            { title: 'Share your referral link', description: 'Copy your unique link and share with other businesses who could benefit from SamBid' },
+            { title: 'They sign up & upgrade', description: 'When someone uses your link and purchases a paid plan, you earn a commission' },
+            { title: 'Earn commissions', description: 'Starter: $10, Pro: $20, Enterprise: $60 per referral. Earnings accumulate in your balance' },
+            { title: 'Withdraw earnings', description: 'Request withdrawal via PayPal, bank transfer, or Payoneer when your balance is sufficient' },
+          ]} dataUsed={['Your Referral Link', 'Referral History']} >
+            <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+            <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+              <li><strong>Billing</strong> → referral earnings can offset your plan costs</li>
+              <li><strong>Notifications</strong> → get notified when someone uses your link and converts</li>
+            </ul>
+          </HowItWorks>
         </h1>
         <p className="text-sm sm:text-base text-gray-500 mt-0.5 sm:mt-1">
           Earn commissions when friends purchase a plan — Starter: 20%, Pro: 20%, Enterprise: 15%.

@@ -20,7 +20,7 @@ const adminNotificationSchema = new mongoose.Schema({
     default: false
   },
   readBy: [{
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user: { type: mongoose.Schema.Types.ObjectId },
     readAt: { type: Date, default: Date.now }
   }],
   actionRequired: {
@@ -52,6 +52,7 @@ const adminNotificationSchema = new mongoose.Schema({
 adminNotificationSchema.index({ read: 1, createdAt: -1 });
 adminNotificationSchema.index({ type: 1 });
 adminNotificationSchema.index({ priority: 1 });
+adminNotificationSchema.index({ 'readBy.user': 1, type: 1, createdAt: -1 });
 
 const AdminNotification = mongoose.model('AdminNotification', adminNotificationSchema);
 export default AdminNotification;

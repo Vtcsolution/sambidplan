@@ -3,6 +3,7 @@ import { Users, Search, Loader2, Lock, Mail, Building2, Award, Filter } from 'lu
 import api from '../services/api';
 import { useUserPlan } from '../hooks/useUserPlan';
 import { usePlans } from '../hooks/usePlans';
+import HowItWorks from '../components/HowItWorks';
 
 const CERTS = ['8(a)', 'WOSB', 'HUBZone', 'SDVOSB', 'VOSB', 'SB', 'MBE'];
 
@@ -64,13 +65,31 @@ export default function TeamingFinder() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-pink-600 rounded-xl flex items-center justify-center">
             <Users className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Teaming Partner Finder</h1>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">Teaming Partner Finder
+              <HowItWorks
+                title="Teaming Partner Finder"
+                steps={[
+                  { title: 'Search by NAICS & certifications', description: 'Find businesses with complementary NAICS codes and certifications (8(a), WOSB, HUBZone, SDVOSB) to team with' },
+                  { title: 'View partner profiles', description: 'See company name, NAICS codes, certifications, and contact info' },
+                  { title: 'Request teaming', description: 'Connect with potential partners for joint ventures, mentor-protege, or prime/sub arrangements' },
+                ]}
+                dataUsed={['SAM.gov Entity Database', 'SamBid Company Profiles']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Why team up?</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li>Win contracts too large for your company alone</li>
+                  <li>Fill capability gaps identified in <strong>Competitive Analysis</strong></li>
+                  <li>Meet set-aside requirements you don't qualify for individually</li>
+                  <li>The <strong>Go/No-Go</strong> tool suggests teaming when your score is low</li>
+                </ul>
+              </HowItWorks>
+            </h1>
             <p className="text-gray-500 text-sm">Find complementary businesses to team with on federal contracts.</p>
           </div>
         </div>

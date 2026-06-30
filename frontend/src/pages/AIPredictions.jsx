@@ -10,6 +10,7 @@ import { predictionAPI } from '../services/api';
 import { useUserPlan } from '../hooks/useUserPlan';
 import { AICreditsBar } from '../components/AICreditsBar';
 import PlanGate from '../components/PlanGate';
+import HowItWorks from '../components/HowItWorks';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtVal = (v) => {
@@ -378,7 +379,7 @@ export default function AIPredictions() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
         <div className="flex items-start justify-between mb-6 gap-4">
@@ -386,6 +387,24 @@ export default function AIPredictions() {
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-2.5">
               <Brain className="w-7 h-7 text-indigo-600 shrink-0" />
               AI Contract Predictions
+              <HowItWorks
+                title="AI Contract Predictions"
+                steps={[
+                  { title: 'Scans your matched opportunities', description: 'Analyzes contracts in your feed that match your NAICS codes and business profile' },
+                  { title: 'Win probability scoring', description: 'Each contract gets a 0-100% win probability based on your NAICS fit, set-aside eligibility, past performance, and competition level' },
+                  { title: 'Personalized bid strategy', description: '5-step action plan for each contract — what to do, who to contact, how to position' },
+                  { title: 'Urgency tracking', description: 'Critical (≤3 days), High (≤7), Medium (≤14), Low (>14) — focus on what needs action now' },
+                ]}
+                dataUsed={['Your Opportunities Feed', 'USASpending (competitors)', 'Your Company Profile', 'Your Past Wins']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Opportunities page</strong> → contracts flow from your matched feed</li>
+                  <li><strong>Go/No-Go</strong> → click any prediction to run a full bid decision analysis</li>
+                  <li><strong>Past Performance</strong> → your stored contracts improve prediction accuracy</li>
+                  <li><strong>Company Profile</strong> → certifications and UEI affect set-aside scoring</li>
+                </ul>
+              </HowItWorks>
             </h1>
             <p className="text-gray-500 mt-1 text-sm">
               Personalized win-probability analysis for your federal contracts.
@@ -421,7 +440,7 @@ export default function AIPredictions() {
           <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4">
             <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
             <span>
-              <strong>Basic scoring mode</strong> — AI analysis is unavailable (check OpenAI API key in admin settings).
+              <strong>Basic scoring mode</strong> — AI analysis is unavailable (check Anthropic API key in admin settings).
               Predictions shown are based on data signals only, not AI analysis.
             </span>
           </div>
@@ -568,7 +587,7 @@ export default function AIPredictions() {
         {!loading && !error && (
           <p className="text-xs text-gray-400 text-center mt-6 flex items-center justify-center gap-1">
             <TrendingUp className="w-3.5 h-3.5" />
-            Powered by GPT-4o · Predictions refresh every 4 hours · Past performance is not a guarantee of future results
+            Predictions refresh every 4 hours · Past performance is not a guarantee of future results
           </p>
         )}
       </div>

@@ -168,10 +168,10 @@ export default function Pricing() {
       <SEOHead
         title="Pricing — Federal Contract Alert Plans"
         description="Choose the right Sambid plan for your business. Start with a 7-day free trial. Starter at $49/mo gets 10 daily matched opportunities. Pro at $99/mo gets 25. Enterprise is unlimited. No credit card for trial."
-        keywords="federal contracting software pricing, SAM.gov alert subscription, government contracting tool cost, federal opportunity tracker price, small business contracting plan"
+        keywords="federal contracting software pricing, SAM.gov alert subscription, government contracting tool cost, federal opportunity tracker price, small business contracting plan, federal contract software cost, GovCon software pricing, best federal contracting tool price, SAM.gov alert service cost, government bid software plans, affordable federal contracting software"
         canonical="https://sambid.co/pricing"
       />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-8 sm:mb-12">
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
@@ -250,6 +250,7 @@ export default function Pricing() {
         </div>
 
         {/* Pricing Cards */}
+        <h2 className="sr-only">Compare Sambid Federal Contracting Plans</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6">
           {sortedPlans.map((plan) => (
             <div

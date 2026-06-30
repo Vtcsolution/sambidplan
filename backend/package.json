@@ -12,6 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0",
     "@google/generative-ai": "^0.24.1",
     "@lineai/gov-deals": "^1.1.1",
     "@paypal/paypal-server-sdk": "^2.3.0",

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Search, DollarSign, Award, Calendar, Building2, History, Plus, X, Loader2 } from 'lucide-react';
 import { opportunityAPI } from '../services/api';
 import WinningBidsAnalysis from '../components/WinningBidsAnalysis';
+import HowItWorks from '../components/HowItWorks';
 
 export default function WinningBidsPage() {
   const [userNAICS, setUserNAICS] = useState([]);        // NAICS from user profile
@@ -68,13 +69,27 @@ export default function WinningBidsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
         <div className="mb-5 sm:mb-6">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
             <History className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-600 shrink-0" />
             Past Award Analysis
+            <HowItWorks title="Winning Bids Analysis" steps={[
+              { title: 'Enter any NAICS code', description: 'Search by your NAICS codes (auto-loaded) or add custom codes to research any market' },
+              { title: 'See real USASpending awards', description: 'Who won contracts in this NAICS in the last 3-5 years — real company names, real dollar amounts, real agencies' },
+              { title: 'Benchmark your pricing', description: 'See average award values, top agencies, contract types — know exactly what the market pays' },
+              { title: 'Identify competitors', description: 'The same companies that appear here are the ones you compete against in Bid Analysis and Competitive Analysis' },
+            ]} dataUsed={['USASpending.gov (3-5 years)', 'Your NAICS Codes']} >
+              <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+              <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                <li><strong>AI Bid Analysis</strong> → same USASpending data feeds the bid recommendation</li>
+                <li><strong>AI Competitive Analysis</strong> → competitors named here appear in your analysis</li>
+                <li><strong>AI Proposals</strong> → pricing strategy references these real award amounts</li>
+                <li><strong>Go/No-Go</strong> → pricing intelligence from this data informs the scoring</li>
+              </ul>
+            </HowItWorks>
           </h1>
           <p className="text-gray-500 mt-0.5 sm:mt-1 text-xs sm:text-sm">
             Research already-awarded federal contracts to benchmark pricing and identify target agencies.

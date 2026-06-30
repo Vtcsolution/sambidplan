@@ -1,12 +1,14 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { getWorkspaceSession, clearWorkspaceSession, PATH_TO_PAGE_KEY } from '../hooks/useWorkspace';
 import {
   LayoutDashboard, FileText, Bell, Settings, LogOut, CreditCard,
   Bookmark, TrendingUp, User, HelpCircle, Shield, Kanban,
   CalendarDays, Sparkles, ScanSearch, ThumbsUp, Truck, Users, BarChart3, Gift, Receipt, FileEdit, Lightbulb, Award, Search, Brain,
-  X, ChevronRight, Zap, Building2, FolderOpen
+  X, ChevronRight, Zap, Building2, FolderOpen, Trophy
 } from 'lucide-react';
 import { opportunityAPI } from '../services/api';
+import SambidLogo from './SambidLogo';
 
 // ── What's New content keyed by route path ─────────────────────────────────
 const WHATS_NEW = {
@@ -138,10 +140,11 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
   const [userProfile, setUserProfile] = useState(null);
   const [seenIds, setSeenIds] = useState(() => getSeenIds());
   const [openPopover, setOpenPopover] = useState(null);
+  const [sideSearch, setSideSearch] = useState('');
 
   useEffect(() => {
     if (user?.email) fetchUserProfile();
-  }, [user]);
+  }, [user, location.pathname]);
 
   const fetchUserProfile = async () => {
     try {
@@ -186,6 +189,21 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
   const plan = userProfile?.plan || localStorage.getItem('userPlan') || 'free';
   const isPro = ['pro', 'enterprise'].includes(plan);
 
+  // Workspace mode — filter sidebar to only allowed pages
+  const workspaceSession = getWorkspaceSession();
+  const filterWorkspace = (items) => {
+    if (!workspaceSession) return items;
+    return items.filter(item => {
+      const key = PATH_TO_PAGE_KEY[item.path];
+      return !key || workspaceSession.allowedPages?.includes(key);
+    });
+  };
+
+  const handleWorkspaceLogout = () => {
+    clearWorkspaceSession();
+    navigate('/');
+  };
+
   const navItems = [
     { path: '/dashboard',     label: 'My Dashboard',         icon: LayoutDashboard, color: 'text-blue-500',    desc: 'Overview & AI predictions' },
     { path: '/opportunities', label: 'Find Contracts',       icon: FileText,        color: 'text-green-500',   desc: 'Browse open federal contracts' },
@@ -213,7 +231,8 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
   const companyItems = [
     { path: '/company/profile',   label: 'Company Profile',   icon: Building2,   color: 'text-indigo-500', desc: 'UEI, certs, capabilities' },
     { path: '/company/team',      label: 'Team Members',      icon: Users,       color: 'text-blue-500',   desc: 'Invite & manage your team' },
-    { path: '/company/documents', label: 'Document Library',  icon: FolderOpen,  color: 'text-amber-500',  desc: 'Shared proposals & templates' },
+    { path: '/company/documents',        label: 'Document Library',  icon: FolderOpen, color: 'text-amber-500',  desc: 'Shared proposals & templates' },
+    { path: '/company/managed-service',  label: 'Managed Winning',   icon: Trophy,     color: 'text-green-500',  desc: 'We bid for you, commission on win' },
   ];
 
   const accountItems = [
@@ -225,6 +244,8 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
   ];
 
   const isActive = (path) => location.pathname === path;
+  const sq = sideSearch.toLowerCase().trim();
+  const searchFilter = (items) => sq ? items.filter(i => i.label.toLowerCase().includes(sq) || i.desc?.toLowerCase().includes(sq)) : items;
 
   const getPlanDisplayName = () => {
     const p = userProfile?.plan || 'free';
@@ -246,7 +267,7 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
         <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 p-5 sticky top-0 z-10">
           <div className="flex items-center justify-between">
             <Link to="/dashboard" onClick={onClose} className="flex items-center space-x-2">
-              <Shield className="w-6 h-6 text-white" />
+              <SambidLogo size={28} />
               <span className="text-xl font-bold text-white">Sambid Notify</span>
             </Link>
             <button onClick={onClose} className="md:hidden text-white hover:text-gray-200">
@@ -299,6 +320,19 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
           </div>
         )}
 
+        {/* Search */}
+        <div className="px-4 pt-3 pb-1">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              value={sideSearch}
+              onChange={e => setSideSearch(e.target.value)}
+              placeholder="Search pages..."
+              className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white"
+            />
+          </div>
+        </div>
+
         {/* Navigation */}
         <nav className="py-4 space-y-1">
 
@@ -306,7 +340,7 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
           <div className="px-3">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">Contracts</p>
             <div className="space-y-0.5">
-              {navItems.map((item) => (
+              {searchFilter(filterWorkspace(navItems)).map((item) => (
                 <Link key={item.path} to={item.path} onClick={onClose}
                   className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive(item.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}>
                   <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.path) ? 'text-indigo-600' : item.color} group-hover:scale-110 transition-transform`} />
@@ -321,7 +355,7 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
           <div className="px-3 pt-3">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">✨ AI-Powered Tools</p>
             <div className="space-y-0.5">
-              {aiItems.map((item) => {
+              {searchFilter(filterWorkspace(aiItems)).map((item) => {
                 const unseen = hasUnseen(item.path);
                 const isPopoverOpen = openPopover === item.path;
                 return (
@@ -381,38 +415,55 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
           </div>
 
           {/* Company Workspace */}
-          <div className="px-3 pt-3">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">🏢 Company Workspace</p>
-            <div className="space-y-0.5">
-              {companyItems.map((item) => (
-                <Link key={item.path} to={item.path} onClick={onClose}
-                  className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive(item.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}>
-                  <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.path) ? 'text-indigo-600' : item.color} group-hover:scale-110 transition-transform`} />
-                  <span className="flex-1 font-medium text-sm">{item.label}</span>
-                  {isActive(item.path) && <div className="w-1 h-6 bg-indigo-600 rounded-full shrink-0" />}
-                </Link>
-              ))}
+          {filterWorkspace(companyItems).length > 0 && (
+            <div className="px-3 pt-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">🏢 Company Workspace</p>
+              <div className="space-y-0.5">
+                {searchFilter(filterWorkspace(companyItems)).map((item) => (
+                  <Link key={item.path} to={item.path} onClick={onClose}
+                    className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive(item.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}>
+                    <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.path) ? 'text-indigo-600' : item.color} group-hover:scale-110 transition-transform`} />
+                    <span className="flex-1 font-medium text-sm">{item.label}</span>
+                    {isActive(item.path) && <div className="w-1 h-6 bg-indigo-600 rounded-full shrink-0" />}
+                  </Link>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* My Account */}
-          <div className="px-3 pt-3">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">My Account</p>
-            <div className="space-y-0.5">
-              {accountItems.map((item) => (
-                <Link key={item.path} to={item.path} onClick={onClose}
-                  className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive(item.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}>
-                  <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.path) ? 'text-indigo-600' : item.color} group-hover:scale-110 transition-transform`} />
-                  <span className="flex-1 font-medium text-sm">{item.label}</span>
-                  {isActive(item.path) && <div className="w-1 h-6 bg-indigo-600 rounded-full shrink-0" />}
-                </Link>
-              ))}
+          {/* My Account — hidden in workspace mode */}
+          {!workspaceSession && (
+            <div className="px-3 pt-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">My Account</p>
+              <div className="space-y-0.5">
+                {searchFilter(accountItems).map((item) => (
+                  <Link key={item.path} to={item.path} onClick={onClose}
+                    className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive(item.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-100'}`}>
+                    <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.path) ? 'text-indigo-600' : item.color} group-hover:scale-110 transition-transform`} />
+                    <span className="flex-1 font-medium text-sm">{item.label}</span>
+                    {isActive(item.path) && <div className="w-1 h-6 bg-indigo-600 rounded-full shrink-0" />}
+                  </Link>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </nav>
 
         {/* Footer */}
         <div className="p-4 border-t border-gray-200 sticky bottom-0 bg-white">
+          {workspaceSession ? (
+            <>
+              <div className="mb-2 px-3 py-2 bg-indigo-50 rounded-lg">
+                <p className="text-xs font-semibold text-indigo-700">Workspace: {workspaceSession.companyName}</p>
+                <p className="text-xs text-indigo-500">Signed in as {workspaceSession.displayName || workspaceSession.username}</p>
+              </div>
+              <button onClick={handleWorkspaceLogout}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <LogOut className="w-4 h-4" />
+                <span className="font-medium text-sm">Exit Workspace</span>
+              </button>
+            </>
+          ) : (
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -420,6 +471,7 @@ export default function Sidebar({ isOpen, onClose, user, setIsAuthenticated, set
             <LogOut className="w-4 h-4" />
             <span className="font-medium text-sm">Logout</span>
           </button>
+          )}
           <p className="text-center text-xs text-gray-400 mt-3">© 2024 Sambid Notify. All rights reserved.</p>
         </div>
       </aside>

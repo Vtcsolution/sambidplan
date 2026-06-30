@@ -3,22 +3,23 @@ import { Zap, AlertTriangle } from 'lucide-react';
 import { predictionAPI } from '../services/api';
 import CreditTopUpModal from './CreditTopUpModal';
 
+// All AI features = 15 credits per request
 export const FEATURE_COSTS = {
-  summarize:            1,
-  ask_question:         1,
-  bid_analysis:         2,
-  risk_assessment:      2,
-  go_no_go:             2,
-  past_performance:     2,
-  analyze_attachment:   2,
-  capability_statement: 3,
-  rfp_analyzer:         3,
-  sources_sought:       3,
-  competitive_analysis: 3,
-  incumbent:            3,
-  full_proposal:        5,
-  ai_predictions:       5,
-  market_research:      10,
+  summarize:            15,
+  ask_question:         15,
+  capability_statement: 15,
+  sources_sought:       15,
+  past_performance:     15,
+  analyze_attachment:   15,
+  market_research:      15,
+  bid_analysis:         15,
+  risk_assessment:      15,
+  competitive_analysis: 15,
+  rfp_analyzer:         15,
+  incumbent:            15,
+  ai_predictions:       15,
+  full_proposal:        15,
+  go_no_go:             15,
 };
 
 // ── Compact inline badge ──────────────────────────────────────────────────────

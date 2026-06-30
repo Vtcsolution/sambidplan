@@ -36,10 +36,16 @@ import pastPerformanceRoutes   from './routes/pastPerformanceRoutes.js';
 import supportRoutes           from './routes/supportRoutes.js';
 import partnerRoutes           from './routes/partnerRoutes.js';
 import mediaRoutes                  from './routes/mediaRoutes.js';
+import featureShowcaseRoutes        from './routes/featureShowcaseRoutes.js';
 import companyRoutes                from './routes/companyRoutes.js';
 import adminCompanyWorkspaceRoutes  from './routes/adminCompanyWorkspaceRoutes.js';
+import managedServiceRoutes         from './routes/managedServiceRoutes.js';
+import adminManagedServiceRoutes    from './routes/adminManagedServiceRoutes.js';
+import adminManagedProjectRoutes   from './routes/managedProjectRoutes.js';
+import chatbotRoutes               from './routes/chatbotRoutes.js';
 import { reconcileReferralCommissions } from './controllers/referralController.js';
 import { startScheduler } from './services/schedulerService.js';
+import { startProjectScheduler } from './services/projectSchedulerService.js';
 import { startEmailScheduler } from './services/emailSchedulerService.js';
 import { loadSettingsFromDB } from './services/settingsService.js';
 
@@ -50,6 +56,7 @@ connectDB().then(async () => {
   await ensureInvoiceIndexes(); // self-heal the paypalOrderId index (fixes E11000 on null)
   await loadSettingsFromDB();
   startScheduler();
+  startProjectScheduler();
   startEmailScheduler();
 }).catch(err => {
   console.error('❌ Startup aborted — DB connection failed:', err.message);
@@ -87,22 +94,27 @@ app.use(cors({
   credentials: true,
 }));
 
+// ── Security middleware ──────────────────────────────────────────────────────
+import {
+  noSQLInjectionGuard,
+  xssGuard,
+  inputLengthGuard,
+  passwordLengthGuard,
+  fileExtensionGuard,
+} from './middleware/securityMiddleware.js';
+
 // ── Rate limiters ─────────────────────────────────────────────────────────────
 const isDev = process.env.NODE_ENV !== 'production';
 
-// General API limiter: 2000 req / 15 min per IP
-// (admin panel polls sync/AI status every 3-4 s; needs headroom)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isDev ? 0 : 2000,          // 0 = unlimited in development
+  max: isDev ? 0 : 2000,
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => isDev,
   message: { success: false, message: 'Too many requests — please try again in 15 minutes.' },
 });
 
-// Login-only brute-force limiter: 15 attempts / 15 min per IP
-// Applied ONLY to the login POST endpoint, NOT to token-verify/profile GETs
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? 0 : 15,
@@ -112,8 +124,24 @@ const loginLimiter = rateLimit({
   message: { success: false, message: 'Too many login attempts — please wait 15 minutes.' },
 });
 
-// ── Body parser ───────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+// Sensitive auth limiter: 5 attempts / 15 min (password reset, OTP verification)
+const sensitiveAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 0 : 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isDev,
+  message: { success: false, message: 'Too many attempts — please wait 15 minutes.' },
+});
+
+// ── Body parser (limit request size to prevent DoS) ─────────────────────────
+app.use(express.json({ limit: '2mb' }));
+
+// ── Global security guards ──────────────────────────────────────────────────
+app.use(noSQLInjectionGuard);
+app.use(xssGuard);
+app.use(inputLengthGuard);
+app.use(fileExtensionGuard);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ── Static uploads ────────────────────────────────────────────────────────────
@@ -123,6 +151,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  // Force download for non-image files (prevents browser execution of uploaded files)
+  if (!/\.(jpg|jpeg|png|gif|webp|svg|ico)$/i.test(req.path)) {
+    res.setHeader('Content-Disposition', 'attachment');
+  }
   next();
 }, express.static(join(__dirname, 'uploads')));
 
@@ -148,6 +182,7 @@ app.use('/api/referral',      apiLimiter, referralRoutes);
 app.use('/api/support',       apiLimiter, supportRoutes);
 app.use('/api/partner',       apiLimiter, partnerRoutes);
 app.use('/api/predictions',   apiLimiter, predictionRoutes);
+app.use('/api/chatbot',       apiLimiter, chatbotRoutes);
 app.use('/api/tickets',            apiLimiter, ticketRoutes);
 app.use('/api/admin/tickets',      apiLimiter, adminTicketRoutes);
 app.use('/api/suggestions',        apiLimiter, suggestionRoutes);
@@ -157,8 +192,12 @@ app.use('/api/track',              trackingRoutes); // public — no auth, no ra
 app.use('/api/past-performance',   apiLimiter, pastPerformanceRoutes);
 app.use('/api/credits',            apiLimiter, creditTopupRoutes);
 app.use('/api/media',              mediaRoutes);   // public GET, admin POST/DELETE
+app.use('/api/features',           featureShowcaseRoutes); // public + admin CMS
 app.use('/api/company',            apiLimiter, companyRoutes);
 app.use('/api/admin/company-workspaces', apiLimiter, adminCompanyWorkspaceRoutes);
+app.use('/api/managed-service',          apiLimiter, managedServiceRoutes);
+app.use('/api/admin/managed-service',    apiLimiter, adminManagedServiceRoutes);
+app.use('/api/admin/managed-projects',   apiLimiter, adminManagedProjectRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Copy, CheckCheck, DollarSign, Users, TrendingUp, Loader2,
   AlertCircle, CheckCircle, Clock, CreditCard, Star, ArrowUpRight, Wallet, Gift, ExternalLink,
@@ -103,7 +104,7 @@ export default function AdminSupportEarnings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Referral Earnings</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Referral Earnings<AdminHowItWorks page="supportEarnings" /></h1>
         <p className="text-gray-500 text-sm mt-0.5">Track your referral commissions and request withdrawals.</p>
       </div>
 

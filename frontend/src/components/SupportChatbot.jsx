@@ -209,7 +209,7 @@ export default function SupportChatbot() {
                   </button>
                 </div>
                 <p className="text-center text-xs text-gray-400 mt-1.5">
-                  Powered by Gemini AI · <a href="/contact" className="text-indigo-500 hover:underline">Human support</a>
+                  AI Assistant · <a href="/contact" className="text-indigo-500 hover:underline">Human support</a>
                 </p>
               </div>
             </>

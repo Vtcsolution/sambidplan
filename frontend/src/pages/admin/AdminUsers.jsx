@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Users, Search, RefreshCw, ChevronDown, ChevronUp,
   Shield, Crown, Zap, Sparkles, User, Mail, Calendar,
@@ -161,6 +162,75 @@ function UserDetail({ userId }) {
           <div className="flex justify-between"><span className="text-gray-500">Joined</span><span className="text-xs">{data.createdAt ? new Date(data.createdAt).toLocaleDateString() : '—'}</span></div>
         </div>
       </div>
+
+      {/* Admin Actions: Grant Credits + Unlock Plan */}
+      <div className="md:col-span-3 bg-white rounded-xl border border-indigo-200 p-4">
+        <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-3">Admin Actions</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          {/* Grant Credits */}
+          <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+            <p className="text-sm font-bold text-indigo-800 mb-1">Grant AI Credits</p>
+            <p className="text-xs text-indigo-600 mb-3">Bonus credits don't reset monthly. Current bonus: <strong>{data.bonusAICredits || 0}</strong></p>
+            <div className="flex gap-2">
+              <input type="number" placeholder="Credits" min="1" max="10000"
+                id={`credits-${data._id}`}
+                className="w-24 text-sm border border-indigo-200 rounded-lg px-2.5 py-1.5 bg-white focus:ring-2 focus:ring-indigo-400 focus:outline-none" />
+              <input type="text" placeholder="Reason (optional)"
+                id={`credit-reason-${data._id}`}
+                className="flex-1 text-sm border border-indigo-200 rounded-lg px-2.5 py-1.5 bg-white focus:ring-2 focus:ring-indigo-400 focus:outline-none" />
+              <button
+                onClick={async () => {
+                  const credits = document.getElementById(`credits-${data._id}`).value;
+                  const reason = document.getElementById(`credit-reason-${data._id}`).value;
+                  if (!credits || credits < 1) return alert('Enter credits amount');
+                  try {
+                    const r = await adminPanelAPI.grantCredits(data._id, { credits: Number(credits), reason });
+                    alert(r.data.message);
+                    document.getElementById(`credits-${data._id}`).value = '';
+                    document.getElementById(`credit-reason-${data._id}`).value = '';
+                  } catch (e) { alert(e.response?.data?.message || 'Failed'); }
+                }}
+                className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 shrink-0">
+                Grant
+              </button>
+            </div>
+          </div>
+
+          {/* Unlock Plan */}
+          <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+            <p className="text-sm font-bold text-green-800 mb-1">Unlock / Activate Plan</p>
+            <p className="text-xs text-green-600 mb-3">Set plan, duration, and optional bonus credits. User gets notified via email + notification.</p>
+            <div className="flex flex-wrap gap-2">
+              <select id={`unlock-plan-${data._id}`} defaultValue={data.plan}
+                className="text-sm border border-green-200 rounded-lg px-2.5 py-1.5 bg-white focus:ring-2 focus:ring-green-400 focus:outline-none">
+                {['free','trial','starter','pro','enterprise'].map(p => (
+                  <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                ))}
+              </select>
+              <input type="number" placeholder="Days" defaultValue="30" min="1" max="365"
+                id={`unlock-days-${data._id}`}
+                className="w-20 text-sm border border-green-200 rounded-lg px-2.5 py-1.5 bg-white focus:ring-2 focus:ring-green-400 focus:outline-none" />
+              <input type="number" placeholder="Bonus credits" min="0"
+                id={`unlock-credits-${data._id}`}
+                className="w-28 text-sm border border-green-200 rounded-lg px-2.5 py-1.5 bg-white focus:ring-2 focus:ring-green-400 focus:outline-none" />
+              <button
+                onClick={async () => {
+                  const plan = document.getElementById(`unlock-plan-${data._id}`).value;
+                  const durationDays = document.getElementById(`unlock-days-${data._id}`).value;
+                  const credits = document.getElementById(`unlock-credits-${data._id}`).value;
+                  try {
+                    const r = await adminPanelAPI.unlockUser(data._id, { plan, durationDays: Number(durationDays) || 30, credits: Number(credits) || 0 });
+                    alert(r.data.message);
+                  } catch (e) { alert(e.response?.data?.message || 'Failed'); }
+                }}
+                className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 shrink-0">
+                Unlock
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -243,6 +313,7 @@ export default function AdminUsers() {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Users className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 shrink-0" />
               All Users
+              <AdminHowItWorks page="users" />
             </h1>
             <p className="text-sm text-gray-500 mt-1">{users.length} total users registered</p>
           </div>

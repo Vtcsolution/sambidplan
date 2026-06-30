@@ -4,8 +4,11 @@ import {
   RefreshCw, AlertCircle, ChevronDown, ChevronUp, Sparkles,
 } from 'lucide-react';
 import { aiAPI } from '../services/api';
+import AIResponseRenderer from '../components/AIResponseRenderer';
 import { useUserPlan } from '../hooks/useUserPlan';
 import { AICreditsBar } from '../components/AICreditsBar';
+import HowItWorks from '../components/HowItWorks';
+import OpportunitySelector from '../components/OpportunitySelector';
 import jsPDF from 'jspdf';
 
 const CONTRACT_TYPES = ['Services', 'Products', 'IT/Technology', 'Construction', 'Research', 'A&E', 'Other'];
@@ -94,7 +97,7 @@ export default function SourcesSought() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <AICreditsBar feature="sources_sought" />
 
         {/* Header */}
@@ -103,8 +106,28 @@ export default function SourcesSought() {
             <FileSearch className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Sources Sought Generator</h1>
-            <p className="text-gray-500 text-sm">Respond to RFIs and Sources Sought notices before the full RFP drops — 60–90 day head start.</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900">Sources Sought Generator</h1>
+              <HowItWorks
+                title="Sources Sought Response"
+                steps={[
+                  { title: 'Select opportunity or enter details', description: 'Choose from saved opportunities to auto-fill, or enter the RFI/Sources Sought details manually' },
+                  { title: 'AI generates 8-section response', description: 'Company ID, executive summary, capability narrative, past performance, technical approach, teaming strategy, questions, and statement of interest' },
+                  { title: 'Get on the agency\'s radar', description: 'Submit your response before the RFP drops — agencies remember who responded to the Sources Sought' },
+                ]}
+                dataUsed={['Opportunity Data', 'Your Company Profile', 'Your Certifications']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Saved Opportunities</strong> → auto-fill from your saved Sources Sought / RFI notices</li>
+                  <li><strong>Opportunities Feed</strong> → filter by "Sources Sought" notice type to find pre-RFP opportunities</li>
+                  <li><strong>Proposal Builder</strong> → when the full RFP drops later, use your Sources Sought response as a head start</li>
+                  <li><strong>Company Profile</strong> → your UEI, certifications, and capabilities auto-fill the response</li>
+                  <li><strong>Capability Statement</strong> → attach your generated capability statement with the Sources Sought response</li>
+                </ul>
+              </HowItWorks>
+            </div>
+            <p className="text-gray-500 text-sm">Select an opportunity or enter details — respond to RFIs before the full RFP drops.</p>
           </div>
         </div>
 
@@ -144,6 +167,20 @@ export default function SourcesSought() {
             <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
               {section === 'opportunity' && (
                 <>
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 mb-2">
+                    <p className="text-xs font-semibold text-indigo-700 mb-2">Auto-fill from saved opportunity:</p>
+                    <OpportunitySelector
+                      selected={null}
+                      onSelect={(opp) => {
+                        set('title', opp.title || '');
+                        set('agency', opp.agency || '');
+                        set('solicitationNumber', opp.sourceId || '');
+                        set('naicsCode', opp.naicsCode || '');
+                        set('description', opp.description || '');
+                      }}
+                      onClear={() => {}}
+                    />
+                  </div>
                   <div>
                     <label className={labelCls}>Opportunity / RFI Title *</label>
                     <input value={form.title} onChange={e => set('title', e.target.value)}
@@ -255,7 +292,7 @@ export default function SourcesSought() {
                     </button>
                   </div>
                 </div>
-                <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700 leading-relaxed bg-gray-50 rounded-xl p-4 max-h-[640px] overflow-y-auto border border-gray-100">{result}</pre>
+                <div className="bg-gray-50 rounded-xl p-4 max-h-[640px] overflow-y-auto border border-gray-100"><AIResponseRenderer content={result} /></div>
               </div>
             ) : (
               <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-10 flex flex-col items-center justify-center min-h-[440px] text-center">

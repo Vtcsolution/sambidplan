@@ -1,4 +1,5 @@
 ﻿import { useState } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import PermissionGuard from '../../components/admin/PermissionGuard';
 import { DollarSign, TrendingUp, Loader2, Sparkles, RefreshCw } from 'lucide-react';
 import { adminAIAPI } from '../../services/adminApi';
@@ -26,7 +27,7 @@ export default function AdminRevenueForecast() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Revenue Forecast</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Revenue Forecast<AdminHowItWorks page="revenueForecast" /></h1>
           <p className="text-gray-500 text-sm mt-1">AI-powered revenue analysis and 90-day forecast.</p>
         </div>
         <button onClick={load} disabled={loading}

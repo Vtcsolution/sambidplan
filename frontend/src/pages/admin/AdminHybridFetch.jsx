@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/AdminHybridFetch.jsx
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 // Super-admin view: shows the hybrid SAM.gov data pipeline (API + Bulk),
 // lets you trigger either manually, and lists every opportunity with a
 // source badge so you can see exactly where each record came from.
@@ -122,7 +123,7 @@ export default function AdminHybridFetch() {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Layers className="w-6 h-6 text-indigo-600" />
             Hybrid Data Pipeline
-          </h1>
+          <AdminHowItWorks page="hybridFetch" /></h1>
           <p className="text-sm text-gray-500 mt-1">
             SAM.gov API (real-time, per NAICS) + Nightly Bulk Download (all categories)
           </p>

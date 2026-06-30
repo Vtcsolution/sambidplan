@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { suggestionAPI } from '../services/api';
 import { Lightbulb, Send, CheckCircle, Clock, Loader2, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
+import HowItWorks from '../components/HowItWorks';
 
 const CATEGORIES = [
   { value: 'feature_request', label: 'Feature Request', color: 'bg-indigo-100 text-indigo-700' },
@@ -66,7 +67,7 @@ export default function Suggestions() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
         <div className="mb-8">
@@ -75,7 +76,13 @@ export default function Suggestions() {
               <Lightbulb className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Suggestions & Feedback</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">Suggestions & Feedback
+                <HowItWorks title="Suggestions & Feedback" steps={[
+                  { title: 'Submit your idea', description: 'Tell us what feature you want, what\'s not working, or how we can improve — select a category and describe it' },
+                  { title: 'Team reviews', description: 'Our product team reads every suggestion and prioritizes based on impact and demand' },
+                  { title: 'Track status', description: 'See if your suggestion is under review, planned, or implemented — we update the status as we work on it' },
+                ]} dataUsed={['Your Suggestions', 'Community Feedback']} />
+              </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">Help us improve Sambid — every idea matters</p>
             </div>
           </div>

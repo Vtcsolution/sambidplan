@@ -118,6 +118,8 @@ function VideoBlock({ videoSrc, posterSrc, title }) {
         >
           <source src={videoSrc} type="video/mp4" />
         </video>
+      ) : posterSrc ? (
+        <img src={posterSrc} alt={title} className="w-full h-full object-cover" />
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <div
@@ -271,7 +273,7 @@ export default function Home() {
       <SEOHead
         title="Federal Contract Opportunity Alerts & SAM.gov Notifications"
         description="Sambid delivers daily federal contract opportunities from SAM.gov, USASpending.gov & FPDS straight to your inbox. AI-matched alerts for small businesses. Start free — no credit card needed."
-        keywords="federal contract opportunities, SAM.gov alerts, government contracting software, federal procurement notifications, FPDS contract search, small business federal contracts, USASpending opportunities, federal RFP alerts"
+        keywords="federal contract opportunities, SAM.gov alerts, government contracting software, federal procurement notifications, FPDS contract search, small business federal contracts, USASpending opportunities, federal RFP alerts, government contract finder, federal bid alerts, SAM.gov notification tool, AI federal contract matching, GovCon software, federal contracting platform for small business, win government contracts, federal contract bidding software, government RFP alerts, SAM.gov opportunity tracker, federal procurement software, contract opportunity finder"
         canonical="https://sambid.co/"
         jsonLd={HOME_JSON_LD}
       />
@@ -279,7 +281,7 @@ export default function Home() {
       {/* ── Hero ── */}
       <section className="relative bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 text-white">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3')] bg-cover bg-center opacity-10" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 md:py-32">
+        <div className="relative max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 md:py-32">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             {/* Left — text */}
             <div className="hero-fade">
@@ -341,7 +343,7 @@ export default function Home() {
 
       {/* ── Stats bar ── */}
       <section className="py-12 sm:py-16 bg-gray-50 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-center text-gray-400 text-xs uppercase tracking-widest mb-8">
             Proven ROI, Trusted by Contractors
           </p>
@@ -366,7 +368,7 @@ export default function Home() {
 
       {/* ── 7 Phases ── */}
       <section className="py-16 sm:py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <FadeIn className="text-center mb-16">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
               Everything You Need to Win Federal Contracts
@@ -499,7 +501,7 @@ export default function Home() {
 
       {/* ── Testimonials ── */}
       <section className="py-16 sm:py-20 md:py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10 sm:mb-14 md:mb-16">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
               What Contractors Say

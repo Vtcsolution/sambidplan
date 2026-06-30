@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Users, CheckCircle, XCircle, Loader2, RefreshCw, Globe,
   Phone, Mail, ChevronDown, ChevronUp, X, Eye, EyeOff,
@@ -332,7 +333,7 @@ export default function AdminMarketingPanel() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Marketing Panel</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Marketing Panel<AdminHowItWorks page="marketingPanel" /></h1>
           <p className="text-sm text-gray-500 mt-0.5">
             Partner program applications from <span className="font-medium text-indigo-600">sambid.co/become-partner</span>
           </p>

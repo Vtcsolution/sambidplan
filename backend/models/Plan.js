@@ -34,6 +34,18 @@ const planSchema = new mongoose.Schema({
     prioritySupport: { type: Boolean, default: false },
     apiAccess: { type: Boolean, default: false }
   },
+  aiCreditsPerMonth: {
+    type: Number,
+    default: 0
+  },
+  opportunitiesPerMonth: {
+    type: Number,
+    default: 0
+  },
+  dailyLimit: {
+    type: Number,
+    default: 0
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -66,6 +78,9 @@ const defaultPlans = [
       { name: 'Priority support',                    included: false },
       { name: 'API access',                          included: false },
     ],
+    aiCreditsPerMonth: 30,
+    opportunitiesPerMonth: 50,
+    dailyLimit: 3,
     limits: {
       maxSavedOpportunities: 10,
       maxAlerts: 5,
@@ -91,6 +106,8 @@ const defaultPlans = [
       { name: 'Priority email support',              included: true  },
       { name: 'API access',                          included: false },
     ],
+    aiCreditsPerMonth: 150,
+    opportunitiesPerMonth: 500,
     limits: {
       maxSavedOpportunities: 100,
       maxAlerts: 50,
@@ -116,6 +133,8 @@ const defaultPlans = [
       { name: '24/7 Priority support',               included: true  },
       { name: 'Full API access',                     included: true  },
     ],
+    aiCreditsPerMonth: 600,
+    opportunitiesPerMonth: 3000,
     limits: {
       maxSavedOpportunities: -1,
       maxAlerts: -1,
@@ -143,6 +162,8 @@ const defaultPlans = [
       { name: 'Dedicated account manager',           included: true  },
       { name: 'Custom integrations',                 included: true  },
     ],
+    aiCreditsPerMonth: 3000,
+    opportunitiesPerMonth: 0,
     limits: {
       maxSavedOpportunities: -1,
       maxAlerts: -1,
@@ -174,16 +195,24 @@ export const initializePlans = async () => {
         await Plan.create(def);
         console.log(`✅ Created missing plan: ${def.name}`);
       } else {
-        // Sync features, description, displayName, and order — but NEVER touch prices
-        // (admin may have customised priceMonthly / priceYearly via the panel)
-        await Plan.updateOne({ name: def.name }, {
-          $set: {
-            displayName: def.displayName,
-            description: def.description,
-            features:    def.features,
-            order:       def.order,
-          },
-        });
+        // Sync features, description, displayName, order — but NEVER touch prices or aiCreditsPerMonth
+        // (admin may have customised these via the panel)
+        const updates = {
+          displayName: def.displayName,
+          description: def.description,
+          features:    def.features,
+          order:       def.order,
+        };
+        if (!exists.aiCreditsPerMonth && def.aiCreditsPerMonth) {
+          updates.aiCreditsPerMonth = def.aiCreditsPerMonth;
+        }
+        if (!exists.opportunitiesPerMonth && def.opportunitiesPerMonth) {
+          updates.opportunitiesPerMonth = def.opportunitiesPerMonth;
+        }
+        if (!exists.dailyLimit && def.dailyLimit) {
+          updates.dailyLimit = def.dailyLimit;
+        }
+        await Plan.updateOne({ name: def.name }, { $set: updates });
       }
     }
     console.log('✅ Plans synced (features updated, prices preserved)');

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { paymentAPI } from '../services/api';
 import jsPDF from 'jspdf';
+import HowItWorks from '../components/HowItWorks';
 
 const STATUS_STYLES = {
   paid:    { icon: CheckCircle, cls: 'text-green-600 bg-green-50 border-green-200',  label: 'Paid' },
@@ -201,6 +202,28 @@ export default function Billing() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stripeSuccess = params.get('stripe_success');
+    const invoiceId = params.get('invoice');
+
+    if (stripeSuccess === '1' && invoiceId) {
+      paymentAPI.confirmStripePayment({ invoiceId })
+        .then(r => {
+          if (r.data?.success) {
+            const plan = r.data?.data?.plan;
+            if (plan) {
+              localStorage.setItem('userPlan', plan);
+              sessionStorage.setItem('userPlan', plan);
+            }
+            showToast('Payment successful! Your plan has been activated.');
+          }
+        })
+        .catch(() => showToast('Payment received — plan will activate shortly.'))
+        .finally(() => {
+          window.history.replaceState({}, '', '/billing');
+        });
+    }
+
     paymentAPI.getInvoices()
       .then(res => setInvoices(res.data.invoices || res.data.data || []))
       .catch(() => setError('Unable to load billing history. Please try again.'))
@@ -215,7 +238,7 @@ export default function Billing() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Page header */}
         <div className="flex items-center justify-between mb-8">
@@ -224,7 +247,20 @@ export default function Billing() {
               <Receipt className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Billing & Invoices</h1>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">Billing & Invoices
+                <HowItWorks title="Billing & Invoices" steps={[
+                  { title: 'View your plan', description: 'See your current plan, billing cycle, and when it renews or expires' },
+                  { title: 'Download invoices', description: 'PDF receipts for every payment — Stripe, PayPal, or Payoneer' },
+                  { title: 'Manage subscription', description: 'Upgrade, downgrade, or cancel your plan. Request annual pricing for bulk discount' },
+                ]} dataUsed={['Your Payment History', 'Your Plan Details']} >
+                  <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                  <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                    <li><strong>Pricing</strong> → compare plans and upgrade</li>
+                    <li><strong>AI Credits</strong> → your plan determines monthly AI credit allocation</li>
+                    <li><strong>Referral</strong> → referral earnings can offset plan costs</li>
+                  </ul>
+                </HowItWorks>
+              </h1>
               <p className="text-sm text-gray-500">Download receipts and manage your subscription</p>
             </div>
           </div>

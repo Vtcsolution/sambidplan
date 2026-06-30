@@ -11,7 +11,11 @@ export const requireAICredits = (feature) => async (req, res, next) => {
     // Admin users bypass all credit checks
     if (req.user?.role === 'admin') return next();
 
-    const result = await spendAICredits(req.user._id, feature);
+    const meta = {
+      opportunityTitle: req.body?.title || req.query?.title || '',
+      opportunityId: req.params?.id || req.body?.opportunityId || '',
+    };
+    const result = await spendAICredits(req.user._id, feature, meta);
 
     if (!result.allowed) {
       return res.status(402).json({

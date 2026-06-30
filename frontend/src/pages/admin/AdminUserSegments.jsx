@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import PermissionGuard from '../../components/admin/PermissionGuard';
 import { Users, AlertTriangle, Clock, TrendingUp, UserX, ArrowUpRight, Crown, Loader2, RefreshCw, Mail } from 'lucide-react';
 import { adminAIAPI, adminPanelAPI } from '../../services/adminApi';
@@ -40,7 +41,7 @@ export default function AdminUserSegments() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">User Segments</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">User Segments<AdminHowItWorks page="userSegments" /></h1>
           <p className="text-gray-500 text-sm mt-1">AI-powered user segmentation for targeted actions.</p>
         </div>
         <button onClick={load} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-xl text-sm hover:bg-gray-50 shrink-0 self-start sm:self-auto">

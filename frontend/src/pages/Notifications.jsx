@@ -6,6 +6,7 @@ import {
   RefreshCw, Loader2, BellOff, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import { alertAPI } from '../services/api';
+import HowItWorks from '../components/HowItWorks';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const getIcon = (type) => {
@@ -153,7 +154,7 @@ export default function Notifications() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -161,6 +162,20 @@ export default function Notifications() {
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-2">
               <Bell className="w-7 h-7 text-indigo-600 shrink-0" />
               Notifications
+              <HowItWorks title="Notifications" steps={[
+                { title: 'All activity in one place', description: 'Contract matches, payment confirmations, plan upgrades, support replies, referral credits, managed service updates' },
+                { title: 'Filter by type', description: 'See only contract matches, billing, support, or account notifications' },
+                { title: 'Mark read / delete', description: 'Click to mark as read, or delete notifications you no longer need' },
+              ]} dataUsed={['Your Activity', 'System Events']} >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Notifications come from:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Opportunities</strong> → new matches for your NAICS codes</li>
+                  <li><strong>Billing</strong> → payment confirmations, plan changes</li>
+                  <li><strong>Support</strong> → ticket replies, account updates</li>
+                  <li><strong>Managed Service</strong> → bid status changes, project milestones</li>
+                  <li><strong>Admin</strong> → credit grants, plan activations</li>
+                </ul>
+              </HowItWorks>
               {unreadCount > 0 && (
                 <span className="ml-1 text-sm bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-semibold">
                   {unreadCount} unread

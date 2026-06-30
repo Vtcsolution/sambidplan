@@ -3,6 +3,7 @@ import { Building2, CheckCircle, XCircle, Loader, ShieldCheck, AlertTriangle, Pl
 import { companyAPI } from '../../services/api';
 import { useUserPlan } from '../../hooks/useUserPlan';
 import PlanGate from '../../components/PlanGate';
+import HowItWorks from '../../components/HowItWorks';
 
 const CERT_OPTIONS = [
   { value: '8a',      label: '8(a) Business Development' },
@@ -256,7 +257,23 @@ export default function CompanyProfile() {
               <Building2 className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Company Profile</h1>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">Company Profile
+                <HowItWorks title="Company Profile" steps={[
+                  { title: 'Enter UEI & verify', description: 'Your 12-character Unique Entity ID is verified live against SAM.gov — imports your legal name, address, entity type, registration status' },
+                  { title: 'Add CAGE code & certifications', description: 'Track 8(a), WOSB, EDWOSB, HUBZone, SDVOSB, VOSB, SDB with expiry dates — get alerts before they expire' },
+                  { title: 'Set NAICS codes & capabilities', description: 'Company-level NAICS codes and a capabilities summary used by AI features' },
+                  { title: 'AI uses this data automatically', description: 'Every AI feature (Bid Analysis, Proposals, Competitive Analysis) pulls your verified company data' },
+                ]} dataUsed={['SAM.gov Entity API', 'Your Input']} >
+                  <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                  <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                    <li><strong>All AI features</strong> → your UEI, certs, and NAICS feed into every AI analysis automatically</li>
+                    <li><strong>Go/No-Go</strong> → set-aside eligibility scored against your real certifications</li>
+                    <li><strong>Capability Statement</strong> → your company data auto-fills the one-pager</li>
+                    <li><strong>Certification expiry alerts</strong> → email warnings at 90/60/30 days before any cert expires</li>
+                    <li><strong>Team Members</strong> → your team shares this company workspace and its data</li>
+                  </ul>
+                </HowItWorks>
+              </h1>
               <p className="text-sm text-gray-500">
                 {company ? `Your workspace · ${myRole.replace('_',' ')}` : 'Set up your company workspace'}
               </p>

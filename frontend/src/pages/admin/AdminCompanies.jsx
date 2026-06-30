@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Building2, RefreshCw, Download, Search,
   ChevronLeft, ChevronRight, Mail, Phone, MapPin,
@@ -714,19 +715,12 @@ export default function AdminCompanies() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Building2 className="w-6 h-6 text-indigo-600" /> Federal Contractor Directory
-          </h1>
+          <AdminHowItWorks page="companies" /></h1>
           <p className="text-sm text-gray-500 mt-0.5">
             Aggregated from SAM.gov · USASpending.gov · FPDS.gov · SBA DSBS — deduplicated by UEI
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setShowClearModal(true)}
-            disabled={!stats?.totalCompanies}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Trash2 className="w-4 h-4" /> Clear All
-          </button>
           <button
             onClick={() => setShowSources(v => !v)}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
@@ -1141,13 +1135,6 @@ export default function AdminCompanies() {
         />
       )}
 
-      {showClearModal && (
-        <ClearConfirmModal
-          totalCompanies={stats?.totalCompanies}
-          onClose={() => setShowClearModal(false)}
-          onConfirm={handleClear}
-        />
-      )}
     </div>
   );
 }

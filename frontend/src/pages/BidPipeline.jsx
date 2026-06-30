@@ -13,6 +13,7 @@ import { useUserPlan } from '../hooks/useUserPlan';
 import PlanGate from '../components/PlanGate';
 import ExportButton from '../components/ExportButton';
 import { exportPipelinePDF, exportPipelineCSV } from '../utils/exportUtils';
+import HowItWorks from '../components/HowItWorks';
 
 // ── Column definitions ────────────────────────────────────────────────────────
 const COLUMNS = [
@@ -338,7 +339,7 @@ export default function BidPipeline() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 sm:mb-6">
@@ -346,6 +347,33 @@ export default function BidPipeline() {
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
               <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 shrink-0" />
               Bid Pipeline
+              <HowItWorks
+                title="Bid Pipeline"
+                steps={[
+                  { title: 'Save opportunities', description: 'Save contracts from your feed to start tracking them' },
+                  { title: 'Drag through stages', description: 'Move cards: Saved → Researching → Drafting Proposal → Submitted → Won/Lost' },
+                  { title: 'Track win rate', description: 'See your conversion stats — how many bids become wins' },
+                  { title: 'Add notes', description: 'Attach private notes to each opportunity for your team' },
+                ]}
+                dataUsed={['Your Saved Opportunities', 'Status Tracking']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Saved Opportunities</strong> → saving a contract creates a card in your pipeline</li>
+                  <li><strong>Opportunity Detail</strong> → click any card to view full details and run AI analysis</li>
+                  <li><strong>Go/No-Go</strong> → run bid decision before moving from "Researching" to "Drafting"</li>
+                  <li><strong>Proposal Builder</strong> → move to "Drafting" stage, then write the proposal</li>
+                  <li><strong>Dashboard</strong> → pipeline stats (active bids, win rate) show on your dashboard</li>
+                </ul>
+                <p className="text-sm font-semibold text-gray-700 mt-2">Recommended workflow:</p>
+                <ol className="text-xs text-gray-500 list-decimal list-inside space-y-0.5 mt-1">
+                  <li>Save opportunity from feed → card appears in "Saved"</li>
+                  <li>Research → run AI Summarize + Competitive Analysis → move to "Researching"</li>
+                  <li>Decide → run Go/No-Go → if GO, move to "Drafting"</li>
+                  <li>Write → use Proposal Builder → move to "Submitted"</li>
+                  <li>Track → update to "Won" or "Lost" when agency decides</li>
+                </ol>
+              </HowItWorks>
             </h1>
             <p className="text-gray-500 mt-0.5 sm:mt-1 text-xs sm:text-sm">
               Track your bids from research to award. Drag cards between columns or use the arrow buttons.

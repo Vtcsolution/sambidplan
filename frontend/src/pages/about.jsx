@@ -28,13 +28,13 @@ export default function About() {
       <SEOHead
         title="About Sambid — Our Mission to Help Federal Contractors Win"
         description="Sambid was built to level the playing field for small and mid-size businesses competing for US federal contracts. Learn about our mission, our team, and why we built the smartest federal contract alert platform."
-        keywords="about Sambid, federal contracting company, government contract alert startup, small business federal contracting tools, federal procurement platform mission"
+        keywords="about Sambid, federal contracting company, government contract alert startup, small business federal contracting tools, federal procurement platform mission, GovCon software company, federal contracting technology startup, best federal contracting platform"
         canonical="https://sambid.co/about"
       />
 
       {/* Hero */}
       <section className="relative bg-gradient-to-r from-indigo-600 to-purple-700 text-white py-20 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -124,7 +124,7 @@ export default function About() {
 
       {/* Values */}
       <section className="py-16 sm:py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">What We Stand For</h2>
             <p className="text-base sm:text-lg text-gray-600">The principles behind every feature we build</p>

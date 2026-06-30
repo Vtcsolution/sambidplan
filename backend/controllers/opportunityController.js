@@ -5,6 +5,8 @@ import User from '../models/User.js';
 import { fetchUSAspendingOpportunities } from '../services/usaspendingApiService.js';
 import { triggerManualFetch, distributeToUser } from '../services/schedulerService.js';
 import { fetchSAMOpportunities } from '../services/samApiService.js';
+import Company from '../models/Company.js';
+import Plan from '../models/Plan.js';
 
 // Seed sample opportunities using user's actual NAICS codes so distribution always has candidates
 export const seedSampleForUser = async (naicsCodes) => {
@@ -59,9 +61,13 @@ const checkUserAccess = async (user) => {
     return { allowed: false, plan: 'expired', message: 'Your free trial has ended. Please upgrade to continue.', monthlyLimit: 0, monthlyUsed: 0, daysLeft: 0 };
   }
 
-  // trial and free: daily limit of 3
+  // trial and free: daily limit (admin-configurable via Plan model, fallback to 3)
   if (user.plan === 'trial' || user.plan === 'free') {
-    const DAILY_LIMIT = 3;
+    let DAILY_LIMIT = 3;
+    try {
+      const dbPlan = await Plan.findOne({ name: 'free' }).select('dailyLimit').lean();
+      if (dbPlan?.dailyLimit > 0) DAILY_LIMIT = dbPlan.dailyLimit;
+    } catch {}
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
     const lastDailyReset = new Date(user.lastDailyReset || 0);
@@ -99,36 +105,55 @@ const checkUserAccess = async (user) => {
     await user.save();
   }
 
-  const planLimits = {
-    starter:    { monthlyLimit: 500,      label: 'Starter' },
-    pro:        { monthlyLimit: 3000,     label: 'Pro' },
-    enterprise: { monthlyLimit: Infinity, label: 'Enterprise' },
-    expired:    { monthlyLimit: 0,        label: 'Expired' },
-  };
+  // Read limit from Plan model (admin-configurable), fallback to hardcoded defaults
+  const fallbackLimits = { starter: 500, pro: 3000, enterprise: 0, expired: 0 };
+  let monthlyLimit;
+  try {
+    const dbPlan = await Plan.findOne({ name: user.plan }).select('opportunitiesPerMonth displayName').lean();
+    monthlyLimit = dbPlan?.opportunitiesPerMonth > 0 ? dbPlan.opportunitiesPerMonth : (fallbackLimits[user.plan] ?? 0);
+  } catch {
+    monthlyLimit = fallbackLimits[user.plan] ?? 0;
+  }
+  const isUnlimited = monthlyLimit === 0 && ['enterprise'].includes(user.plan);
 
-  const limit    = planLimits[user.plan] || planLimits.expired;
   const used     = user.monthlyMatchesUsed || 0;
-  const allowed  = limit.monthlyLimit > 0;
-  const capLabel = limit.monthlyLimit === Infinity ? 'Unlimited' : limit.monthlyLimit;
+  const allowed  = isUnlimited || monthlyLimit > 0;
+  const capLabel = isUnlimited ? 'Unlimited' : monthlyLimit;
+
+  // Count actual UserOpportunity records for this user this month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const actualCount = await UserOpportunity.countDocuments({ user: user._id, fetchedAt: { $gte: monthStart } });
 
   return {
     allowed,
     plan:         user.plan,
-    monthlyLimit: limit.monthlyLimit === Infinity ? 'Unlimited' : limit.monthlyLimit,
-    monthlyUsed:  used,
+    monthlyLimit: isUnlimited ? 'Unlimited' : monthlyLimit,
+    monthlyUsed:  actualCount,
     daysLeft:     0,
-    label:        limit.label,
+    label:        user.plan.charAt(0).toUpperCase() + user.plan.slice(1),
     message:      allowed
-      ? `You've used ${used} of ${capLabel} matches this month.`
+      ? `You have ${actualCount} of ${capLabel} matches this month.`
       : 'Monthly limit reached. Upgrade to continue.',
   };
 };
 
 // Match scoring (used for admin path which reads master store directly)
+// Set-aside type → which certifications qualify
+const SET_ASIDE_CERT_MAP = {
+  '8(a)':       ['8a', '8(a)'],
+  'wosb':       ['wosb', 'edwosb', 'women'],
+  'edwosb':     ['edwosb'],
+  'hubzone':    ['hubzone'],
+  'sdvosb':     ['sdvosb', 'service-disabled'],
+  'vosb':       ['vosb', 'sdvosb', 'veteran'],
+  'sdb':        ['sdb', '8a', '8(a)'],
+};
+
 const calculateMatchScore = (opportunity, user) => {
   let score = 0;
   const reasons = [];
 
+  // 1. NAICS match (50 points)
   if (user.naicsCodes?.includes(opportunity.naicsCode)) {
     score += 50; reasons.push('✓ Your NAICS code matches this opportunity');
   } else if (user.naicsCodes?.length > 0) {
@@ -137,13 +162,38 @@ const calculateMatchScore = (opportunity, user) => {
     score += 10; reasons.push('⚠️ No NAICS codes configured');
   }
 
+  // 2. Set-aside eligibility (up to 20 points — checks actual certifications)
   if (opportunity.setAside) {
     const sa = opportunity.setAside.toLowerCase();
-    if (sa.includes('small business'))  { score += 20; reasons.push('✓ Small business set-aside'); }
-    else if (sa.includes('sba'))        { score += 15; reasons.push('✓ SBA program'); }
-    else                                { score += 5;  reasons.push('⚠️ Check set-aside'); }
+    const userCerts = (user.certifications || []).map(c => (typeof c === 'string' ? c : c.name || c.type || '').toLowerCase());
+
+    if (sa.includes('full and open') || sa.includes('unrestricted')) {
+      score += 15; reasons.push('✓ Full & Open competition — anyone can bid');
+    } else {
+      // Check if user's certs qualify for this set-aside
+      let eligible = false;
+      for (const [keyword, qualifyingCerts] of Object.entries(SET_ASIDE_CERT_MAP)) {
+        if (sa.includes(keyword)) {
+          eligible = qualifyingCerts.some(cert => userCerts.some(uc => uc.includes(cert)));
+          break;
+        }
+      }
+
+      if (sa.includes('small business') && !eligible) {
+        eligible = userCerts.length > 0 || (user.businessType && user.businessType !== 'corporation');
+      }
+
+      if (eligible) {
+        score += 20; reasons.push(`✓ ${opportunity.setAside} — your certifications qualify`);
+      } else if (userCerts.length === 0) {
+        score += 5;  reasons.push(`⚠️ ${opportunity.setAside} — add certifications to check eligibility`);
+      } else {
+        score += 0;  reasons.push(`❌ ${opportunity.setAside} — you may not qualify (check your certs)`);
+      }
+    }
   }
 
+  // 3. Timeline (20 points)
   if (opportunity.dueDate) {
     const daysLeft = Math.ceil((new Date(opportunity.dueDate) - new Date()) / 86400000);
     if (daysLeft > 30)      { score += 20; reasons.push(`✓ ${daysLeft} days to prepare`); }
@@ -153,10 +203,12 @@ const calculateMatchScore = (opportunity, user) => {
     else                    { score += 5;  reasons.push('📊 Historical award — research only'); }
   }
 
+  // 4. Contract value (10 points)
   if (opportunity.estimatedValue) {
-    if (opportunity.estimatedValue < 100000)      { score += 10; reasons.push('✓ Ideal size (<$100k)'); }
-    else if (opportunity.estimatedValue < 500000) { score += 7;  reasons.push('✓ Manageable ($100k–$500k)'); }
-    else                                           { score += 3;  reasons.push('⚠️ Large contract'); }
+    if (opportunity.estimatedValue < 100000)       { score += 10; reasons.push('✓ Ideal size (<$100k)'); }
+    else if (opportunity.estimatedValue < 500000)  { score += 7;  reasons.push('✓ Manageable ($100k–$500k)'); }
+    else if (opportunity.estimatedValue < 2000000) { score += 5;  reasons.push('⚠️ Large ($500k–$2M)'); }
+    else                                            { score += 3;  reasons.push('⚠️ Very large contract (>$2M)'); }
   }
 
   return { score: Math.min(100, score), reasons };
@@ -175,32 +227,51 @@ export const getOpportunities = async (req, res) => {
       setAside: setAsideFilter = '',
       naicsCode: naicsFilter = '',
       sortBy = 'matchScore',
+      dueDateFrom = '', dueDateTo = '',
+      postedFrom = '', postedTo = '',
+      noticeType: noticeTypeFilter = '',
+      agency: agencyFilter = '',
     } = req.query;
     const pageNum  = parseInt(page);
     const limitNum = parseInt(limit);
+
+    // Enrich user with company certifications for set-aside eligibility checking
+    if (!req.user.certifications) {
+      try {
+        const company = await Company.findOne({ owner: req.user._id }).select('certifications').lean();
+        if (company?.certifications?.length) {
+          req.user.certifications = company.certifications;
+        }
+      } catch {}
+    }
 
     // ── Admin path: full master store ──────────────────────────────────────────
     if (req.user.role === 'admin') {
       const query = { source: { $ne: 'usaspending' } };
       if (req.user.naicsCodes?.length) query.naicsCode = { $in: req.user.naicsCodes };
 
-      const allOpps = await Opportunity.find(query).sort({ postedDate: -1 }).limit(10000).lean();
+      const [total, activeCount, pageOpps] = await Promise.all([
+        Opportunity.countDocuments(query),
+        Opportunity.countDocuments({ ...query, dueDate: { $gt: new Date() } }),
+        Opportunity.find(query)
+          .sort({ postedDate: -1 })
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .lean()
+      ]);
 
-      const scored = allOpps
-        .map(opp => {
-          const { score, reasons } = calculateMatchScore(opp, req.user);
-          const isActive = opp.dueDate && new Date(opp.dueDate) > new Date();
-          return { ...opp, aiMatchScore: score, matchReasons: reasons, status: isActive ? 'active' : 'historical', canApply: isActive };
-        })
-        .sort((a, b) => b.aiMatchScore - a.aiMatchScore);
+      const data = pageOpps.map(opp => {
+        const { score, reasons } = calculateMatchScore(opp, req.user);
+        const isActive = opp.dueDate && new Date(opp.dueDate) > new Date();
+        return { ...opp, aiMatchScore: score, matchReasons: reasons, status: isActive ? 'active' : 'historical', canApply: isActive };
+      });
 
-      const start = (pageNum - 1) * limitNum;
       return res.json({
         success: true,
-        data: scored.slice(start, start + limitNum),
+        data,
         userProfile: { plan: 'admin', monthlyLimit: 'Unlimited', remainingMatches: 'Unlimited', naicsCodes: req.user.naicsCodes || [] },
-        stats: { total: scored.length, activeOpportunities: scored.filter(o => o.status === 'active').length },
-        pagination: { page: pageNum, limit: limitNum, total: scored.length, pages: Math.ceil(scored.length / limitNum) }
+        stats: { total, activeOpportunities: activeCount },
+        pagination: { page: pageNum, limit: limitNum, total, pages: Math.ceil(total / limitNum) }
       });
     }
 
@@ -248,9 +319,15 @@ export const getOpportunities = async (req, res) => {
           o.title?.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q) || o.agency?.toLowerCase().includes(q)
         );
       }
-      if (setAsideFilter) enterpriseResult = enterpriseResult.filter(o => o.setAside === setAsideFilter);
-      if (minValue)       enterpriseResult = enterpriseResult.filter(o => (o.estimatedValue || 0) >= parseFloat(minValue));
-      if (maxValue)       enterpriseResult = enterpriseResult.filter(o => (o.estimatedValue || 0) <= parseFloat(maxValue));
+      if (setAsideFilter)    enterpriseResult = enterpriseResult.filter(o => o.setAside === setAsideFilter);
+      if (minValue)          enterpriseResult = enterpriseResult.filter(o => (o.estimatedValue || 0) >= parseFloat(minValue));
+      if (maxValue)          enterpriseResult = enterpriseResult.filter(o => (o.estimatedValue || 0) <= parseFloat(maxValue));
+      if (dueDateFrom)       enterpriseResult = enterpriseResult.filter(o => o.dueDate && new Date(o.dueDate) >= new Date(dueDateFrom));
+      if (dueDateTo)         enterpriseResult = enterpriseResult.filter(o => o.dueDate && new Date(o.dueDate) <= new Date(dueDateTo + 'T23:59:59'));
+      if (postedFrom)        enterpriseResult = enterpriseResult.filter(o => o.postedDate && new Date(o.postedDate) >= new Date(postedFrom));
+      if (postedTo)          enterpriseResult = enterpriseResult.filter(o => o.postedDate && new Date(o.postedDate) <= new Date(postedTo + 'T23:59:59'));
+      if (noticeTypeFilter)  enterpriseResult = enterpriseResult.filter(o => o.noticeType === noticeTypeFilter);
+      if (agencyFilter)      enterpriseResult = enterpriseResult.filter(o => o.agency?.toLowerCase().includes(agencyFilter.toLowerCase()));
       if (sortBy === 'dueDate')  enterpriseResult.sort((a, b) => new Date(a.dueDate||0) - new Date(b.dueDate||0));
       else if (sortBy === 'value')  enterpriseResult.sort((a, b) => (b.estimatedValue||0) - (a.estimatedValue||0));
       else if (sortBy === 'posted') enterpriseResult.sort((a, b) => new Date(b.postedDate||0) - new Date(a.postedDate||0));
@@ -291,9 +368,23 @@ export const getOpportunities = async (req, res) => {
 
     if (staleUOIds.length > 0 && req.user.naicsCodes?.length > 0) {
       await UserOpportunity.deleteMany({ _id: { $in: staleUOIds } });
-      await distributeToUser(req.user);
-      userOpps = await UserOpportunity.find({ user: req.user._id })
-        .populate('opportunity').sort({ matchScore: -1, fetchedAt: -1 }).lean();
+    }
+
+    // Always check for new unassigned opportunities in the master store
+    if (req.user.naicsCodes?.length > 0) {
+      const existingOppIds = userOpps.filter(uo => uo.opportunity).map(uo => uo.opportunity._id);
+      const newInMaster = await Opportunity.countDocuments({
+        naicsCode: { $in: req.user.naicsCodes },
+        dueDate: { $gt: now },
+        source: { $ne: 'usaspending' },
+        _id: { $nin: existingOppIds },
+      });
+
+      if (newInMaster > 0 || staleUOIds.length > 0) {
+        await distributeToUser(req.user);
+        userOpps = await UserOpportunity.find({ user: req.user._id })
+          .populate('opportunity').sort({ matchScore: -1, fetchedAt: -1 }).lean();
+      }
     }
 
     // On-demand fill: if feed is empty (new user or fully expired)
@@ -353,10 +444,16 @@ export const getOpportunities = async (req, res) => {
         o.agency?.toLowerCase().includes(q)
       );
     }
-    if (setAsideFilter) filtered = filtered.filter(o => o.setAside === setAsideFilter);
-    if (naicsFilter)    filtered = filtered.filter(o => o.naicsCode === naicsFilter);
-    if (minValue)       filtered = filtered.filter(o => (o.estimatedValue || 0) >= parseFloat(minValue));
-    if (maxValue)       filtered = filtered.filter(o => (o.estimatedValue || 0) <= parseFloat(maxValue));
+    if (setAsideFilter)    filtered = filtered.filter(o => o.setAside === setAsideFilter);
+    if (naicsFilter)       filtered = filtered.filter(o => o.naicsCode === naicsFilter);
+    if (minValue)          filtered = filtered.filter(o => (o.estimatedValue || 0) >= parseFloat(minValue));
+    if (maxValue)          filtered = filtered.filter(o => (o.estimatedValue || 0) <= parseFloat(maxValue));
+    if (dueDateFrom)       filtered = filtered.filter(o => o.dueDate && new Date(o.dueDate) >= new Date(dueDateFrom));
+    if (dueDateTo)         filtered = filtered.filter(o => o.dueDate && new Date(o.dueDate) <= new Date(dueDateTo + 'T23:59:59'));
+    if (postedFrom)        filtered = filtered.filter(o => o.postedDate && new Date(o.postedDate) >= new Date(postedFrom));
+    if (postedTo)          filtered = filtered.filter(o => o.postedDate && new Date(o.postedDate) <= new Date(postedTo + 'T23:59:59'));
+    if (noticeTypeFilter)  filtered = filtered.filter(o => o.noticeType === noticeTypeFilter);
+    if (agencyFilter)      filtered = filtered.filter(o => o.agency?.toLowerCase().includes(agencyFilter.toLowerCase()));
 
     // ── Sort ──────────────────────────────────────────────────────────────────
     if (sortBy === 'dueDate')    filtered.sort((a, b) => new Date(a.dueDate||0) - new Date(b.dueDate||0));
@@ -372,14 +469,14 @@ export const getOpportunities = async (req, res) => {
       userProfile: {
         naicsCodes:         req.user.naicsCodes || [],
         plan:               access.plan,
-        monthlyMatchesUsed: req.user.monthlyMatchesUsed || 0,
+        monthlyMatchesUsed: access.monthlyUsed,
         monthlyLimit:       access.monthlyLimit,
         daysLeft:           access.daysLeft,
         trialEndDate:       req.user.trialEndDate,
         totalAssigned:      result.length,
         remainingThisMonth: access.monthlyLimit === 'Unlimited'
           ? 'Unlimited'
-          : Math.max(0, access.monthlyLimit - (req.user.monthlyMatchesUsed || 0))
+          : Math.max(0, access.monthlyLimit - access.monthlyUsed)
       },
       stats: {
         total:               filtered.length,
@@ -547,7 +644,7 @@ export const getUserProfile = async (req, res) => {
         plan:             access.plan,
         planExpiresAt:    req.user.planExpiresAt,
         trialEndDate:     req.user.trialEndDate,
-        monthlyMatchesUsed: req.user.monthlyMatchesUsed || 0,
+        monthlyMatchesUsed: access.monthlyUsed,
         monthlyLimit:       access.monthlyLimit,
         daysLeft:         access.daysLeft,
         isTrialActive:    req.user.isTrialActive

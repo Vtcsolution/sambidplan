@@ -8,6 +8,7 @@ import AlertNotification from '../models/AlertNotification.js';
 import { distributeToUser } from '../services/schedulerService.js';
 import { fetchSAMOpportunities } from '../services/samApiService.js';
 import { seedSampleForUser } from './opportunityController.js';
+import Plan from '../models/Plan.js';
 
 // ─── Date key helper ──────────────────────────────────────────────────────────
 const dateKey = (d) => {
@@ -64,7 +65,7 @@ export const getDashboardStats = async (req, res) => {
         .populate({
           path: 'opportunity',
           match: { dueDate: { $gte: now } },
-          select: 'title agency dueDate estimatedValue naicsCode'
+          select: 'title agency dueDate postedDate estimatedValue naicsCode noticeType'
         })
         .sort({ 'opportunity.dueDate': 1 })
         .limit(20)
@@ -72,7 +73,7 @@ export const getDashboardStats = async (req, res) => {
 
       // Recent 5 opportunities for the feed preview
       UserOpportunity.find({ user: userId })
-        .populate('opportunity', 'title agency dueDate estimatedValue naicsCode setAside')
+        .populate('opportunity', 'title agency dueDate postedDate estimatedValue naicsCode setAside noticeType')
         .sort({ matchScore: -1, fetchedAt: -1 })
         .limit(5)
         .lean(),
@@ -102,10 +103,10 @@ export const getDashboardStats = async (req, res) => {
         UserOpportunity.countDocuments({ user: userId, fetchedAt: { $gte: todayStart } }),
         UserOpportunity.countDocuments({ user: userId, matchScore: { $gte: 70 } }),
         UserOpportunity.find({ user: userId })
-          .populate({ path: 'opportunity', match: { dueDate: { $gte: now } }, select: 'title agency dueDate estimatedValue naicsCode' })
+          .populate({ path: 'opportunity', match: { dueDate: { $gte: now } }, select: 'title agency dueDate postedDate estimatedValue naicsCode noticeType' })
           .sort({ 'opportunity.dueDate': 1 }).limit(20).lean(),
         UserOpportunity.find({ user: userId })
-          .populate('opportunity', 'title agency dueDate estimatedValue naicsCode setAside')
+          .populate('opportunity', 'title agency dueDate postedDate estimatedValue naicsCode setAside noticeType')
           .sort({ matchScore: -1, fetchedAt: -1 }).limit(5).lean()
       ]);
       console.log(`✅ Dashboard on-demand fill: ${totalFeedCount} opportunities for ${req.user.email}`);
@@ -171,22 +172,36 @@ export const getDashboardStats = async (req, res) => {
         title:          uo.opportunity.title,
         agency:         uo.opportunity.agency,
         dueDate:        uo.opportunity.dueDate,
+        postedDate:     uo.opportunity.postedDate,
         estimatedValue: uo.opportunity.estimatedValue,
         naicsCode:      uo.opportunity.naicsCode,
         setAside:       uo.opportunity.setAside,
+        noticeType:     uo.opportunity.noticeType,
         matchScore:     uo.matchScore,
         matchReasons:   uo.matchReasons,
         fetchedAt:      uo.fetchedAt,
         isActive:       uo.opportunity.dueDate && new Date(uo.opportunity.dueDate) > now
       }));
 
-    // Plan info
-    const planLimits = {
-      trial:      15,  free: 50,
-      starter:    500, pro: 3000,
-      enterprise: 'Unlimited'
-    };
-    const monthlyLimit  = user.role === 'admin' ? 'Unlimited' : (planLimits[user.plan] || 50);
+    // Plan info — read from DB
+    let monthlyLimit;
+    if (user.role === 'admin') {
+      monthlyLimit = 'Unlimited';
+    } else {
+      try {
+        const dbPlan = await Plan.findOne({ name: user.plan }).select('opportunitiesPerMonth').lean();
+        const fallback = { trial: 50, free: 50, starter: 500, pro: 3000, enterprise: 0 };
+        const raw = dbPlan?.opportunitiesPerMonth > 0 ? dbPlan.opportunitiesPerMonth : (fallback[user.plan] ?? 50);
+        monthlyLimit = raw === 0 && user.plan === 'enterprise' ? 'Unlimited' : raw;
+      } catch {
+        monthlyLimit = 50;
+      }
+    }
+
+    // Count actual opportunities distributed to this user this month
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const actualMonthlyUsed = await UserOpportunity.countDocuments({ user: user._id, fetchedAt: { $gte: monthStart } });
+
     const daysLeft      = user.plan === 'trial' ? Math.max(0, Math.ceil((user.trialEndDate - now) / 86400000)) : null;
     const planExpiresDays = user.planExpiresAt
       ? Math.ceil((user.planExpiresAt - now) / 86400000)
@@ -202,7 +217,7 @@ export const getDashboardStats = async (req, res) => {
           plan:             user.plan,
           businessName:     user.businessName,
           naicsCodes:       user.naicsCodes || [],
-          monthlyMatchesUsed: user.monthlyMatchesUsed || 0,
+          monthlyMatchesUsed: actualMonthlyUsed,
           monthlyLimit,
           trialDaysLeft:    daysLeft,
           planExpiresDays,
@@ -217,7 +232,7 @@ export const getDashboardStats = async (req, res) => {
           highMatch:  highMatchCount,
           usagePercent: monthlyLimit === 'Unlimited'
             ? 0
-            : Math.round(((user.monthlyMatchesUsed || 0) / monthlyLimit) * 100)
+            : Math.round((actualMonthlyUsed / monthlyLimit) * 100)
         },
         // Engagement
         saved:         { total: savedCount, thisWeek: savedThisWeek },
@@ -258,14 +273,14 @@ export const getCalendarEvents = async (req, res) => {
         dueDate: { $gte: windowStart, $lte: windowEnd },
         ...(naics.length ? { naicsCode: { $in: naics } } : {}),
       };
-      const masterOpps = await Opportunity.find(masterQuery, 'title agency dueDate estimatedValue naicsCode setAside').lean();
+      const masterOpps = await Opportunity.find(masterQuery, 'title agency dueDate postedDate estimatedValue naicsCode setAside noticeType').lean();
       feedOpps = masterOpps.map(opp => ({ opportunity: opp, matchScore: 75 }));
     } else {
       feedOpps = await UserOpportunity.find({ user: userId })
         .populate({
           path: 'opportunity',
           match: { dueDate: { $gte: windowStart, $lte: windowEnd } },
-          select: 'title agency dueDate estimatedValue naicsCode setAside'
+          select: 'title agency dueDate postedDate estimatedValue naicsCode setAside noticeType'
         })
         .lean();
     }
@@ -274,7 +289,7 @@ export const getCalendarEvents = async (req, res) => {
       .populate({
         path: 'opportunity',
         match: { dueDate: { $gte: windowStart, $lte: windowEnd } },
-        select: 'title agency dueDate estimatedValue naicsCode setAside'
+        select: 'title agency dueDate postedDate estimatedValue naicsCode setAside noticeType'
       })
       .lean();
 

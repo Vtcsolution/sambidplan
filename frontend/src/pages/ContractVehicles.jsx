@@ -3,6 +3,7 @@ import { Truck, Plus, Trash2, Bell, CheckCircle, Calendar, ExternalLink, AlertTr
 import api from '../services/api';
 import { useUserPlan } from '../hooks/useUserPlan';
 import PlanGate from '../components/PlanGate';
+import HowItWorks from '../components/HowItWorks';
 
 const COMMON_VEHICLES = [
   { name: 'GSA Multiple Award Schedule (MAS)', acronym: 'GSA MAS', agency: 'GSA' },
@@ -70,14 +71,27 @@ export default function ContractVehicles() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center">
               <Truck className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Contract Vehicle Tracker</h1>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">Contract Vehicle Tracker
+                <HowItWorks title="Contract Vehicles" steps={[
+                  { title: 'Track your vehicles', description: 'Add GSA MAS, SEWP V, OASIS+, 8(a) STARS III, and any other contract vehicles your company holds' },
+                  { title: 'Expiry alerts', description: 'Color-coded warnings: Red (<30 days), Yellow (30-90 days), Green (>90 days) — never let a vehicle expire' },
+                  { title: 'Quick-add common vehicles', description: 'Pre-loaded list of major GWACs and IDIQs — click to add instantly' },
+                ]} dataUsed={['Your Vehicles', 'Expiry Dates']} >
+                  <p className="text-sm font-semibold text-gray-700 mt-2">Why this matters:</p>
+                  <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                    <li>Many contracts require you to be on a specific vehicle to bid</li>
+                    <li><strong>Market Research</strong> recommends which vehicles to pursue</li>
+                    <li>An expired vehicle means you lose access to thousands of opportunities</li>
+                  </ul>
+                </HowItWorks>
+              </h1>
               <p className="text-gray-500 text-sm">Track your GWACs, IDIQs, and GSA schedules. Get expiry alerts.</p>
             </div>
           </div>

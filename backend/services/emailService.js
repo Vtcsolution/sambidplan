@@ -1715,3 +1715,206 @@ export const sendWithdrawalStatusEmail = async ({ supportName, supportEmail, amo
   await Promise.allSettled(sends);
   console.log(`📧 Withdrawal ${status} email sent to ${supportEmail}${adminEmail ? ' + admin' : ''}`);
 };
+
+// ─── Managed Project Emails ──────────────────────────────────────────────────
+
+const projectEmailWrap = (headerBg, headerTitle, headerSub, body) => `
+  <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;color:#1f2937;">
+    <div style="background:${headerBg};padding:32px;border-radius:16px 16px 0 0;text-align:center;">
+      <h1 style="color:#fff;margin:0;font-size:22px;">${headerTitle}</h1>
+      ${headerSub ? `<p style="color:rgba(255,255,255,.8);margin:8px 0 0;">${headerSub}</p>` : ''}
+    </div>
+    <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:32px;border-radius:0 0 16px 16px;">
+      ${body}
+    </div>
+  </div>`;
+
+const projectRow = (label, value) => `<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:8px 0;color:#6b7280;width:45%;">${label}</td><td style="padding:8px 0;font-weight:600;color:#1f2937;">${value}</td></tr>`;
+
+const projectCTA = (url, text) => `<a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:600;margin-top:12px;">${text}</a>`;
+
+const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—';
+const fmtM = (n) => n != null ? `$${Number(n).toLocaleString()}` : '—';
+const FE = process.env.FRONTEND_URL || 'https://sambid.co';
+
+export const sendProjectCreatedEmail = async (owner, project) => {
+  try {
+    await getTransporter().sendMail({
+      from: FROM.billing(),
+      to: owner.email,
+      subject: `New Project Created — ${project.title}`,
+      html: projectEmailWrap('#4f46e5', '📋 New Project Created', 'Managed Service Fulfillment', `
+        <p>Hi <strong>${owner.name}</strong>,</p>
+        <p>A new project has been created for a contract we won on your behalf.</p>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            ${projectRow('Project #', project.projectNumber)}
+            ${projectRow('Contract', project.title)}
+            ${projectRow('Agency', project.agency || '—')}
+            ${projectRow('Contract Value', fmtM(project.contractValue))}
+            ${projectRow('NAICS', project.naicsCode || '—')}
+          </table>
+        </div>
+        <p style="color:#6b7280;font-size:13px;">We'll begin sourcing vendors and will keep you updated on progress.</p>
+        ${projectCTA(FE + '/company/managed-service', 'View Project')}
+      `),
+    });
+  } catch (e) { console.error('sendProjectCreatedEmail error:', e.message); }
+};
+
+export const sendQuoteReceivedEmail = async (adminEmail, quote, project) => {
+  try {
+    await getTransporter().sendMail({
+      from: FROM.noreply(),
+      to: adminEmail,
+      subject: `New Quote: ${quote.vendorName} — ${fmtM(quote.quoteAmount)} for ${project.title}`,
+      html: projectEmailWrap('#6366f1', '💰 New Vendor Quote', project.title, `
+        <p>A new subcontractor quote has been submitted.</p>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            ${projectRow('Vendor', quote.vendorName)}
+            ${projectRow('Company', quote.vendorCompany || '—')}
+            ${projectRow('Quote Amount', fmtM(quote.quoteAmount))}
+            ${projectRow('Delivery Timeline', quote.deliveryTimeline ? `${quote.deliveryTimeline} days` : '—')}
+            ${projectRow('Location', [quote.vendorLocation?.city, quote.vendorLocation?.state, quote.vendorLocation?.country].filter(Boolean).join(', ') || '—')}
+          </table>
+        </div>
+        ${projectCTA(FE + '/admin/managed-projects', 'Review Quote')}
+      `),
+    });
+  } catch (e) { console.error('sendQuoteReceivedEmail error:', e.message); }
+};
+
+export const sendVendorSelectedEmail = async (vendorEmail, vendorName, project) => {
+  try {
+    await getTransporter().sendMail({
+      from: FROM.billing(),
+      to: vendorEmail,
+      subject: `You've Been Selected! — ${project.title}`,
+      html: projectEmailWrap('#059669', '🎉 Congratulations!', 'You have been selected as the vendor', `
+        <p>Hi <strong>${vendorName}</strong>,</p>
+        <p>We are pleased to inform you that your quote has been accepted for the following project:</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            ${projectRow('Project', project.title)}
+            ${projectRow('Agency', project.agency || '—')}
+            ${projectRow('Contract Value', fmtM(project.contractValue))}
+            ${projectRow('Delivery Deadline', fmtD(project.deliveryDeadline))}
+          </table>
+        </div>
+        <p style="color:#374151;">Our team will be in touch with detailed requirements and milestone schedule. Please ensure timely delivery to the specified government delivery point.</p>
+        <p style="color:#6b7280;font-size:13px;">If you have questions, reply to this email.</p>
+      `),
+    });
+  } catch (e) { console.error('sendVendorSelectedEmail error:', e.message); }
+};
+
+export const sendMilestoneUpdateEmail = async (owner, project, milestone) => {
+  try {
+    const statusColors = { approved: '#059669', submitted: '#d97706', in_progress: '#2563eb', revision_needed: '#dc2626', pending: '#6b7280' };
+    const color = statusColors[milestone.status] || '#6b7280';
+    await getTransporter().sendMail({
+      from: FROM.noreply(),
+      to: owner.email,
+      subject: `Milestone Update: ${milestone.title} — ${project.title}`,
+      html: projectEmailWrap('#4f46e5', '📊 Milestone Update', project.title, `
+        <p>Hi <strong>${owner.name}</strong>,</p>
+        <p>There's an update on your project milestone:</p>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            ${projectRow('Milestone', milestone.title)}
+            ${projectRow('Status', `<span style="color:${color};font-weight:700;">${milestone.status.replace('_', ' ').toUpperCase()}</span>`)}
+            ${projectRow('Due Date', fmtD(milestone.dueDate))}
+          </table>
+          <div style="margin-top:16px;">
+            <p style="font-size:12px;color:#6b7280;margin:0 0 4px;">Overall Progress</p>
+            <div style="background:#e5e7eb;border-radius:9999px;height:10px;overflow:hidden;">
+              <div style="background:#4f46e5;height:100%;width:${project.overallProgress || 0}%;border-radius:9999px;"></div>
+            </div>
+            <p style="font-size:12px;color:#4f46e5;margin:4px 0 0;font-weight:600;">${project.overallProgress || 0}% Complete</p>
+          </div>
+        </div>
+        ${projectCTA(FE + '/company/managed-service', 'View Project')}
+      `),
+    });
+  } catch (e) { console.error('sendMilestoneUpdateEmail error:', e.message); }
+};
+
+export const sendDeadlineAlertEmail = async (recipients, project, daysLeft) => {
+  try {
+    const isUrgent = daysLeft <= 3;
+    const bg = isUrgent ? '#dc2626' : '#d97706';
+    const emoji = isUrgent ? '🚨' : '⚠️';
+    for (const to of (Array.isArray(recipients) ? recipients : [recipients])) {
+      if (!to) continue;
+      await getTransporter().sendMail({
+        from: FROM.noreply(),
+        to,
+        subject: `${emoji} ${daysLeft} Days Left — ${project.title}`,
+        html: projectEmailWrap(bg, `${emoji} Deadline Alert`, `${daysLeft} days remaining`, `
+          <p>The following project delivery deadline is approaching:</p>
+          <div style="background:${isUrgent ? '#fef2f2' : '#fffbeb'};border:1px solid ${isUrgent ? '#fecaca' : '#fed7aa'};border-radius:12px;padding:20px;margin:20px 0;">
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+              ${projectRow('Project', project.title)}
+              ${projectRow('Project #', project.projectNumber)}
+              ${projectRow('Deadline', fmtD(project.deliveryDeadline))}
+              ${projectRow('Days Remaining', `<span style="color:${bg};font-weight:700;font-size:18px;">${daysLeft}</span>`)}
+              ${projectRow('Progress', `${project.overallProgress || 0}%`)}
+              ${project.selectedVendor?.name ? projectRow('Vendor', project.selectedVendor.name) : ''}
+            </table>
+          </div>
+          <p style="color:#374151;font-weight:600;">Please ensure all deliverables are on track for the deadline.</p>
+        `),
+      });
+    }
+  } catch (e) { console.error('sendDeadlineAlertEmail error:', e.message); }
+};
+
+export const sendGovPaymentReceivedEmail = async (owner, project) => {
+  try {
+    await getTransporter().sendMail({
+      from: FROM.billing(),
+      to: owner.email,
+      subject: `Government Payment Received — ${project.title}`,
+      html: projectEmailWrap('#059669', '💵 Payment Received', 'Government Contract Payment', `
+        <p>Hi <strong>${owner.name}</strong>,</p>
+        <p>Great news! We have received the government payment for your project.</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            ${projectRow('Project', project.title)}
+            ${projectRow('Project #', project.projectNumber)}
+            ${projectRow('Contract Value', fmtM(project.contractValue))}
+            ${projectRow('Amount Received', `<span style="color:#059669;font-weight:700;font-size:18px;">${fmtM(project.govPaymentAmount)}</span>`)}
+            ${projectRow('Received Date', fmtD(project.govPaymentReceivedDate))}
+          </table>
+        </div>
+        <p style="color:#6b7280;font-size:13px;">Subcontractor milestone payments will be processed accordingly.</p>
+        ${projectCTA(FE + '/company/managed-service', 'View Details')}
+      `),
+    });
+  } catch (e) { console.error('sendGovPaymentReceivedEmail error:', e.message); }
+};
+
+export const sendSubcontractorPaymentEmail = async (vendorEmail, vendorName, milestone, project) => {
+  try {
+    await getTransporter().sendMail({
+      from: FROM.billing(),
+      to: vendorEmail,
+      subject: `Payment Processed — ${milestone.title} (${project.title})`,
+      html: projectEmailWrap('#059669', '✅ Payment Processed', 'Milestone Payment Confirmation', `
+        <p>Hi <strong>${vendorName}</strong>,</p>
+        <p>Payment has been processed for the following milestone:</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin:20px 0;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            ${projectRow('Project', project.title)}
+            ${projectRow('Milestone', milestone.title)}
+            ${projectRow('Amount', `<span style="color:#059669;font-weight:700;font-size:18px;">${fmtM(milestone.paymentAmount)}</span>`)}
+            ${projectRow('Reference', milestone.paymentReference || '—')}
+            ${projectRow('Date', fmtD(milestone.paymentDate))}
+          </table>
+        </div>
+        <p style="color:#6b7280;font-size:13px;">Thank you for your work on this project.</p>
+      `),
+    });
+  } catch (e) { console.error('sendSubcontractorPaymentEmail error:', e.message); }
+};

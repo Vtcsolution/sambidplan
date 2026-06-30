@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Ticket, Search, RefreshCw, Send, Paperclip, X, CheckCircle,
   Clock, AlertCircle, XCircle, Loader2, ArrowLeft, UserCheck, Shield
@@ -344,7 +345,7 @@ export default function AdminTickets() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Ticket className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 shrink-0" /> Support Tickets
-          </h1>
+          <AdminHowItWorks page="tickets" /></h1>
           <p className="text-sm text-gray-500 mt-1">Manage and respond to user support requests</p>
         </div>
         <button onClick={() => fetchTickets(1)} className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 shrink-0 self-start sm:self-auto">

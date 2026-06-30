@@ -3,10 +3,12 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, CreditCard, Settings, LogOut, Bell,
   Shield, ShieldCheck, FileText, Mail, MessageSquare, Sparkles, BarChart3,
-  TrendingUp, Activity, Send, Cpu, DollarSign, UserCheck, Heart, Layers, Ticket, Lightbulb, Building2, Zap, Wallet, BookOpen
+  TrendingUp, Activity, Send, Cpu, DollarSign, UserCheck, Heart, Layers, Ticket, Lightbulb, Building2, Zap, Wallet, BookOpen, Trophy, Package, Download, Search, Coins
 } from 'lucide-react';
+import { exportSamBidReport } from '../../utils/exportUtils';
 import { useAdminPermission } from '../../hooks/useAdminPermission';
 import { adminPanelAPI } from '../../services/adminApi';
+import SambidLogo from '../../components/SambidLogo';
 
 const ALL_NAV = [
   {
@@ -24,6 +26,8 @@ const ALL_NAV = [
       { path: '/admin/user-segments',     label: 'User Segments',      icon: UserCheck,  roles: ['super_admin','admin'] },
       { path: '/admin/campaigns',         label: 'Email Campaigns',    icon: Send,       roles: ['super_admin','admin'], permission: 'campaigns' },
       { path: '/admin/content-generator', label: 'Content Generator',  icon: Cpu,        roles: ['super_admin','admin'], permission: 'aiTools' },
+      { path: '/admin/credit-usage',     label: 'AI Credit Usage',    icon: Coins,      roles: ['super_admin','admin'] },
+      { path: '/admin/ai-keys',          label: 'AI Provider Keys',   icon: Zap,        roles: ['super_admin','admin'] },
     ],
   },
   {
@@ -64,6 +68,9 @@ const ALL_NAV = [
       { path: '/admin/hybrid-fetch',       label: 'Hybrid Pipeline',     icon: Layers,      roles: ['super_admin'] },
       { path: '/admin/marketing-panel',    label: 'Marketing Panel',     icon: TrendingUp,  roles: ['super_admin'] },
       { path: '/admin/company-workspaces',  label: 'Company Workspaces',  icon: Building2,   roles: ['super_admin','admin'] },
+      { path: '/admin/managed-service',     label: 'Managed Service',     icon: Trophy,      roles: ['super_admin','admin'] },
+      { path: '/admin/managed-projects',   label: 'Subcontracting',      icon: Package,     roles: ['super_admin','admin'] },
+      { path: '/admin/feature-showcase',   label: 'Feature Pages',       icon: Sparkles,    roles: ['super_admin','admin'] },
       { path: '/admin/media-manager',      label: 'Page Media',          icon: Layers,      roles: ['super_admin','admin'] },
       { path: '/admin/support-management', label: 'Support Team',        icon: Heart,       roles: ['super_admin','admin'] },
       { path: '/admin/admin-management',   label: 'Admin Accounts',      icon: ShieldCheck, roles: ['super_admin'] },
@@ -89,6 +96,7 @@ export default function AdminSidebar({ isOpen, onClose }) {
   const navigate  = useNavigate();
   const { role: adminRole, name: adminName, email: adminEmail, canAccessPage, can } = useAdminPermission();
   const [counts, setCounts] = useState({});
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -102,11 +110,14 @@ export default function AdminSidebar({ isOpen, onClose }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Filter: role must match AND (if a permission key is defined) the admin must have that permission
+  // Filter: role + permission + search
+  const q = search.toLowerCase().trim();
   const NAV = ALL_NAV.map(group => ({
     ...group,
     items: group.items.filter(item =>
-      item.roles.includes(adminRole) && (!item.permission || can(item.permission))
+      item.roles.includes(adminRole) &&
+      (!item.permission || can(item.permission)) &&
+      (!q || item.label.toLowerCase().includes(q) || group.section.toLowerCase().includes(q))
     ),
   })).filter(group => group.items.length > 0);
 
@@ -128,9 +139,7 @@ export default function AdminSidebar({ isOpen, onClose }) {
         {/* Logo */}
         <div className="p-5 border-b border-indigo-700 shrink-0">
           <Link to="/admin/dashboard" className="flex items-center space-x-3">
-            <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-              <Shield className="w-5 h-5 text-white" />
-            </div>
+            <SambidLogo size={36} />
             <div>
               <h1 className="text-lg font-bold text-white">Sambid Notify</h1>
               <p className="text-xs text-indigo-300">Admin Panel</p>
@@ -145,6 +154,19 @@ export default function AdminSidebar({ isOpen, onClose }) {
               <p className="text-sm font-medium text-white truncate">{adminName}</p>
               <p className="text-xs text-indigo-300 capitalize">{adminRole.replace('_', ' ')}</p>
             </div>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="px-4 pt-3 pb-1 shrink-0">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search pages..."
+              className="w-full pl-9 pr-3 py-2 bg-white/10 border border-indigo-600 rounded-lg text-sm text-white placeholder-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white/15"
+            />
           </div>
         </div>
 
@@ -186,6 +208,10 @@ export default function AdminSidebar({ isOpen, onClose }) {
 
         {/* Footer */}
         <div className="p-4 border-t border-indigo-700 shrink-0 space-y-2">
+          <button onClick={exportSamBidReport}
+            className="w-full flex items-center gap-2 px-3 py-2 text-amber-300 hover:text-amber-100 hover:bg-amber-900/30 rounded-lg transition text-sm">
+            <Download className="w-4 h-4" /> Download Report (PDF)
+          </button>
           <a href="/" target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-2 px-3 py-2 text-indigo-300 hover:text-white hover:bg-white/10 rounded-lg transition text-sm">
             <Heart className="w-4 h-4" /> View Live Site

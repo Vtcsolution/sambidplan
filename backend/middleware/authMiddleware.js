@@ -1,31 +1,60 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import User from '../models/User.js';
 
+const jwtSecret          = () => process.env.JWT_SECRET;
+const workspaceJwtSecret = () => crypto.createHmac('sha256', process.env.JWT_SECRET).update('workspace').digest('hex');
+
 export const protect = async (req, res, next) => {
-  let token;
-  
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    try {
-      token = req.headers.authorization.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id).select('-password');
-      
-      if (!req.user) {
-        return res.status(401).json({ success: false, message: 'User not found' });
-      }
-      
-      console.log(`🔐 Auth: User ${req.user.email} (role: ${req.user.role}) accessed ${req.method} ${req.path}`);
-      
-      next();
-    } catch (error) {
-      console.error('Auth error:', error);
-      return res.status(401).json({ success: false, message: 'Not authorized, token failed' });
-    }
-  }
-  
-  if (!token) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ success: false, message: 'Not authorized, no token' });
   }
+
+  const token = authHeader.split(' ')[1];
+
+  // ── 1. Try regular user JWT ──────────────────────────────────────────────
+  let decoded;
+  try {
+    decoded = jwt.verify(token, jwtSecret());
+  } catch {
+    // Not a regular token — try workspace JWT below
+    decoded = null;
+  }
+
+  if (decoded?.id) {
+    try {
+      req.user = await User.findById(decoded.id).select('-password');
+      if (!req.user) return res.status(401).json({ success: false, message: 'User not found' });
+      return next();
+    } catch (err) {
+      console.error('protect DB error:', err.message);
+      return res.status(500).json({ success: false, message: 'Server error during authentication' });
+    }
+  }
+
+  // ── 2. Try workspace JWT ─────────────────────────────────────────────────
+  let wsDecoded;
+  try {
+    wsDecoded = jwt.verify(token, workspaceJwtSecret());
+  } catch {
+    return res.status(401).json({ success: false, message: 'Not authorized, token failed' });
+  }
+
+  if (wsDecoded?.ownerId) {
+    try {
+      req.user = await User.findById(wsDecoded.ownerId).select('-password');
+      if (!req.user) return res.status(401).json({ success: false, message: 'Company owner not found' });
+      req.isWorkspaceUser  = true;
+      req.workspaceSession = wsDecoded;
+      return next();
+    } catch (err) {
+      console.error('protect workspace DB error:', err.message);
+      return res.status(500).json({ success: false, message: 'Server error during authentication' });
+    }
+  }
+
+  return res.status(401).json({ success: false, message: 'Not authorized, invalid token' });
 };
 
 // Admin middleware - checks if user has admin role

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { Sparkles, Loader2, RefreshCw, Users, DollarSign, TrendingUp, MessageSquare } from 'lucide-react';
 import { adminAIAPI } from '../../services/adminApi';
 import PermissionGuard from '../../components/admin/PermissionGuard';
@@ -38,7 +39,7 @@ export default function AdminAIInsights() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">AI Platform Insights</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">AI Platform Insights<AdminHowItWorks page="aiInsights" /></h1>
           <p className="text-gray-500 text-sm mt-1">AI-generated analysis of platform performance, growth opportunities, and risks.</p>
         </div>
         <button onClick={generate} disabled={loading}

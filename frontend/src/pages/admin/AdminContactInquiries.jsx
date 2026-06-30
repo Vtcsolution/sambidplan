@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { MessageSquare, Mail, Phone, Building2, Users, Clock, ChevronDown, ChevronUp, Loader2, RefreshCw, Zap, AlertCircle, DollarSign, CheckCircle, ShieldAlert } from 'lucide-react';
 import { adminPanelAPI } from '../../services/adminApi';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -365,7 +366,7 @@ export default function AdminContactInquiries() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Contact Inquiries</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Contact Inquiries<AdminHowItWorks page="contactInquiries" /></h1>
           <p className="text-sm text-gray-500 mt-1">{total} total inquiry{total !== 1 ? 'ies' : 'y'} from users and enterprise prospects</p>
         </div>
         <button

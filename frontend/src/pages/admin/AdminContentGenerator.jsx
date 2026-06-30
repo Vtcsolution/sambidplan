@@ -1,4 +1,5 @@
 ﻿import { useState } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import PermissionGuard from '../../components/admin/PermissionGuard';
 import { Sparkles, Copy, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
 import { adminAIAPI } from '../../services/adminApi';
@@ -49,7 +50,7 @@ export default function AdminContentGenerator() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">AI Content Generator</h1>
+        <h1 className="text-2xl font-bold text-gray-900">AI Content Generator<AdminHowItWorks page="contentGenerator" /></h1>
         <p className="text-gray-500 text-sm mt-1">Generate marketing copy, announcements, and notifications with AI.</p>
       </div>
 

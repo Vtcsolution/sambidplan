@@ -22,22 +22,23 @@ import {
   getBackupCodes,
 } from '../controllers/twoFactorController.js';
 import { protect } from '../middleware/authMiddleware.js';
-import loginLimiter from '../middleware/loginLimiter.js';
+import loginLimiter, { sensitiveAuthLimiter } from '../middleware/loginLimiter.js';
+import { passwordLengthGuard } from '../middleware/securityMiddleware.js';
 
 const router = express.Router();
 
-router.post('/register', loginLimiter, registerUser);
-router.post('/login',    loginLimiter, loginUser);
+router.post('/register', loginLimiter, passwordLengthGuard, registerUser);
+router.post('/login',    loginLimiter, passwordLengthGuard, loginUser);
 
 // 2FA routes
 router.post('/2fa/setup',        protect, setup2FA);
 router.post('/2fa/enable',       protect, enable2FA);
 router.post('/2fa/disable',      protect, disable2FA);
-router.post('/2fa/verify-login', verifyLogin2FA);   // no auth — called before JWT is issued
+router.post('/2fa/verify-login', sensitiveAuthLimiter, verifyLogin2FA);
 router.get( '/2fa/backup-codes', protect, getBackupCodes);
-router.post('/forgot-password', forgotPassword);
-router.post('/verify-reset-otp', verifyResetOtp);
-router.post('/reset-password/:token', resetPassword);
+router.post('/forgot-password',       sensitiveAuthLimiter, forgotPassword);
+router.post('/verify-reset-otp',      sensitiveAuthLimiter, verifyResetOtp);
+router.post('/reset-password/:token', sensitiveAuthLimiter, passwordLengthGuard, resetPassword);
 router.get('/verify-email/:token', verifyEmail);
 router.post('/resend-verification', protect, resendVerificationEmail);
 router.get('/profile', protect, getProfile);

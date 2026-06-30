@@ -10,6 +10,9 @@ Allow: /login
 Allow: /signup
 Allow: /terms
 Allow: /privacy
+Allow: /faq
+Allow: /features
+Allow: /features/
 
 # Block all private dashboard, user tools, and API routes
 Disallow: /dashboard

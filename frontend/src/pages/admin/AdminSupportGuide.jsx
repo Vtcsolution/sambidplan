@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { useNavigate } from 'react-router-dom';
 import {
   Trophy, Target, Star, TrendingUp, Users, CheckCircle,
@@ -304,7 +305,7 @@ export default function AdminSupportGuide() {
           <BookOpen className="w-5 h-5 text-indigo-600" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Earning Guide</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Earning Guide<AdminHowItWorks page="supportGuide" /></h1>
           <p className="text-sm text-gray-500">Your complete playbook for building lifetime income from referrals.</p>
         </div>
       </div>

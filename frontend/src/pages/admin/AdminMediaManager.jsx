@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { Upload, Trash2, Image, Video, CheckCircle, AlertCircle, Loader, Eye, Film, Home, Star } from 'lucide-react';
 import axios from 'axios';
 
@@ -215,7 +216,7 @@ export default function AdminMediaManager() {
     <div className="max-w-5xl mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Page Media Manager</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Page Media Manager<AdminHowItWorks page="mediaManager" /></h1>
         <p className="text-gray-500 text-sm">Upload videos and screenshots that appear on the public home and features pages.</p>
       </div>
 

@@ -429,7 +429,7 @@ export default function AIPredictionsWidget({ userPlan }) {
             {/* Footer */}
             <div className="text-xs text-gray-400 flex items-center gap-1 pt-1 border-t border-gray-50">
               <TrendingUp className="w-3 h-3" />
-              Powered by GPT-4 · Based on your NAICS {data?.userProfile?.naicsCodes?.join(', ')}
+              Based on your NAICS {data?.userProfile?.naicsCodes?.join(', ')}
             </div>
           </>
         )}

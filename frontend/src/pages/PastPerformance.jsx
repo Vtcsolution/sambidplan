@@ -5,6 +5,8 @@ import {
   Loader2, Award, Users, Tag, ClipboardList, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { pastPerformanceAPI } from '../services/api';
+import HowItWorks from '../components/HowItWorks';
+import AIResponseRenderer from '../components/AIResponseRenderer';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CONTRACT_TYPES  = ['FFP', 'T&M', 'Cost-Plus', 'IDIQ', 'BPA', 'CPFF', 'CPAF', 'Other'];
@@ -408,7 +410,7 @@ function ExportModal({ record, onClose }) {
         <div className="flex-1 overflow-y-auto p-6">
           {loading
             ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
-            : <pre className="text-xs font-mono text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-200">{text}</pre>
+            : <div className="bg-gray-50 p-4 rounded-xl border border-gray-200"><AIResponseRenderer content={text} className="text-xs" /></div>
           }
         </div>
       </div>
@@ -597,13 +599,32 @@ export default function PastPerformancePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Page header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Award className="w-6 h-6 text-indigo-600" /> Past Performance
+              <HowItWorks
+                title="Past Performance Repository"
+                steps={[
+                  { title: 'Add your federal contracts', description: 'Enter contract details: title, agency, value, dates, NAICS, role (prime/sub), CPARS rating, POC, key personnel' },
+                  { title: 'Auto-format as SF-330 citations', description: 'One click → your contract formatted as an SF-330 past performance citation ready to paste into proposals' },
+                  { title: 'AI uses your real wins', description: 'Every AI feature (Bid Analysis, Proposals, Competitive Analysis, Risk Assessment) automatically pulls your stored past performance — no re-entering' },
+                  { title: 'Search & filter', description: 'Find past contracts by agency, NAICS, role, or contract type when building proposals' },
+                ]}
+                dataUsed={['Your Entered Contracts', 'USASpending (auto-imported wins)']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>AI Proposal Builder</strong> → auto-inserts your real past performance into proposals</li>
+                  <li><strong>AI Bid Analysis</strong> → compares your track record against real competitors</li>
+                  <li><strong>AI Predictions</strong> → past wins improve win probability accuracy</li>
+                  <li><strong>Go/No-Go</strong> → past performance match is a scored factor in the decision matrix</li>
+                  <li><strong>Competitive Analysis</strong> → positions your wins against USASpending competitors</li>
+                </ul>
+              </HowItWorks>
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               {records.length} contract{records.length !== 1 ? 's' : ''}

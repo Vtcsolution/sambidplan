@@ -5,9 +5,251 @@ import {
   Users, TrendingUp, Clock, CreditCard, FileText, DollarSign,
   Eye, RefreshCw, Bookmark, BookmarkCheck, Database,
   Activity, Download, CheckCircle, AlertCircle, Loader2, Zap,
-  Wallet, Copy, CheckCheck, Gift, Star, ArrowUpRight, CreditCard as CardIcon
+  Wallet, Copy, CheckCheck, Gift, Star, ArrowUpRight, CreditCard as CardIcon,
+  BarChart3, Brain, Coins, Calendar
 } from 'lucide-react';
-import { adminPanelAPI as adminAPI, supportAPI } from '../../services/adminApi';
+import adminAxios, { adminPanelAPI as adminAPI, supportAPI } from '../../services/adminApi';
+import { exportSamBidReport } from '../../utils/exportUtils';
+
+// ── SVG Mini Chart Components ────────────────────────────────────────────────
+function BarChart({ data, dataKey, color = '#4f46e5', height = 180 }) {
+  if (!data?.length) return null;
+  const max = Math.max(...data.map(d => d[dataKey]), 1);
+  const barW = Math.max(12, Math.min(36, (100 / data.length)));
+  const gap = Math.max(2, (100 - barW * data.length) / (data.length + 1));
+  return (
+    <svg viewBox={`0 0 600 ${height + 30}`} className="w-full" style={{ height: height + 30 }}>
+      {/* Grid lines */}
+      {[0, 0.25, 0.5, 0.75, 1].map(f => {
+        const y = height - f * height;
+        return (
+          <g key={f}>
+            <line x1={40} y1={y} x2={590} y2={y} stroke="#f1f5f9" strokeWidth={1} />
+            <text x={36} y={y + 4} textAnchor="end" fill="#94a3b8" fontSize={10}>{Math.round(max * f).toLocaleString()}</text>
+          </g>
+        );
+      })}
+      {/* Bars */}
+      {data.map((d, i) => {
+        const barH = Math.max(2, (d[dataKey] / max) * height);
+        const x = 45 + i * ((590 - 45) / data.length) + gap;
+        const w = ((590 - 45) / data.length) - gap * 2;
+        return (
+          <g key={i}>
+            <rect x={x} y={height - barH} width={Math.max(w, 8)} height={barH} rx={3} fill={color} opacity={0.85}>
+              <title>{d.month}: {d[dataKey].toLocaleString()}</title>
+            </rect>
+            <text x={x + Math.max(w, 8) / 2} y={height + 16} textAnchor="middle" fill="#64748b" fontSize={9}>{d.month}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function LineChart({ data, lines, height = 180 }) {
+  if (!data?.length) return null;
+  const allVals = lines.flatMap(l => data.map(d => d[l.key]));
+  const max = Math.max(...allVals, 1);
+  const xPad = 45;
+  const w = 590 - xPad;
+  const pointX = (i) => xPad + (i / (data.length - 1 || 1)) * w;
+  const pointY = (v) => height - (v / max) * height;
+  return (
+    <svg viewBox={`0 0 600 ${height + 30}`} className="w-full" style={{ height: height + 30 }}>
+      {[0, 0.25, 0.5, 0.75, 1].map(f => {
+        const y = height - f * height;
+        return (
+          <g key={f}>
+            <line x1={40} y1={y} x2={590} y2={y} stroke="#f1f5f9" strokeWidth={1} />
+            <text x={36} y={y + 4} textAnchor="end" fill="#94a3b8" fontSize={10}>{Math.round(max * f).toLocaleString()}</text>
+          </g>
+        );
+      })}
+      {lines.map(line => {
+        const points = data.map((d, i) => `${pointX(i)},${pointY(d[line.key])}`).join(' ');
+        const areaPoints = `${pointX(0)},${height} ` + points + ` ${pointX(data.length - 1)},${height}`;
+        return (
+          <g key={line.key}>
+            <polygon points={areaPoints} fill={line.color} opacity={0.08} />
+            <polyline points={points} fill="none" stroke={line.color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+            {data.map((d, i) => (
+              <circle key={i} cx={pointX(i)} cy={pointY(d[line.key])} r={3.5} fill="#fff" stroke={line.color} strokeWidth={2}>
+                <title>{d.month}: {d[line.key].toLocaleString()}</title>
+              </circle>
+            ))}
+          </g>
+        );
+      })}
+      {data.map((d, i) => (
+        <text key={i} x={pointX(i)} y={height + 16} textAnchor="middle" fill="#64748b" fontSize={9}>{d.month}</text>
+      ))}
+    </svg>
+  );
+}
+
+function ChartCard({ title, icon: Icon, iconColor, children, legend }) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-lg ${iconColor} flex items-center justify-center`}>
+            <Icon className="w-4 h-4 text-white" />
+          </div>
+          <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+        </div>
+        {legend && (
+          <div className="flex items-center gap-3">
+            {legend.map(l => (
+              <div key={l.label} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ background: l.color }} />
+                <span className="text-xs text-gray-500">{l.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function AnalyticsDashboard() {
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [period, setPeriod]       = useState(12);
+
+  useEffect(() => {
+    setLoading(true);
+    adminAxios.get(`/admin/analytics?months=${period}`)
+      .then(r => { if (r.data.success) setAnalytics(r.data.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [period]);
+
+  if (loading) return (
+    <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-indigo-500" /></div>
+  );
+  if (!analytics) return null;
+
+  const { series, totals, planDistribution } = analytics;
+  const current  = series[series.length - 1] || {};
+  const previous = series[series.length - 2] || {};
+  const pct = (cur, prev) => prev > 0 ? ((cur - prev) / prev * 100).toFixed(0) : cur > 0 ? '+100' : '0';
+
+  const planData = [
+    { name: 'Trial',      value: planDistribution.trial,      color: '#94a3b8' },
+    { name: 'Free',       value: planDistribution.free,       color: '#64748b' },
+    { name: 'Starter',    value: planDistribution.starter,    color: '#3b82f6' },
+    { name: 'Pro',        value: planDistribution.pro,        color: '#8b5cf6' },
+    { name: 'Enterprise', value: planDistribution.enterprise, color: '#f59e0b' },
+  ];
+  const planTotal = planData.reduce((s, p) => s + p.value, 0) || 1;
+
+  return (
+    <div className="space-y-5">
+      {/* Period selector + summary cards */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-gray-400" />
+          <span className="text-sm font-semibold text-gray-700">Analytics</span>
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+          {[{ v: 3, l: '3M' }, { v: 6, l: '6M' }, { v: 12, l: '1Y' }].map(p => (
+            <button key={p.v} onClick={() => setPeriod(p.v)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${period === p.v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              {p.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Mini KPI cards with trend */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'New Users', value: current.newUsers, prev: previous.newUsers, icon: Users, color: 'bg-blue-500', border: 'border-blue-200', total: `${current.totalUsers || 0} total` },
+          { label: 'Revenue', value: `$${(current.revenue || 0).toLocaleString()}`, prev: previous.revenue, icon: DollarSign, color: 'bg-green-500', border: 'border-green-200', total: `$${totals.revenue.toLocaleString()} total` },
+          { label: 'AI Credits Used', value: current.aiCredits, prev: previous.aiCredits, icon: Coins, color: 'bg-violet-500', border: 'border-violet-200', total: `${current.aiCalls || 0} calls` },
+          { label: 'Invoices', value: current.invoices, prev: previous.invoices, icon: FileText, color: 'bg-amber-500', border: 'border-amber-200', total: `${totals.aiCalls} AI calls total` },
+        ].map(({ label, value, prev, icon: Icon, color, border, total }) => {
+          const change = typeof value === 'number' ? pct(value, prev) : null;
+          return (
+            <div key={label} className={`bg-white rounded-xl border ${border} p-4`}>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+                <div className={`w-7 h-7 rounded-lg ${color} flex items-center justify-center`}>
+                  <Icon className="w-3.5 h-3.5 text-white" />
+                </div>
+              </div>
+              <p className="text-xl font-bold text-gray-900">{typeof value === 'number' ? value.toLocaleString() : value}</p>
+              <div className="flex items-center gap-2 mt-1">
+                {change !== null && (
+                  <span className={`text-xs font-semibold ${Number(change) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {Number(change) >= 0 ? '↑' : '↓'}{Math.abs(change)}%
+                  </span>
+                )}
+                <span className="text-xs text-gray-400">{total}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Charts row 1: Revenue + Users */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <ChartCard title="Monthly Revenue" icon={DollarSign} iconColor="bg-green-500">
+          <BarChart data={series} dataKey="revenue" color="#22c55e" />
+        </ChartCard>
+        <ChartCard title="User Growth" icon={Users} iconColor="bg-blue-500"
+          legend={[{ label: 'Total Users', color: '#3b82f6' }, { label: 'New Users', color: '#8b5cf6' }]}>
+          <LineChart data={series} lines={[
+            { key: 'totalUsers', color: '#3b82f6' },
+            { key: 'newUsers', color: '#8b5cf6' },
+          ]} />
+        </ChartCard>
+      </div>
+
+      {/* Charts row 2: AI Credits + Plan Distribution */}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <ChartCard title="AI Credit Usage" icon={Brain} iconColor="bg-violet-500"
+          legend={[{ label: 'Credits', color: '#8b5cf6' }, { label: 'Calls', color: '#06b6d4' }]}>
+          <LineChart data={series} lines={[
+            { key: 'aiCredits', color: '#8b5cf6' },
+            { key: 'aiCalls', color: '#06b6d4' },
+          ]} />
+        </ChartCard>
+
+        <ChartCard title="Current Plan Distribution" icon={BarChart3} iconColor="bg-indigo-500">
+          <div className="space-y-3 mt-2">
+            {planData.map(p => (
+              <div key={p.name}>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: p.color }} />
+                    <span className="text-sm text-gray-700">{p.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-900">{p.value}</span>
+                    <span className="text-xs text-gray-400">{Math.round(p.value / planTotal * 100)}%</span>
+                  </div>
+                </div>
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(p.value / planTotal) * 100}%`, background: p.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Stacked bar */}
+          <div className="flex h-3 rounded-full overflow-hidden mt-4 bg-gray-100">
+            {planData.filter(p => p.value > 0).map(p => (
+              <div key={p.name} className="h-full transition-all duration-500" style={{ width: `${(p.value / planTotal) * 100}%`, background: p.color }} title={`${p.name}: ${p.value}`} />
+            ))}
+          </div>
+        </ChartCard>
+      </div>
+    </div>
+  );
+}
 
 const StatCard = ({ title, value, sub, icon: Icon, color, border }) => (
   <div className={`bg-white rounded-xl shadow-sm p-4 sm:p-5 border-l-4 ${border}`}>
@@ -118,7 +360,7 @@ function SupportDashboard() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">My Dashboard</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">My Dashboard<AdminHowItWorks page="dashboard" /></h1>
             <p className="text-sm text-gray-500 mt-1">Welcome back, {adminName} — here's your referral overview.</p>
           </div>
           <button onClick={fetchStats}
@@ -421,6 +663,9 @@ function AdminMainDashboard() {
           <StatCard title="Pro + Enterprise"   value={(stats?.proUsers || 0) + (stats?.enterpriseUsers || 0)} sub={`${stats?.starterUsers || 0} Starter, ${stats?.freeUsers || 0} Free`} icon={TrendingUp} color="bg-purple-500" border="border-purple-500" />
         </div>
 
+        {/* ── Analytics Charts ─────────────────────────────────────────────── */}
+        <AnalyticsDashboard />
+
         {/* ── Row 2: Saved Opps + Opportunity Store ──────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard title="Saved Opps (Lifetime)" value={(stats?.totalSavedLifetime || 0).toLocaleString()} sub="All users, all time"        icon={Bookmark}      color="bg-emerald-500" border="border-emerald-500" />
@@ -638,6 +883,13 @@ function AdminMainDashboard() {
               </Link>
             ))}
           </div>
+          <button
+            onClick={exportSamBidReport}
+            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors text-sm"
+          >
+            <Download className="w-4 h-4" />
+            Download SamBid Competitive Report (PDF)
+          </button>
         </div>
 
     </div>

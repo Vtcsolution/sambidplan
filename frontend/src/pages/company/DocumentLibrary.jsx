@@ -6,6 +6,7 @@ import {
 import { companyAPI } from '../../services/api';
 import { useUserPlan } from '../../hooks/useUserPlan';
 import PlanGate from '../../components/PlanGate';
+import HowItWorks from '../../components/HowItWorks';
 
 const CATEGORIES = [
   { value: 'all',              label: 'All Files',       color: 'text-gray-600',   bg: 'bg-gray-100' },
@@ -334,7 +335,20 @@ export default function DocumentLibrary() {
               <FolderOpen className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Document Library</h1>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">Document Library
+                <HowItWorks title="Document Library" steps={[
+                  { title: 'Upload documents', description: 'Store proposals, templates, certifications, SOWs, and reference materials for your team' },
+                  { title: 'Team access', description: 'All workspace members can view and download shared documents' },
+                  { title: 'Comment & discuss', description: 'Add comments to any document for team collaboration' },
+                ]} dataUsed={['Your Uploaded Files']} >
+                  <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                  <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                    <li><strong>Proposal Builder</strong> → reference past proposals when writing new ones</li>
+                    <li><strong>RFP Analyzer</strong> → upload RFP documents here for your team, then analyze with AI</li>
+                    <li><strong>Team Members</strong> → control who can access which documents via role permissions</li>
+                  </ul>
+                </HowItWorks>
+              </h1>
               <p className="text-sm text-gray-500">{company.name} · {docs.length} document{docs.length !== 1 ? 's' : ''}</p>
             </div>
           </div>

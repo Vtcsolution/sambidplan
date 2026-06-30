@@ -13,4 +13,14 @@ const loginLimiter = rateLimit({
   message: { success: false, message: 'Too many login attempts — please wait 15 minutes.' },
 });
 
+// Sensitive auth limiter: 5 attempts / 15 min (password reset, OTP)
+export const sensitiveAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 0 : 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isDev,
+  message: { success: false, message: 'Too many attempts — please wait 15 minutes.' },
+});
+
 export default loginLimiter;

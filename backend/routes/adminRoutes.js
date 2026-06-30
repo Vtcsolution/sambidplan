@@ -1,8 +1,10 @@
 // backend/routes/adminRoutes.js
 import express from 'express';
 import { flexAdmin } from '../middleware/flexAdminMiddleware.js';
+import { superAdminOnly } from '../middleware/adminAuthMiddleware.js';
 import {
   // Plan Request Controllers
+  getDashboardAnalytics,
   getPlanRequests,
   createPlanRequest,
   getUserPlanRequests,
@@ -35,6 +37,8 @@ import {
   updateUserPlan,
   updateUserRole,
   deleteUser,
+  grantCredits,
+  unlockUser,
   testEmail,
   // Dashboard
   getRecentActivity,
@@ -56,6 +60,11 @@ import {
   getPendingCounts,
 } from '../controllers/adminController.js';
 import { reconcileReferralCommissions } from '../controllers/referralController.js';
+import {
+  getCreditUsageLogs, getCreditUsageSummary,
+  getUserCreditHistory, sendCreditReport,
+} from '../controllers/adminCreditController.js';
+import { getAIKeyStatus } from '../controllers/adminAIKeysController.js';
 
 const router = express.Router();
 
@@ -64,15 +73,16 @@ router.use(flexAdmin);
 
 // Dashboard & Stats
 router.get('/stats',                  getAdminStats);
+router.get('/analytics',              getDashboardAnalytics);
 router.get('/pending-counts',         getPendingCounts);
 router.post('/trigger-fetch',         triggerSAMFetch);
 router.post('/trigger-bulk',          triggerBulkFetch);
 router.get('/hybrid-opportunities',   getHybridOpportunities);
 router.get('/recent-activity',        getRecentActivity);
 
-// Settings
+// Settings — super_admin only (API keys, SMTP, payment gateways are system-level)
 router.get('/settings', getSettings);
-router.put('/settings', updateSettings);
+router.put('/settings', superAdminOnly, updateSettings);
 
 // Notifications
 router.get('/notifications', getNotifications);
@@ -101,6 +111,8 @@ router.get('/users', getAllUsers);
 router.get('/users/:id', getUserById);
 router.put('/users/:id/plan', updateUserPlan);
 router.put('/users/:id/role', updateUserRole);
+router.put('/users/:id/grant-credits', grantCredits);
+router.put('/users/:id/unlock', unlockUser);
 router.delete('/users/:id', deleteUser);
 
 // Referral management
@@ -112,7 +124,7 @@ router.post('/referrals/reconcile',    async (req, res) => {
   res.json({ success: true, ...result });
 });
 
-// SAM Company Directory
+// SAM Company Directory — clear is BLOCKED for everyone (protected data)
 router.get('/companies',                    getSamCompanies);
 router.get('/companies/stats',              getSamSyncStats);
 router.get('/companies/source-stats',       getCompanySourceStats);
@@ -122,5 +134,14 @@ router.post('/companies/sync-usaspending',  syncUsaSpendingSource);
 router.post('/companies/sync-fpds',         syncFpdsSource);
 router.post('/companies/sync-sba',          syncSbaSource);
 router.post('/companies/clear',             clearAllCompanies);
+
+// AI Keys & Provider Status
+router.get('/ai-keys/status',        getAIKeyStatus);
+
+// AI Credit Usage
+router.get('/credits/logs',           getCreditUsageLogs);
+router.get('/credits/summary',        getCreditUsageSummary);
+router.get('/credits/user/:userId',   getUserCreditHistory);
+router.post('/credits/send-report',   sendCreditReport);
 
 export default router;

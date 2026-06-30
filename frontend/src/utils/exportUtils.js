@@ -471,3 +471,449 @@ export const exportSavedCSV = (saved) => {
   const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
   downloadBlob(csv, `sambid-notify-saved-${new Date().toISOString().slice(0, 10)}.csv`);
 };
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 6.  SAMBID COMPETITIVE REPORT  →  PDF
+// ═════════════════════════════════════════════════════════════════════════════
+
+const WHITE = [255, 255, 255];
+const LIGHT_BG = [248, 250, 252];
+const RED_ICON = [220, 38, 38];
+const GREEN_ICON = [22, 163, 74];
+
+const addCoverPage = (doc) => {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+
+  // Full indigo background
+  doc.setFillColor(...BRAND_COLOR);
+  doc.rect(0, 0, W, H, 'F');
+
+  // Brand
+  doc.setTextColor(...WHITE);
+  doc.setFontSize(42);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SamBid', W / 2, H * 0.32, { align: 'center' });
+
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'normal');
+  doc.text('The Only Platform That Finds, Wins & Delivers', W / 2, H * 0.39, { align: 'center' });
+  doc.text('Federal Contracts', W / 2, H * 0.43, { align: 'center' });
+
+  // Divider line
+  doc.setDrawColor(255, 255, 255, 80);
+  doc.setLineWidth(0.5);
+  doc.line(W * 0.3, H * 0.48, W * 0.7, H * 0.48);
+
+  // Stats
+  doc.setFontSize(11);
+  const stats = ['57 Features  |  10 AI Tools  |  20 Exclusive Features  |  4 Data Sources'];
+  doc.text(stats[0], W / 2, H * 0.54, { align: 'center' });
+
+  // Bottom
+  doc.setFontSize(9);
+  doc.text('Competitive Intelligence Report', W / 2, H * 0.72, { align: 'center' });
+  doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, W / 2, H * 0.76, { align: 'center' });
+  doc.text('www.sambid.co', W / 2, H * 0.82, { align: 'center' });
+  doc.setFontSize(7);
+  doc.text('CONFIDENTIAL — For Authorized Recipients Only', W / 2, H * 0.92, { align: 'center' });
+};
+
+const addSectionTitle = (doc, y, title, icon) => {
+  const W = doc.internal.pageSize.getWidth();
+  doc.setFillColor(...BRAND_COLOR);
+  doc.rect(14, y, 4, 16, 'F');
+  doc.setTextColor(...BRAND_COLOR);
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`${icon}  ${title}`, 24, y + 12);
+  doc.setDrawColor(229, 231, 235);
+  doc.setLineWidth(0.3);
+  doc.line(14, y + 20, W - 14, y + 20);
+  return y + 28;
+};
+
+const checkPage = (doc, y, need = 60) => {
+  if (y + need > doc.internal.pageSize.getHeight() - 30) {
+    doc.addPage();
+    return 30;
+  }
+  return y;
+};
+
+export const exportSamBidReport = () => {
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+
+  // ── Page 1: Cover ────────────────────────────────────────────
+  addCoverPage(doc);
+
+  // ── Page 2: The 7-Step Gap ───────────────────────────────────
+  doc.addPage();
+  let y = addHeader(doc, 'Competitive Intelligence Report', 'What Competitors Do vs. What We Do');
+  y = addSectionTitle(doc, y, 'The 7-Step Gap — Why Competitors Fall Short', '');
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Step', 'What Business Needs', 'Competitors', 'SamBid']],
+    body: [
+      ['1. Find', 'Contracts matched to my NAICS', 'Show a list, you figure it out', 'Auto-matched, AI-scored 0-100%'],
+      ['2. Understand', 'Full contract details', 'Basic title + description', '40+ fields from SAM.gov'],
+      ['3. Decide', 'Should I bid? Real data', 'Nothing — you guess', 'AI + real competitors from USASpending'],
+      ['4. Write', 'Professional proposal', 'Nothing — hire $15K consultant', 'AI writes 7-section proposal'],
+      ['5. Submit', 'Manage the bid process', 'Nothing — you do it alone', 'Managed service: we bid for you'],
+      ['6. Deliver', 'Workforce & milestones', 'Nothing — platform disappears', 'Subcontracting: quotes, milestones, alerts'],
+      ['7. Get Paid', 'Track Net-30 payment', 'Nothing', 'Gov payment tracker + auto-alerts'],
+    ],
+    headStyles: { fillColor: BRAND_COLOR, textColor: WHITE, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, textColor: DARK },
+    alternateRowStyles: { fillColor: LIGHT_BG },
+    columnStyles: { 0: { cellWidth: 52, fontStyle: 'bold' }, 1: { cellWidth: 130 }, 2: { cellWidth: 155 }, 3: { cellWidth: 155 } },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 16;
+
+  // Callout box
+  y = checkPage(doc, y, 40);
+  doc.setFillColor(254, 243, 199);
+  doc.roundedRect(14, y, doc.internal.pageSize.getWidth() - 28, 28, 4, 4, 'F');
+  doc.setTextColor(146, 64, 14);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Competitors cover Step 1. SamBid covers all 7.', doc.internal.pageSize.getWidth() / 2, y + 17, { align: 'center' });
+
+  // ── Page 3: Feature Count Comparison ─────────────────────────
+  doc.addPage();
+  y = addHeader(doc, 'Competitive Intelligence Report', 'Feature Count Comparison');
+  y = addSectionTitle(doc, y, 'Total Feature Count: SamBid vs. Every Competitor', '');
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Category', 'SamBid', 'GovWin ($5K/mo)', 'GovTribe ($458/mo)', 'BidPrime ($995/mo)', 'GovDash (Custom)', 'SAM.gov (Free)']],
+    body: [
+      ['AI Tools', '10', '0', '0', '0', '2', '0'],
+      ['Data Sources in AI', '4', '0', '0', '0', '1', '0'],
+      ['Smart Filter Types', '10', '3', '4', '3', '2', '2'],
+      ['Export Formats', '8', '2', '0', '1', '1', '0'],
+      ['Alert Types', '8', '1', '1', '1', '1', '1'],
+      ['Pipeline Features', '6', '0', '0', '0', '2', '0'],
+      ['Post-Win Features', '8', '0', '0', '0', '0', '0'],
+      ['Workspace Features', '7', '2', '0', '0', '0', '0'],
+      ['TOTAL', '57', '8', '5', '5', '6', '3'],
+    ],
+    headStyles: { fillColor: BRAND_COLOR, textColor: WHITE, fontSize: 7, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, textColor: DARK, halign: 'center' },
+    alternateRowStyles: { fillColor: LIGHT_BG },
+    columnStyles: { 0: { halign: 'left', fontStyle: 'bold', cellWidth: 100 }, 1: { textColor: BRAND_COLOR, fontStyle: 'bold' } },
+    didDrawCell: (data) => {
+      if (data.section === 'body' && data.row.index === 8) {
+        doc.setFont('helvetica', 'bold');
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 20;
+
+  // SamBid bar highlight
+  y = checkPage(doc, y, 50);
+  doc.setFillColor(238, 242, 255);
+  doc.roundedRect(14, y, doc.internal.pageSize.getWidth() - 28, 36, 4, 4, 'F');
+  doc.setTextColor(...BRAND_COLOR);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SamBid: 57 Features', 30, y + 15);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...GRAY);
+  doc.text('Next best competitor (GovWin): 8 features — SamBid has 7x more at 1/50th the price', 30, y + 28);
+
+  // ── Page 4-5: Competitor Missing Features ────────────────────
+  const competitors = [
+    { name: 'GovWin IQ (Deltek)', price: '$2,000-$5,000/mo', have: 'Deep historical data, budget forecasts, agency contacts', missing: [
+      'No AI analysis of any kind', 'No proposal writing', 'No match scoring', 'No calendar integration', 'No bid pipeline / kanban', 'No managed bidding', 'No subcontracting system',
+      'No free tier', 'No capability statement generator', 'No RFP analyzer', 'No Go/No-Go tool', 'No sources sought generator', 'No certification expiry alerts',
+      'No auto deadline alerts (7-day, 3-day)', 'No gov payment tracking', 'No vendor quote management', 'No milestone-based payments',
+    ]},
+    { name: 'GovTribe', price: '$150-$458/mo', have: 'Multi-source aggregation, clean UI, teaming data', missing: [
+      'No AI match scoring', 'No AI bid/no-bid analysis', 'No AI proposal writing', 'No AI competitive intel', 'No AI risk assessment', 'No AI Go/No-Go matrix',
+      'No AI capability statement', 'No AI sources sought', 'No AI RFP analyzer', 'No AI win predictions', 'No smart date presets', 'No calendar integration',
+      'No kanban bid pipeline', 'No past performance repo (SF-330)', 'No managed bidding', 'No subcontracting', 'No vendor quotes', 'No milestone tracking',
+      'No gov payment tracking', 'No cert expiry alerts', 'No push notifications', 'No proposal PDF themes', 'No free tier',
+    ]},
+    { name: 'BidPrime', price: '$495-$995/mo', have: 'Broadest coverage (110K agencies, state+local+tribal)', missing: [
+      'No AI features (zero)', 'No match scoring', 'No competitor intelligence', 'No proposal writing', 'No RFP analysis', 'No Go/No-Go tool',
+      'No capability statement', 'No sources sought', 'No smart filters with presets', 'No NAICS auto-dropdown', 'No active filter tags', 'No calendar integration',
+      'No kanban pipeline', 'No past performance repo', 'No company workspace', 'No SAM.gov entity verification', 'No managed bidding', 'No subcontracting',
+      'No deadline auto-alerts', 'No gov payment tracking', 'No referral program', 'No free tier',
+    ]},
+    { name: 'GovDash', price: 'Custom (Enterprise)', have: 'AI proposals (partial), capture management', missing: [
+      'No AI bid analysis with real USASpending data', 'No AI Go/No-Go 12-factor matrix', 'No AI capability statement', 'No AI sources sought response',
+      'No AI risk assessment with evidence', 'No company past wins auto-imported', 'No SAM.gov entity verification', 'No smart date presets', 'No active filter tags',
+      'No kanban pipeline with win rate', 'No deadline calendar', 'No managed bidding', 'No subcontracting', 'No vendor quotes', 'No milestone tracking',
+      'No gov payment tracking', 'No auto deadline alerts', 'No cert expiry alerts', 'No weekly project summaries', 'No free tier', 'No transparent pricing',
+    ]},
+    { name: 'SAM.gov', price: 'Free', have: 'Official government data source (required for registration)', missing: [
+      'No AI (anything)', 'No match scoring', 'No smart filters', 'No competitor data (separate site)', 'No proposal tools', 'No export (PDF/CSV)',
+      'No calendar integration', 'No bid pipeline', 'No custom alerts', 'No push notifications', 'No team workspace', 'No past performance repo',
+      'No managed bidding', 'No subcontracting', 'Terrible user experience',
+    ]},
+  ];
+
+  for (const comp of competitors) {
+    doc.addPage();
+    y = addHeader(doc, 'Competitive Intelligence Report', `vs. ${comp.name}`);
+    y = addSectionTitle(doc, y, `${comp.name}  —  ${comp.price}`, '');
+
+    // What they have (green box)
+    doc.setFillColor(220, 252, 231);
+    doc.roundedRect(14, y, doc.internal.pageSize.getWidth() - 28, 24, 3, 3, 'F');
+    doc.setTextColor(22, 101, 52);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('What they have: ', 20, y + 15);
+    doc.setFont('helvetica', 'normal');
+    doc.text(comp.have, 88, y + 15);
+    y += 34;
+
+    // Missing features title
+    doc.setTextColor(220, 38, 38);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`What they're MISSING (${comp.missing.length} features SamBid has):`, 14, y + 4);
+    y += 16;
+
+    // Missing list in two columns
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...DARK);
+    const colW = (doc.internal.pageSize.getWidth() - 28) / 2;
+    const half = Math.ceil(comp.missing.length / 2);
+    for (let i = 0; i < comp.missing.length; i++) {
+      y = checkPage(doc, y, 14);
+      const x = i < half ? 20 : 20 + colW;
+      const row = i < half ? i : i - half;
+      const ry = (i < half ? y : y - (half * 13)) + row * 13;
+
+      doc.setTextColor(...RED_ICON);
+      doc.text('✗', x, ry + 2);
+      doc.setTextColor(...DARK);
+      doc.text(comp.missing[i], x + 12, ry + 2);
+    }
+    if (comp.missing.length > half) y += half * 13 + 6;
+    else y += comp.missing.length * 13 + 6;
+  }
+
+  // ── Page: 10 AI Tools ────────────────────────────────────────
+  doc.addPage();
+  y = addHeader(doc, 'Competitive Intelligence Report', '10 AI Tools — Powered by Real Government Data');
+  y = addSectionTitle(doc, y, '10 AI Tools — Every One Uses 4 Real Data Sources', '');
+
+  // Data sources box
+  doc.setFillColor(238, 242, 255);
+  doc.roundedRect(14, y, doc.internal.pageSize.getWidth() - 28, 44, 4, 4, 'F');
+  doc.setTextColor(...BRAND_COLOR);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Before any AI generates anything, it pulls from:', 20, y + 14);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...DARK);
+  doc.text('1. SAM.gov Opportunities API — 40+ fields per contract (dates, contacts, office chain, award details)', 20, y + 26);
+  doc.text('2. USASpending.gov API — Real companies who won similar contracts, actual dollar amounts', 20, y + 34);
+  doc.text('3. SAM.gov Entity API — Your verified UEI, CAGE, certifications, business types', 322, y + 26);
+  doc.text('4. Your Past Wins — Auto-imported contract history from USASpending', 322, y + 34);
+  y += 54;
+
+  const aiTools = [
+    ['AI Summarize', 'Reads all 40+ fields → structured summary with dates, contacts, requirements, red flags'],
+    ['AI Bid Analysis', 'Real competitors from USASpending → BID/NO-BID, win probability, suggested bid range with actual $ numbers'],
+    ['AI Competitive Intel', 'Names REAL companies, their win counts, total values → compares against YOUR profile and past wins'],
+    ['AI Risk Assessment', 'Rates 6 categories (Technical, Financial, Schedule, Competitive, Compliance, Performance) with real evidence'],
+    ['AI Full Proposal', '7-section proposal using your real past wins, real competitor pricing, real contract data → PDF in 6 themes'],
+    ['AI RFP Analyzer', 'Upload PDF → requirements extracted, compliance checklist (15-20 items), GO/NO-GO recommendation'],
+    ['AI Go/No-Go', '12-factor scoring matrix (0-10 each) → GO / NO-GO / CONDITIONAL with total score'],
+    ['AI Capability Statement', 'Professional one-pager with NAICS, certifications, competencies → hand to any contracting officer'],
+    ['AI Sources Sought', '8-section pre-RFP response → get on agency radar BEFORE solicitation drops'],
+    ['AI Win Predictions', 'Win probability scoring + urgency level + personalized 5-step bid strategy per contract'],
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    head: [['#', 'AI Tool', 'What It Does (Using Real Government Data)']],
+    body: aiTools.map((t, i) => [String(i + 1), t[0], t[1]]),
+    headStyles: { fillColor: BRAND_COLOR, textColor: WHITE, fontSize: 7.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, textColor: DARK },
+    alternateRowStyles: { fillColor: LIGHT_BG },
+    columnStyles: { 0: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }, 1: { cellWidth: 100, fontStyle: 'bold', textColor: BRAND_COLOR } },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ── Page: Managed Bidding + Subcontracting ───────────────────
+  doc.addPage();
+  y = addHeader(doc, 'Competitive Intelligence Report', 'Managed Bidding & Subcontracting');
+  y = addSectionTitle(doc, y, 'Managed Bidding — We Bid For You (Zero Competitors Offer This)', '');
+
+  const managedSteps = [
+    ['1', 'You Sign Up', 'Apply for managed service from your company dashboard'],
+    ['2', 'We Find Contracts', 'Our team identifies opportunities matching your NAICS, certs, past performance'],
+    ['3', 'We Write Proposals', 'AI + GovCon team writes professional proposals using your real data'],
+    ['4', 'We Submit Bids', 'We manage the entire submission process'],
+    ['5', 'You Win', 'You pay commission (% of contract value) — ONLY when you win. No win = no fee'],
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Step', 'Action', 'Detail']],
+    body: managedSteps.map(s => s),
+    headStyles: { fillColor: [22, 163, 74], textColor: WHITE, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7.5, textColor: DARK },
+    alternateRowStyles: { fillColor: [240, 253, 244] },
+    columnStyles: { 0: { cellWidth: 30, halign: 'center', fontStyle: 'bold' }, 1: { cellWidth: 110, fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 16;
+
+  y = addSectionTitle(doc, y, 'Subcontracting System — Post-Win Delivery (Zero Competitors)', '');
+
+  const subSteps = [
+    ['1', 'Create Project', 'Auto-copies all contract details from won bid'],
+    ['2', 'Open RFQ', 'Post project for vendor quotations worldwide'],
+    ['3', 'Compare Quotes', 'Side-by-side: amount, timeline, approach, cost breakdown, location'],
+    ['4', 'Select Vendor', 'Accept best quote → all others auto-rejected → vendor gets email notification'],
+    ['5', 'Set Milestones', 'Title, due date, payment amount, deliverables checklist'],
+    ['6', 'Track Progress', '0-100% bar + timestamped notes. Auto-alerts at 7 and 3 days before deadline'],
+    ['7', 'Delivery', 'Vendor delivers to government point. Full address + POC tracked in system'],
+    ['8', 'Gov Payment', 'Net-30 auto-calculated. Track pending/received/partial. Auto-alert if overdue'],
+    ['9', 'Pay Vendor', 'Per-milestone payments with reference numbers'],
+    ['10', 'Auto-Complete', 'All milestones paid → project auto-completes → everyone notified'],
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Step', 'Action', 'Detail']],
+    body: subSteps.map(s => s),
+    headStyles: { fillColor: BRAND_COLOR, textColor: WHITE, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, textColor: DARK },
+    alternateRowStyles: { fillColor: LIGHT_BG },
+    columnStyles: { 0: { cellWidth: 30, halign: 'center', fontStyle: 'bold' }, 1: { cellWidth: 100, fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ── Page: Pricing ────────────────────────────────────────────
+  doc.addPage();
+  y = addHeader(doc, 'Competitive Intelligence Report', 'Pricing Comparison');
+  y = addSectionTitle(doc, y, 'Traditional Cost vs. SamBid', '');
+
+  autoTable(doc, {
+    startY: y,
+    head: [['What You Need', 'Traditional Way', 'SamBid Way']],
+    body: [
+      ['Find matching contracts', 'SAM.gov (free but 40 hrs/mo manual)', 'Auto-matched, AI-scored ($0/mo)'],
+      ['Know who won similar contracts', 'GovWin IQ ($5,000/mo)', 'Built-in from USASpending ($0/mo)'],
+      ['Write one proposal', 'Consultant ($5,000-$20,000)', 'AI Proposal Writer ($99/mo unlimited)'],
+      ['Bid/No-Bid decision', 'BD team ($120K/yr salary)', 'AI Bid Analysis ($99/mo)'],
+      ['Competitive intelligence', 'Market research firm ($10K+)', 'AI Competitive Analysis ($99/mo)'],
+      ['Someone to bid for you', 'GovCon consultant ($200/hr)', 'Managed Service (commission on win)'],
+      ['Deliver the contract', 'Hire staff or scramble', 'Subcontracting system (built-in)'],
+      ['TOTAL', '$200,000+/year', '$99/month'],
+    ],
+    headStyles: { fillColor: BRAND_COLOR, textColor: WHITE, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7.5, textColor: DARK },
+    alternateRowStyles: { fillColor: LIGHT_BG },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 150 } },
+    didDrawCell: (data) => {
+      if (data.section === 'body' && data.row.index === 7) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 20;
+
+  y = addSectionTitle(doc, y, 'SamBid Plans', '');
+  autoTable(doc, {
+    startY: y,
+    head: [['', 'Free', 'Starter $49/mo', 'Pro $99/mo', 'Enterprise $499/mo']],
+    body: [
+      ['Contract matches', '50/mo', '500/mo', '3,000/mo', 'Unlimited'],
+      ['Smart filters', 'Basic', 'Full', 'Full', 'Full'],
+      ['AI tools (10)', '—', '—', 'All 10', 'All 10'],
+      ['Proposal builder', '—', '—', 'Unlimited', 'Unlimited'],
+      ['Pipeline + Calendar', '—', 'Yes', 'Yes', 'Yes'],
+      ['Past performance repo', '—', '—', 'Yes', 'Yes'],
+      ['Market research', '—', '—', '—', 'Yes'],
+      ['Managed bidding', '—', '—', '—', 'Yes'],
+      ['Subcontracting', '—', '—', '—', 'Yes'],
+      ['Support', 'Email', 'Priority', 'Priority', 'Dedicated'],
+    ],
+    headStyles: { fillColor: BRAND_COLOR, textColor: WHITE, fontSize: 7.5, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, textColor: DARK, halign: 'center' },
+    alternateRowStyles: { fillColor: LIGHT_BG },
+    columnStyles: { 0: { halign: 'left', fontStyle: 'bold', cellWidth: 110 }, 3: { textColor: BRAND_COLOR, fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ── Final Page: Summary ──────────────────────────────────────
+  doc.addPage();
+  const FW = doc.internal.pageSize.getWidth();
+  const FH = doc.internal.pageSize.getHeight();
+
+  doc.setFillColor(...BRAND_COLOR);
+  doc.rect(0, 0, FW, FH, 'F');
+
+  doc.setTextColor(...WHITE);
+  doc.setFontSize(28);
+  doc.setFont('helvetica', 'bold');
+  doc.text('The Bottom Line', FW / 2, 80, { align: 'center' });
+
+  const summaryStats = [
+    ['57', 'Total Features'],
+    ['10', 'AI Tools'],
+    ['20', 'Exclusive Features'],
+    ['4', 'Real Data Sources'],
+    ['$99/mo', 'Full AI Suite'],
+    ['$0', 'Starting Price'],
+  ];
+
+  const boxW = 150;
+  const boxH = 60;
+  const cols = 3;
+  const startX = (FW - cols * boxW - (cols - 1) * 12) / 2;
+  summaryStats.forEach((s, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const bx = startX + col * (boxW + 12);
+    const by = 120 + row * (boxH + 12);
+    doc.setFillColor(255, 255, 255, 25);
+    doc.roundedRect(bx, by, boxW, boxH, 6, 6, 'F');
+    doc.setTextColor(...WHITE);
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.text(s[0], bx + boxW / 2, by + 28, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(s[1], bx + boxW / 2, by + 44, { align: 'center' });
+  });
+
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Other platforms show you contracts.', FW / 2, 300, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
+  doc.text('SamBid helps you find them, win them, and deliver them.', FW / 2, 320, { align: 'center' });
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text('FIND  →  ANALYZE  →  WRITE  →  WIN  →  DELIVER  →  GET PAID', FW / 2, 370, { align: 'center' });
+
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('www.sambid.co', FW / 2, 430, { align: 'center' });
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('From Discovery to Delivery — Powered by Real Government Data', FW / 2, 450, { align: 'center' });
+
+  // ── Footers ──────────────────────────────────────────────────
+  addFooter(doc);
+
+  doc.save(`SamBid-Competitive-Report-${new Date().toISOString().slice(0, 10)}.pdf`);
+};

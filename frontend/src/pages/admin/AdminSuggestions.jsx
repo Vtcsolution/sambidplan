@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Lightbulb, Search, RefreshCw, CheckCircle, Clock, XCircle,
   Loader2, ChevronDown, ChevronUp, Trash2, Save, Filter
@@ -238,7 +239,7 @@ export default function AdminSuggestions() {
               {newCount > 0 && (
                 <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">{newCount} new</span>
               )}
-            </h1>
+            <AdminHowItWorks page="suggestions" /></h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">Review and respond to user suggestions</p>
           </div>
         </div>

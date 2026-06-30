@@ -53,6 +53,7 @@ const FEATURES = [
   {
     icon: Search,
     color: 'indigo',
+    slug: 'contract-opportunities',
     title: 'Opportunity Discovery',
     tagline: 'Find every contract that matches your business — automatically',
     description:
@@ -268,7 +269,7 @@ export default function Features() {
       <SEOHead
         title="Sambid Features — Full Federal Contracting Platform"
         description="Explore all Sambid features: AI opportunity matching, proposal writer, win predictions, deadline calendar, teaming finder, past performance intelligence, and more."
-        keywords="federal contracting software features, SAM.gov automation, AI proposal writer, federal contract alerts, teaming finder, past performance, bid pipeline"
+        keywords="federal contracting software features, SAM.gov automation, AI proposal writer, federal contract alerts, teaming finder, past performance, bid pipeline, AI government proposal generator, federal bid analysis tool, government contract risk assessment, RFP analyzer software, sources sought generator, federal capability statement builder, go no-go decision tool, federal contract competitive analysis, SAM.gov opportunity matching software"
         canonical="https://sambid.co/features"
       />
 
@@ -327,7 +328,7 @@ export default function Features() {
 
       {/* ── Feature list ── */}
       <section className="py-16 sm:py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="space-y-10 sm:space-y-14">
             {FEATURES.map((feat, idx) => {
               const c = COLOR_MAP[feat.color];

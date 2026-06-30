@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Users, DollarSign, TrendingUp, Loader2, AlertCircle, CheckCircle,
   Clock, CreditCard, Star, Wallet, Trophy, Lock, Unlock, ChevronDown,
@@ -274,10 +275,10 @@ function MemberCard({ item, onProcessWithdrawal }) {
 }
 
 // ── Withdrawals tab ────────────────────────────────────────────────────────────
-function WithdrawalsTab({ onRefresh }) {
+function WithdrawalsTab({ onRefresh, members }) {
   const [data,    setData]    = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter,  setFilter]  = useState('pending');
+  const [filter,  setFilter]  = useState('all');
   const [modal,   setModal]   = useState(null);
 
   const load = useCallback(async () => {
@@ -296,84 +297,143 @@ function WithdrawalsTab({ onRefresh }) {
   data.forEach(w => { if (counts[w.status] !== undefined) counts[w.status]++; });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {modal && (
         <ProcessModal withdrawal={modal} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); onRefresh(); }} />
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {[['pending','Pending'],['approved','Approved'],['paid','Paid'],['rejected','Rejected'],['all','All']].map(([val, label]) => (
-          <button key={val} onClick={() => setFilter(val)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${filter === val ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-            {label}
-            {counts[val] > 0 && <span className="ml-1.5 text-xs opacity-80">({counts[val]})</span>}
-          </button>
-        ))}
-        <button onClick={load} className="ml-auto p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
-          <RefreshCw className="w-4 h-4" />
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-indigo-500" /></div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-10 text-gray-400">
-          <Clock className="w-8 h-8 mx-auto mb-2 text-gray-200" />
-          <p>No {filter === 'all' ? '' : filter} withdrawals</p>
+      {/* Member balance overview */}
+      {members?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Member Balances & Payouts</p>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    {['Member', 'Balance', 'Total Earned', 'One-Time (15%)', 'Recurring (7.5%)', 'Withdrawn', 'Pending', 'Status'].map(h => (
+                      <th key={h} className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {members.map(item => (
+                    <tr key={item.member._id} className="hover:bg-gray-50">
+                      <td className="py-2.5 px-3">
+                        <p className="font-semibold text-gray-900 text-sm">{item.member.name}</p>
+                        <p className="text-xs text-gray-400">{item.member.email}</p>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`font-bold ${item.member.referralBalance > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                          {fmt(item.member.referralBalance)}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-blue-600">{fmt(item.member.totalCommissionEarned)}</td>
+                      <td className="py-2.5 px-3 text-amber-700">{fmt(item.member.totalOneTimeEarned)}</td>
+                      <td className="py-2.5 px-3 text-violet-700">{fmt(item.member.totalRecurringEarned)}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`font-semibold ${item.totalWithdrawn > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {fmt(item.totalWithdrawn)}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {item.pendingWithdrawalCount > 0
+                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">{item.pendingWithdrawalCount} ({fmt(item.pendingWithdrawalAmount)})</span>
+                          : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${item.member.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {item.member.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map(w => (
-            <div key={w._id} className={`bg-white rounded-xl border p-4 flex items-start justify-between gap-4 ${
-              w.status === 'pending' ? 'border-amber-200' : 'border-gray-200'
-            }`}>
-              <div className="flex items-start gap-3 min-w-0">
-                <Clock className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-semibold text-gray-900">{w.supportMember?.name || '—'}</p>
-                  <p className="text-xs text-gray-400">{w.supportMember?.email}</p>
-                  <p className="text-sm font-bold text-gray-800 mt-1">{fmt(w.amount)}</p>
-                  <p className="text-xs text-gray-500 capitalize">{(w.method||'').replace(/_/g,' ')} · {new Date(w.createdAt).toLocaleDateString()}</p>
-                  {w.accountDetails?.email && <p className="text-xs text-gray-400">To: {w.accountDetails.email}</p>}
-                  {w.adminNote && <p className="text-xs italic text-gray-400">Note: "{w.adminNote}"</p>}
-                  {w.paymentId && <p className="text-xs">Txn: <span className="font-mono font-semibold text-gray-700">{w.paymentId}</span></p>}
-                  {w.proofScreenshotUrl && (
-                    <a href={w.proofScreenshotUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-indigo-600 hover:underline mt-0.5">
-                      <ExternalLink className="w-3 h-3" /> View proof
-                    </a>
+      )}
+
+      {/* Withdrawal requests */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Withdrawal Requests</p>
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {[['all','All'],['pending','Pending'],['approved','Approved'],['paid','Paid'],['rejected','Rejected']].map(([val, label]) => (
+            <button key={val} onClick={() => setFilter(val)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${filter === val ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+              {label}
+              {counts[val] > 0 && <span className="ml-1.5 text-xs opacity-80">({counts[val]})</span>}
+            </button>
+          ))}
+          <button onClick={load} className="ml-auto p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-indigo-500" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-100">
+            <Wallet className="w-8 h-8 mx-auto mb-2 text-gray-200" />
+            <p className="text-sm">No {filter === 'all' ? '' : filter + ' '}withdrawal requests yet</p>
+            <p className="text-xs text-gray-300 mt-1">Requests will appear here when support members submit withdrawals</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(w => (
+              <div key={w._id} className={`bg-white rounded-xl border p-4 flex items-start justify-between gap-4 ${
+                w.status === 'pending' ? 'border-amber-200' : 'border-gray-200'
+              }`}>
+                <div className="flex items-start gap-3 min-w-0">
+                  <Clock className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900">{w.supportMember?.name || '—'}</p>
+                    <p className="text-xs text-gray-400">{w.supportMember?.email}</p>
+                    <p className="text-sm font-bold text-gray-800 mt-1">{fmt(w.amount)}</p>
+                    <p className="text-xs text-gray-500 capitalize">{(w.method||'').replace(/_/g,' ')} · {new Date(w.createdAt).toLocaleDateString()}</p>
+                    {w.accountDetails?.email && <p className="text-xs text-gray-400">To: {w.accountDetails.email}</p>}
+                    {w.adminNote && <p className="text-xs italic text-gray-400">Note: "{w.adminNote}"</p>}
+                    {w.paymentId && <p className="text-xs">Txn: <span className="font-mono font-semibold text-gray-700">{w.paymentId}</span></p>}
+                    {w.proofScreenshotUrl && (
+                      <a href={w.proofScreenshotUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-indigo-600 hover:underline mt-0.5">
+                        <ExternalLink className="w-3 h-3" /> View proof
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    w.status === 'paid'     ? 'bg-green-100 text-green-700'  :
+                    w.status === 'approved' ? 'bg-blue-100 text-blue-700'    :
+                    w.status === 'rejected' ? 'bg-red-100 text-red-600'      :
+                    'bg-yellow-100 text-yellow-700'
+                  }`}>{w.status}</span>
+                  {['pending','approved'].includes(w.status) && (
+                    <button onClick={() => setModal(w)}
+                      className="px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-lg font-medium hover:bg-indigo-700">
+                      Process
+                    </button>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  w.status === 'paid'     ? 'bg-green-100 text-green-700'  :
-                  w.status === 'approved' ? 'bg-blue-100 text-blue-700'    :
-                  w.status === 'rejected' ? 'bg-red-100 text-red-600'      :
-                  'bg-yellow-100 text-yellow-700'
-                }`}>{w.status}</span>
-                {['pending','approved'].includes(w.status) && (
-                  <button onClick={() => setModal(w)}
-                    className="px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-lg font-medium hover:bg-indigo-700">
-                    Process
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function AdminSupportManagement() {
-  const [tab,     setTab]     = useState('members');
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
-  const [modal,   setModal]   = useState(null);
+  const [tab,          setTab]          = useState('members');
+  const [memberFilter, setMemberFilter] = useState('all');
+  const [data,         setData]         = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState('');
+  const [modal,        setModal]        = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -388,6 +448,22 @@ export default function AdminSupportManagement() {
 
   const members = data?.data || [];
   const targetGoal = data?.targetGoal || TARGET;
+
+  const filteredMembers = members.filter(item => {
+    if (memberFilter === 'active')  return item.member.isActive;
+    if (memberFilter === 'inactive') return !item.member.isActive;
+    if (memberFilter === 'pending') return item.pendingWithdrawalCount > 0;
+    if (memberFilter === 'paid')    return item.totalWithdrawn > 0;
+    return true;
+  });
+
+  const memberCounts = {
+    all:      members.length,
+    active:   members.filter(i => i.member.isActive).length,
+    inactive: members.filter(i => !i.member.isActive).length,
+    pending:  members.filter(i => i.pendingWithdrawalCount > 0).length,
+    paid:     members.filter(i => i.totalWithdrawn > 0).length,
+  };
 
   // Summary across all members
   const summary = members.reduce((acc, item) => {
@@ -411,7 +487,7 @@ export default function AdminSupportManagement() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Support Team Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Support Team Management<AdminHowItWorks page="supportManagement" /></h1>
           <p className="text-sm text-gray-500 mt-0.5">Referral earnings, target progress, and withdrawal requests</p>
         </div>
         <button onClick={load} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
@@ -494,13 +570,31 @@ export default function AdminSupportManagement() {
           </div>
         ) : (
           <div className="space-y-4">
-            {members.map(item => (
-              <MemberCard key={item.member._id} item={item} onProcessWithdrawal={setModal} />
-            ))}
+            {/* Member filter tabs */}
+            <div className="flex flex-wrap items-center gap-2">
+              {[['all','All'],['active','Active'],['inactive','Inactive'],['pending','Pending Withdrawals'],['paid','Paid']].map(([val, label]) => (
+                <button key={val} onClick={() => setMemberFilter(val)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${memberFilter === val ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  {label}
+                  {memberCounts[val] > 0 && <span className="ml-1.5 text-xs opacity-80">({memberCounts[val]})</span>}
+                </button>
+              ))}
+            </div>
+
+            {filteredMembers.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">
+                <Filter className="w-8 h-8 mx-auto mb-2 text-gray-200" />
+                <p>No members match this filter</p>
+              </div>
+            ) : (
+              filteredMembers.map(item => (
+                <MemberCard key={item.member._id} item={item} onProcessWithdrawal={setModal} />
+              ))
+            )}
           </div>
         )
       ) : (
-        <WithdrawalsTab onRefresh={load} />
+        <WithdrawalsTab onRefresh={load} members={members} />
       )}
     </div>
   );

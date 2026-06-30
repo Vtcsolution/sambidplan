@@ -18,8 +18,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please add a password'],
     minlength: 6,
+    maxlength: 128,
     select: false
   },
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date, default: null },
   role: {
     type: String,
     enum: ['user', 'admin'],

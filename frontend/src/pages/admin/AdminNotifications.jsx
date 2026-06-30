@@ -1,4 +1,5 @@
 ﻿// frontend/src/pages/admin/AdminNotifications.jsx
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { useState, useEffect } from 'react';
 import {
   Bell,
@@ -23,6 +24,7 @@ import ConfirmModal from '../../components/ConfirmModal';
 export default function AdminNotifications() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showSendModal, setShowSendModal] = useState(false);
   const [emailData, setEmailData] = useState({
     subject: '',
@@ -32,6 +34,7 @@ export default function AdminNotifications() {
   });
   const [markingRead,  setMarkingRead]  = useState(null);
   const [confirmDlg,   setConfirmDlg]  = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     fetchNotifications();
@@ -42,12 +45,15 @@ export default function AdminNotifications() {
 
   const fetchNotifications = async () => {
     try {
+      setError('');
       const response = await adminAPI.getNotifications();
       if (response.data.success) {
         setNotifications(response.data.data);
+        setUnreadCount(response.data.unreadCount ?? response.data.data.filter(n => !n.read).length);
       }
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+      setError(err.response?.data?.message || 'Failed to load notifications');
     } finally {
       setLoading(false);
     }
@@ -57,12 +63,12 @@ export default function AdminNotifications() {
     setMarkingRead(id);
     try {
       await adminAPI.markNotificationAsRead(id);
-      // Update local state
-      setNotifications(prev => 
+      setNotifications(prev =>
         prev.map(n => n._id === id ? { ...n, read: true } : n)
       );
-    } catch (error) {
-      console.error('Error marking as read:', error);
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error('Error marking as read:', err);
       alert('Failed to mark as read');
     } finally {
       setMarkingRead(null);
@@ -75,16 +81,15 @@ export default function AdminNotifications() {
       alert('No unread notifications');
       return;
     }
-    
+
     for (const id of unreadIds) {
       try {
         await adminAPI.markNotificationAsRead(id);
-      } catch (error) {
-        console.error('Error marking as read:', error);
+      } catch (err) {
+        console.error('Error marking as read:', err);
       }
     }
-    
-    // Refresh notifications
+
     fetchNotifications();
     alert(`Marked ${unreadIds.length} notifications as read`);
   };
@@ -162,12 +167,22 @@ export default function AdminNotifications() {
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <AlertCircle className="w-8 h-8 text-red-400" />
+        <p className="text-gray-600">{error}</p>
+        <button onClick={fetchNotifications} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">
+          Retry
+        </button>
       </div>
     );
   }
@@ -183,7 +198,7 @@ export default function AdminNotifications() {
         onCancel={() => setConfirmDlg(null)}
       />
       <div>
-          <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Notifications<AdminHowItWorks page="notifications" /></h1>
           <p className="text-gray-600 mt-4 mb-2">
             {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
           </p>

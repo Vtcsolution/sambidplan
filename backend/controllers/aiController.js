@@ -14,6 +14,7 @@ import {
   generateMarketResearchReport,
   generateSourcesSoughtResponse,
 } from '../services/geminiService.js';
+import { buildCompanyProfile } from '../services/companyIntelService.js';
 import multer from 'multer';
 import axios from 'axios';
 import { createRequire } from 'module';
@@ -28,6 +29,136 @@ const checkProPlan = (user) => {
   if (!['pro', 'enterprise'].includes(user.plan)) {
     throw new Error('Pro plan required for AI features. Please upgrade.');
   }
+};
+
+// ── Fetch real competitive intelligence from USASpending ─────────────────────
+const fetchCompetitiveIntel = async (opportunity) => {
+  try {
+    const naicsCode = opportunity.naicsCode;
+    if (!naicsCode || naicsCode === '000000') return { awards: [], summary: 'No NAICS code available.' };
+
+    const threeYearsAgo = new Date(Date.now() - 3 * 365 * 86400000).toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const response = await fetch('https://api.usaspending.gov/api/v2/search/spending_by_award/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filters: {
+          award_type_codes: ['A', 'B', 'C', 'D'],
+          naics_codes: [naicsCode],
+          time_period: [{ start_date: threeYearsAgo, end_date: today }],
+        },
+        fields: ['Award ID', 'Description', 'Award Amount', 'Awarding Agency', 'Recipient Name', 'Start Date', 'End Date', 'naics_code', 'Place of Performance State Code', 'Place of Performance City Name'],
+        page: 1, limit: 25, sort: 'Award Amount', order: 'desc',
+      }),
+    });
+
+    if (!response.ok) return { awards: [], summary: 'USASpending API unavailable.' };
+    const data = await response.json();
+
+    const awards = (data.results || []).map(a => ({
+      recipient:  a['Recipient Name'] || 'Unknown',
+      amount:     a['Award Amount'] || 0,
+      agency:     a['Awarding Agency'] || '',
+      startDate:  a['Start Date'] || '',
+      endDate:    a['End Date'] || '',
+      description: a['Description'] || '',
+      location:   [a['Place of Performance City Name'], a['Place of Performance State Code']].filter(Boolean).join(', '),
+    }));
+
+    // Aggregate: top winners by total award value
+    const winnerMap = {};
+    awards.forEach(a => {
+      if (!winnerMap[a.recipient]) winnerMap[a.recipient] = { count: 0, totalValue: 0, agencies: new Set() };
+      winnerMap[a.recipient].count++;
+      winnerMap[a.recipient].totalValue += a.amount;
+      if (a.agency) winnerMap[a.recipient].agencies.add(a.agency);
+    });
+
+    const topWinners = Object.entries(winnerMap)
+      .map(([name, d]) => ({ name, contracts: d.count, totalValue: d.totalValue, agencies: [...d.agencies] }))
+      .sort((a, b) => b.totalValue - a.totalValue)
+      .slice(0, 10);
+
+    return { awards, topWinners, totalAwards: data.page_metadata?.total || awards.length };
+  } catch (err) {
+    console.error('fetchCompetitiveIntel error:', err.message);
+    return { awards: [], topWinners: [], totalAwards: 0 };
+  }
+};
+
+// Format opportunity's full data for AI prompts
+const formatOpportunityContext = (opp) => {
+  const lines = [];
+  lines.push(`Title: ${opp.title}`);
+  lines.push(`Solicitation #: ${opp.sourceId || 'N/A'}`);
+  lines.push(`Agency: ${opp.agency}`);
+  if (opp.department) lines.push(`Department: ${opp.department}`);
+  if (opp.subTier) lines.push(`Sub-Tier: ${opp.subTier}`);
+  if (opp.office) lines.push(`Contracting Office: ${opp.office}`);
+  if (opp.noticeType) lines.push(`Notice Type: ${opp.noticeType}`);
+  lines.push(`NAICS Code: ${opp.naicsCode}${opp.naicsDescription ? ' — ' + opp.naicsDescription : ''}`);
+  if (opp.pscCode) lines.push(`PSC Code: ${opp.pscCode}${opp.pscDescription ? ' — ' + opp.pscDescription : ''}`);
+  lines.push(`Estimated/Award Value: $${opp.estimatedValue?.toLocaleString() || 'Not specified'}`);
+  lines.push(`Set-Aside: ${opp.setAside || 'Full and Open Competition'}`);
+  lines.push(`Posted Date: ${opp.postedDate ? new Date(opp.postedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}`);
+  lines.push(`Response Due Date: ${opp.dueDate ? new Date(opp.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}`);
+  if (opp.modifiedDate) lines.push(`Last Modified: ${new Date(opp.modifiedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`);
+  if (opp.archiveDate) lines.push(`Archive Date: ${new Date(opp.archiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`);
+  if (opp.performancePeriod?.startDate) lines.push(`Performance Start: ${new Date(opp.performancePeriod.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`);
+  if (opp.performancePeriod?.endDate) lines.push(`Performance End: ${new Date(opp.performancePeriod.endDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`);
+
+  const pop = opp.placeOfPerformance;
+  if (pop?.city || pop?.state) lines.push(`Place of Performance: ${[pop.city, pop.state, pop.zipCode, pop.country].filter(Boolean).join(', ')}${pop.congressionalDistrict ? ' (CD: ' + pop.congressionalDistrict + ')' : ''}`);
+
+  if (opp.award?.awardee?.name) {
+    lines.push(`\nAWARD DETAILS:`);
+    lines.push(`  Awardee: ${opp.award.awardee.name}`);
+    if (opp.award.awardee.uei) lines.push(`  UEI: ${opp.award.awardee.uei}`);
+    if (opp.award.awardee.cageCode) lines.push(`  CAGE Code: ${opp.award.awardee.cageCode}`);
+    if (opp.award.date) lines.push(`  Award Date: ${new Date(opp.award.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`);
+    if (opp.award.amount) lines.push(`  Award Amount: $${opp.award.amount.toLocaleString()}`);
+    const loc = opp.award.awardee.location;
+    if (loc?.city) lines.push(`  Awardee Location: ${[loc.streetAddress, loc.city, loc.state, loc.zipCode, loc.country].filter(Boolean).join(', ')}`);
+  }
+
+  const contacts = opp.pointOfContacts?.length ? opp.pointOfContacts : (opp.contactInfo?.name ? [opp.contactInfo] : []);
+  if (contacts.length) {
+    lines.push(`\nPOINT OF CONTACT:`);
+    contacts.forEach(c => {
+      lines.push(`  ${c.fullName || c.name || 'N/A'}${c.title ? ' (' + c.title + ')' : ''} — ${c.email || ''} ${c.phone || ''}`);
+    });
+  }
+
+  lines.push(`\nFULL DESCRIPTION / STATEMENT OF WORK:\n${(opp.description || 'No description available').substring(0, 8000)}`);
+  return lines.join('\n');
+};
+
+// Format competitive intel for AI prompts
+const formatCompetitiveContext = (intel) => {
+  if (!intel.awards?.length) return 'No historical award data available from USASpending for this NAICS code.';
+
+  const lines = [];
+  lines.push(`HISTORICAL AWARD DATA FROM USASPENDING.GOV (Last 3 Years, Same NAICS Code)`);
+  lines.push(`Total Awards Found: ${intel.totalAwards}`);
+  lines.push('');
+
+  if (intel.topWinners?.length) {
+    lines.push('TOP WINNING COMPANIES (by total award value):');
+    intel.topWinners.forEach((w, i) => {
+      lines.push(`  ${i + 1}. ${w.name} — ${w.contracts} contract(s), $${w.totalValue.toLocaleString()} total — Agencies: ${w.agencies.join(', ')}`);
+    });
+    lines.push('');
+  }
+
+  lines.push('RECENT INDIVIDUAL AWARDS:');
+  intel.awards.slice(0, 15).forEach((a, i) => {
+    lines.push(`  ${i + 1}. ${a.recipient} — $${a.amount.toLocaleString()} — ${a.agency} — ${a.startDate || 'N/A'} to ${a.endDate || 'N/A'}${a.location ? ' — ' + a.location : ''}`);
+    if (a.description) lines.push(`     Desc: ${a.description.substring(0, 150)}`);
+  });
+
+  return lines.join('\n');
 };
 
 // @desc    AI: Analyze RFP document (text paste or PDF upload)
@@ -66,13 +197,43 @@ export const analyzeRFP = async (req, res) => {
   }
 };
 
-// @desc    AI: Go/No-Go workflow
+// @desc    AI: Go/No-Go workflow — auto-fetches real data when opportunityId is provided
 // @route   POST /api/ai/go-no-go
 export const goNoGoWorkflow = async (req, res) => {
   try {
     checkProPlan(req.user);
-    const { opportunityTitle, agency, naicsCode, setAside, estimatedValue, dueDate, competitorCount, pastPerformanceMatch, teamCapacity, notes } = req.body;
-    const result = await generateGoNoGoAnalysis({ opportunityTitle, agency, naicsCode, setAside, estimatedValue, dueDate, competitorCount, pastPerformanceMatch, teamCapacity, notes, userNaics: req.user.naicsCodes, businessName: req.user.businessName });
+    const { opportunityId, teamCapacity, notes } = req.body;
+
+    let oppContext = '';
+    let compContext = '';
+    let companyProfileText = '';
+    let opportunity = null;
+
+    if (opportunityId) {
+      opportunity = await Opportunity.findById(opportunityId);
+      if (!opportunity) return res.status(404).json({ success: false, message: 'Opportunity not found.' });
+
+      const [oCtx, intel, cp] = await Promise.all([
+        Promise.resolve(formatOpportunityContext(opportunity)),
+        fetchCompetitiveIntel(opportunity),
+        buildCompanyProfile(req.user),
+      ]);
+      oppContext = oCtx;
+      compContext = formatCompetitiveContext(intel);
+      companyProfileText = cp.profileText;
+    }
+
+    const result = await generateGoNoGoAnalysis({
+      opportunity,
+      oppContext,
+      compContext,
+      companyProfile: companyProfileText,
+      teamCapacity: teamCapacity || 'Fully Available',
+      notes: notes || '',
+      userNaics: req.user.naicsCodes,
+      businessName: req.user.businessName,
+    });
+
     res.json({ success: true, data: { analysis: result } });
   } catch (error) {
     if (error.message.includes('Pro plan')) return res.status(403).json({ success: false, message: error.message });
@@ -176,21 +337,19 @@ export const generateCapabilityStatementAI = async (req, res) => {
 export const summarizeOpportunity = async (req, res) => {
   try {
     checkProPlan(req.user);
-    
+
     const opportunity = await Opportunity.findById(req.params.opportunityId);
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
-    
-    const summary = await summarizeRFP(opportunity);
-    
-    res.json({ 
-      success: true, 
-      data: { 
-        summary,
-        aiProvider: 'Google Gemini (Free)'
-      } 
-    });
+
+    const [oppContext, companyProfile] = await Promise.all([
+      Promise.resolve(formatOpportunityContext(opportunity)),
+      buildCompanyProfile(req.user),
+    ]);
+    const summary = await summarizeRFP(opportunity, oppContext, companyProfile.profileText);
+
+    res.json({ success: true, data: { summary } });
   } catch (error) {
     if (error.message.includes('Pro plan')) {
       res.status(403).json({ success: false, message: error.message });
@@ -206,21 +365,21 @@ export const summarizeOpportunity = async (req, res) => {
 export const analyzeBid = async (req, res) => {
   try {
     checkProPlan(req.user);
-    
+
     const opportunity = await Opportunity.findById(req.params.opportunityId);
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
-    
-    const analysis = await bidNoBidAnalysis(opportunity, req.user);
-    
-    res.json({ 
-      success: true, 
-      data: { 
-        analysis,
-        aiProvider: 'Google Gemini (Free)'
-      } 
-    });
+
+    const [oppContext, intel, companyProfile] = await Promise.all([
+      Promise.resolve(formatOpportunityContext(opportunity)),
+      fetchCompetitiveIntel(opportunity),
+      buildCompanyProfile(req.user),
+    ]);
+    const compContext = formatCompetitiveContext(intel);
+    const analysis = await bidNoBidAnalysis(opportunity, req.user, oppContext, compContext, companyProfile.profileText);
+
+    res.json({ success: true, data: { analysis } });
   } catch (error) {
     if (error.message.includes('Pro plan')) {
       res.status(403).json({ success: false, message: error.message });
@@ -236,21 +395,21 @@ export const analyzeBid = async (req, res) => {
 export const generateFullProposalAI = async (req, res) => {
   try {
     checkProPlan(req.user);
-    
+
     const opportunity = await Opportunity.findById(req.params.opportunityId);
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
-    
-    const proposal = await generateFullProposal(opportunity, req.user);
-    
-    res.json({
-      success: true,
-      data: {
-        proposal,
-        aiProvider: 'OpenAI GPT-4o'
-      }
-    });
+
+    const [oppContext, intel, companyProfile] = await Promise.all([
+      Promise.resolve(formatOpportunityContext(opportunity)),
+      fetchCompetitiveIntel(opportunity),
+      buildCompanyProfile(req.user),
+    ]);
+    const compContext = formatCompetitiveContext(intel);
+    const proposal = await generateFullProposal(opportunity, req.user, oppContext, compContext, companyProfile.profileText);
+
+    res.json({ success: true, data: { proposal } });
   } catch (error) {
     if (error.message.includes('Pro plan')) {
       res.status(403).json({ success: false, message: error.message });
@@ -266,27 +425,21 @@ export const generateFullProposalAI = async (req, res) => {
 export const askQuestion = async (req, res) => {
   try {
     checkProPlan(req.user);
-    
+
     const { question } = req.body;
     if (!question) {
       return res.status(400).json({ success: false, message: 'Question is required' });
     }
-    
+
     const opportunity = await Opportunity.findById(req.params.opportunityId);
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
-    
-    const answer = await answerRFPQuestion(opportunity, question);
-    
-    res.json({ 
-      success: true, 
-      data: { 
-        question, 
-        answer,
-        aiProvider: 'Google Gemini (Free)'
-      } 
-    });
+
+    const oppContext = formatOpportunityContext(opportunity);
+    const answer = await answerRFPQuestion(opportunity, question, oppContext);
+
+    res.json({ success: true, data: { question, answer } });
   } catch (error) {
     if (error.message.includes('Pro plan')) {
       res.status(403).json({ success: false, message: error.message });
@@ -302,21 +455,21 @@ export const askQuestion = async (req, res) => {
 export const analyzeCompetition = async (req, res) => {
   try {
     checkProPlan(req.user);
-    
+
     const opportunity = await Opportunity.findById(req.params.opportunityId);
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
-    
-    const analysis = await competitiveAnalysis(opportunity, req.user);
-    
-    res.json({ 
-      success: true, 
-      data: { 
-        analysis,
-        aiProvider: 'Google Gemini (Free)'
-      } 
-    });
+
+    const [oppContext, intel, companyProfile] = await Promise.all([
+      Promise.resolve(formatOpportunityContext(opportunity)),
+      fetchCompetitiveIntel(opportunity),
+      buildCompanyProfile(req.user),
+    ]);
+    const compContext = formatCompetitiveContext(intel);
+    const analysis = await competitiveAnalysis(opportunity, req.user, oppContext, compContext, companyProfile.profileText);
+
+    res.json({ success: true, data: { analysis } });
   } catch (error) {
     if (error.message.includes('Pro plan')) {
       res.status(403).json({ success: false, message: error.message });
@@ -338,15 +491,15 @@ export const assessRisk = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
 
-    const assessment = await riskAssessment(opportunity);
+    const [oppContext, intel, companyProfile] = await Promise.all([
+      Promise.resolve(formatOpportunityContext(opportunity)),
+      fetchCompetitiveIntel(opportunity),
+      buildCompanyProfile(req.user),
+    ]);
+    const compContext = formatCompetitiveContext(intel);
+    const assessment = await riskAssessment(opportunity, oppContext, compContext, companyProfile.profileText);
 
-    res.json({
-      success: true,
-      data: {
-        assessment,
-        aiProvider: 'Google Gemini (Free)'
-      }
-    });
+    res.json({ success: true, data: { assessment } });
   } catch (error) {
     if (error.message.includes('Pro plan')) {
       res.status(403).json({ success: false, message: error.message });

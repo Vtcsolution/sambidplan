@@ -1,5 +1,6 @@
 // frontend/src/components/AIPanel.jsx
 import { useState } from 'react';
+import AIResponseRenderer from './AIResponseRenderer';
 import { 
   Sparkles, 
   FileText, 
@@ -224,9 +225,7 @@ export default function AIPanel({ opportunityId, userPlan }) {
           {result && !loading && (
             <div className="relative mt-4">
               <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                <pre className="whitespace-pre-wrap font-sans text-gray-700 text-sm">
-                  {result}
-                </pre>
+                <AIResponseRenderer content={result} />
               </div>
               <button
                 onClick={copyToClipboard}

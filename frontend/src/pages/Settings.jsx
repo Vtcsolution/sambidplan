@@ -8,6 +8,7 @@ import {
   ShieldCheck, QrCode, Key, Copy, Download, Trash2
 } from 'lucide-react';
 import { authAPI, opportunityAPI, paymentAPI } from '../services/api';
+import HowItWorks from '../components/HowItWorks';
 import { searchNAICS, NAICS_CODES } from '../data/naicsCodes';
 import PushNotificationToggle from '../components/PushNotificationToggle';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -328,10 +329,25 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         <div className="mb-5 sm:mb-8">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">Settings</h1>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">Settings
+            <HowItWorks title="Account Settings" steps={[
+              { title: 'Profile', description: 'Update your name, business name, and business type' },
+              { title: 'NAICS Codes', description: 'Add/remove your industry codes — these determine which contracts you see' },
+              { title: 'Notifications', description: 'Control email alerts: real-time, daily digest, or weekly summary + push notifications' },
+              { title: 'Security', description: 'Change password, enable/disable Two-Factor Authentication (2FA), delete account' },
+              { title: 'Appearance', description: 'Toggle dark mode for the dashboard' },
+            ]} dataUsed={['Your Profile']} >
+              <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+              <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                <li><strong>NAICS codes here</strong> → directly control which opportunities appear in your feed</li>
+                <li><strong>Notification settings</strong> → control how Alerts page delivers matches to you</li>
+                <li><strong>2FA</strong> → protects your account from unauthorized login</li>
+              </ul>
+            </HowItWorks>
+          </h1>
           <p className="text-gray-500 mt-0.5 sm:mt-1 text-xs sm:text-sm">Manage your account, NAICS codes, and preferences</p>
         </div>
 

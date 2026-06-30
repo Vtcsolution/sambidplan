@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Save, Globe, Mail, CreditCard, Key, Users, RefreshCw,
   CheckCircle, AlertCircle, Eye, EyeOff, Loader2, Zap,
@@ -95,6 +96,7 @@ const DEFAULTS = {
     usaspendingApiUrl: 'https://api.usaspending.gov/api/v2',
   },
   payment: {
+    enableStripe: 'true', enablePaypal: 'true', enablePayoneer: 'false',
     stripeSecretKey: '', stripePublicKey: '',
     paypalClientId: '', paypalClientSecret: '', paypalMode: 'sandbox',
     payoneerApiBase: 'https://api.sandbox.payoneer.com',
@@ -153,7 +155,7 @@ export default function AdminSettings() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900">Platform Settings</h1>
+          <h1 className="text-xl font-bold text-gray-900">Platform Settings<AdminHowItWorks page="settings" /></h1>
           <p className="text-sm text-gray-500 mt-0.5">All changes apply instantly — no server restart needed.</p>
         </div>
         <button onClick={handleSave} disabled={saving}
@@ -271,8 +273,77 @@ export default function AdminSettings() {
         </div>
       </SectionCard>
 
-      {/* ── 5. Stripe ───────────────────────────────────────────────────── */}
-      <SectionCard icon={CreditCard} color="bg-purple-50 text-purple-700" title="Stripe">
+      {/* ── 5. Payment Gateway Control ─────────────────────────────────── */}
+      <SectionCard icon={CreditCard} color="bg-green-50 text-green-700" title="Payment Gateways — Enable / Disable">
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700 flex items-start gap-2 mb-2">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>Toggle which payment methods appear on the checkout page. Disabled gateways are hidden from users. Save to apply.</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Stripe toggle */}
+          <div className={`rounded-xl border-2 p-4 transition-all ${g('payment').enableStripe === 'true' ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-purple-600" />
+                <span className="font-bold text-sm text-gray-900">Stripe</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer"
+                  checked={g('payment').enableStripe === 'true'}
+                  onChange={e => set('payment', 'enableStripe', e.target.checked ? 'true' : 'false')} />
+                <div className="w-11 h-6 bg-gray-300 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+              </label>
+            </div>
+            <p className="text-xs text-gray-500">Credit/debit card payments via Stripe</p>
+            <p className={`text-xs font-semibold mt-1 ${g('payment').enableStripe === 'true' ? 'text-green-600' : 'text-red-500'}`}>
+              {g('payment').enableStripe === 'true' ? '✓ Enabled on checkout' : '✗ Hidden from checkout'}
+            </p>
+          </div>
+
+          {/* PayPal toggle */}
+          <div className={`rounded-xl border-2 p-4 transition-all ${g('payment').enablePaypal === 'true' ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-blue-600" />
+                <span className="font-bold text-sm text-gray-900">PayPal</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer"
+                  checked={g('payment').enablePaypal === 'true'}
+                  onChange={e => set('payment', 'enablePaypal', e.target.checked ? 'true' : 'false')} />
+                <div className="w-11 h-6 bg-gray-300 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+              </label>
+            </div>
+            <p className="text-xs text-gray-500">PayPal checkout and buyer protection</p>
+            <p className={`text-xs font-semibold mt-1 ${g('payment').enablePaypal === 'true' ? 'text-green-600' : 'text-red-500'}`}>
+              {g('payment').enablePaypal === 'true' ? '✓ Enabled on checkout' : '✗ Hidden from checkout'}
+            </p>
+          </div>
+
+          {/* Payoneer toggle */}
+          <div className={`rounded-xl border-2 p-4 transition-all ${g('payment').enablePayoneer === 'true' ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-orange-600" />
+                <span className="font-bold text-sm text-gray-900">Payoneer</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer"
+                  checked={g('payment').enablePayoneer === 'true'}
+                  onChange={e => set('payment', 'enablePayoneer', e.target.checked ? 'true' : 'false')} />
+                <div className="w-11 h-6 bg-gray-300 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+              </label>
+            </div>
+            <p className="text-xs text-gray-500">Payoneer checkout for global payments</p>
+            <p className={`text-xs font-semibold mt-1 ${g('payment').enablePayoneer === 'true' ? 'text-green-600' : 'text-red-500'}`}>
+              {g('payment').enablePayoneer === 'true' ? '✓ Enabled on checkout' : '✗ Hidden from checkout'}
+            </p>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* ── 6. Stripe Credentials ──────────────────────────────────────── */}
+      <SectionCard icon={CreditCard} color="bg-purple-50 text-purple-700" title="Stripe Credentials">
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>Keys starting with <code>sk_test_</code> / <code>pk_test_</code> = test mode. Use <code>sk_live_</code> / <code>pk_live_</code> for production.</span>
@@ -285,8 +356,8 @@ export default function AdminSettings() {
         </div>
       </SectionCard>
 
-      {/* ── 6. PayPal ───────────────────────────────────────────────────── */}
-      <SectionCard icon={DollarSign} color="bg-sky-50 text-sky-700" title="PayPal">
+      {/* ── 7. PayPal Credentials ──────────────────────────────────────── */}
+      <SectionCard icon={DollarSign} color="bg-sky-50 text-sky-700" title="PayPal Credentials">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-gray-600">Environment</p>
           <ModeToggle value={g('payment').paypalMode || 'sandbox'}
@@ -304,8 +375,8 @@ export default function AdminSettings() {
         </div>
       </SectionCard>
 
-      {/* ── 7. Payoneer ─────────────────────────────────────────────────── */}
-      <SectionCard icon={ShieldCheck} color="bg-orange-50 text-orange-700" title="Payoneer">
+      {/* ── 8. Payoneer Credentials ────────────────────────────────────── */}
+      <SectionCard icon={ShieldCheck} color="bg-orange-50 text-orange-700" title="Payoneer Credentials">
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2">
             <TextInput label="API Base URL" value={g('payment').payoneerApiBase || ''} onChange={v => set('payment','payoneerApiBase',v)}

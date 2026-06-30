@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react';
 import { FileText, Sparkles, Copy, Download, CheckCircle, Loader2, Lock, RefreshCw, Building2, Target, Award, Users } from 'lucide-react';
 import { aiAPI } from '../services/api';
+import AIResponseRenderer from '../components/AIResponseRenderer';
 import { useUserPlan } from '../hooks/useUserPlan';
 import { usePlans } from '../hooks/usePlans';
+import HowItWorks from '../components/HowItWorks';
 import { AICreditsBar } from '../components/AICreditsBar';
 import jsPDF from 'jspdf';
 
@@ -133,7 +135,7 @@ export default function CapabilityStatement() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         <AICreditsBar feature="capability_statement" />
         {/* Header */}
         <div className="mb-8">
@@ -141,7 +143,26 @@ export default function CapabilityStatement() {
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
               <FileText className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">AI Capability Statement Generator</h1>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">AI Capability Statement Generator
+              <HowItWorks
+                title="Capability Statement"
+                steps={[
+                  { title: 'Enter your company details', description: 'Business name, certifications (8(a), WOSB, HUBZone, etc.), core competencies, and past performance highlights' },
+                  { title: 'AI generates professional one-pager', description: 'Formatted for federal contracting officers — NAICS codes, differentiators, contact info' },
+                  { title: 'Export and share', description: 'Copy to clipboard or download as PDF — hand to any contracting officer at industry days' },
+                ]}
+                dataUsed={['Your Company Profile', 'Your Certifications', 'Your NAICS Codes']}
+              >
+                <p className="text-sm font-semibold text-gray-700 mt-2">Connected to:</p>
+                <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                  <li><strong>Company Profile</strong> → your NAICS codes, certifications, and UEI auto-populate the statement</li>
+                  <li><strong>Past Performance</strong> → your stored contracts can be referenced in the statement</li>
+                  <li><strong>Sources Sought</strong> → attach your capability statement when responding to RFIs</li>
+                  <li><strong>Teaming Finder</strong> → share your capability statement with potential teaming partners</li>
+                  <li>Hand this to any contracting officer at industry days, matchmaking events, or agency meetings</li>
+                </ul>
+              </HowItWorks>
+            </h1>
           </div>
           <p className="text-gray-500 ml-13">Generate a professional, agency-ready capability statement in seconds using AI.</p>
         </div>
@@ -289,9 +310,9 @@ export default function CapabilityStatement() {
                   </div>
                 </div>
                 <div className="prose prose-sm max-w-none">
-                  <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700 leading-relaxed bg-gray-50 rounded-xl p-4 border border-gray-100 max-h-[600px] overflow-y-auto">
-                    {result}
-                  </pre>
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 max-h-[600px] overflow-y-auto">
+                    <AIResponseRenderer content={result} />
+                  </div>
                 </div>
               </div>
             ) : (

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, RefreshCw, Download, Search, Globe, Mail, Phone,
@@ -364,7 +365,7 @@ export default function AdminProspects() {
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Federal Prospects</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Federal Prospects<AdminHowItWorks page="prospects" /></h1>
           <p className="text-sm text-gray-500 mt-0.5">All federal awardees — small, medium &amp; large — from USASpending &amp; SAM.gov</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -414,13 +415,7 @@ export default function AdminProspects() {
             </div>
           )}
 
-          {/* Clear All — admin/super_admin only */}
-          {canManage && (
-            <button onClick={handleClearAll}
-              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-600 rounded-lg text-sm font-medium">
-              <Trash2 className="w-3.5 h-3.5" /> Clear All
-            </button>
-          )}
+          {/* Data is protected — no bulk delete */}
           {canCampaigns && (
             <button onClick={() => navigate('/admin/prospect-outreach')}
               className="flex items-center gap-1.5 px-3 py-2 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium">
@@ -737,10 +732,7 @@ export default function AdminProspects() {
                             </a>
                           </>
                         )}
-                        <button onClick={() => handleDelete(p._id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {/* Delete disabled — prospect data is protected */}
                       </div>
                     </td>
                   </tr>

@@ -1,6 +1,6 @@
 // backend/services/aiPredictionService.js
 //
-// Deep AI predictions using OpenAI GPT-4o-mini.
+// Deep AI predictions using Claude Opus 4.8 via Anthropic SDK.
 // Signals used per prediction:
 //   • User NAICS codes, business type, business name
 //   • Opportunity: title, description (full 800 chars), agency, NAICS,
@@ -128,7 +128,7 @@ const buildCompetitionContext = (allForNaics) => {
   return { highVolume: high, lowVolume: low };
 };
 
-// ─── Non-AI fallback: basic scoring without OpenAI ───────────────────────────
+// ─── Non-AI fallback: basic scoring without AI ──────────────────────────────
 const buildBasicPredictions = (opportunities, competitionCtx) => {
   return opportunities.map(opp => {
     const days = opp.dueDate ? Math.ceil((new Date(opp.dueDate) - Date.now()) / 86400000) : 60;
@@ -215,17 +215,7 @@ Return a JSON array. Each element must have EXACTLY these keys (all strings unde
 
 Scoring rules: NAICS exact match raises probability. Set-aside eligibility match raises probability. High-volume agency lowers probability. Q4 FY = more competition.`;
 
-  // Try preferred model, fall back to gpt-4o if mini is unavailable
-  let raw;
-  try {
-    raw = await chat(systemPrompt, userPrompt, 'gpt-4o-mini', 4096);
-  } catch (e) {
-    if (e.status === 404 || e.message?.includes('model')) {
-      raw = await chat(systemPrompt, userPrompt, 'gpt-4o', 4096);
-    } else {
-      throw e;
-    }
-  }
+  const raw = await chat(systemPrompt, userPrompt, 'claude-opus-4-8', 4096);
 
   const parsed = repairAndParseJSON(raw, true);
 
@@ -265,7 +255,7 @@ const buildFallbackInsights = (allForNaics) => {
   const avgValue = allForNaics.reduce((s, o) => s + (o.estimatedValue || 0), 0) / (allForNaics.length || 1);
   return {
     marketOutlook: 'Neutral',
-    outlookReason: 'Market data loaded — AI narrative unavailable (check OpenAI API key/credits).',
+    outlookReason: 'Market data loaded — AI narrative unavailable (check Anthropic API key in admin settings).',
     hotAgencies: sorted.slice(0, 4).map(([a]) => a),
     hiddenGemAgencies: sorted.slice(-2).map(([a]) => a),
     trendingSectors: [],
@@ -277,7 +267,7 @@ const buildFallbackInsights = (allForNaics) => {
     bestMonthsToSubmit: [],
     avgContractValue: Math.round(avgValue),
     totalOpportunities: allForNaics.length,
-    topWinningStrategy: 'Enable AI analysis by ensuring a valid OpenAI API key is configured in admin settings.',
+    topWinningStrategy: 'Enable AI analysis by ensuring a valid Anthropic API key is configured in admin settings.',
   };
 };
 
@@ -335,16 +325,7 @@ Return a single JSON object:
   "topWinningStrategy": "<the single most impactful thing this contractor can do to increase win rate>"
 }`;
 
-  let raw;
-  try {
-    raw = await chat(systemPrompt, userPrompt, 'gpt-4o-mini', 2048);
-  } catch (e) {
-    if (e.status === 404 || e.message?.includes('model')) {
-      raw = await chat(systemPrompt, userPrompt, 'gpt-4o', 2048);
-    } else {
-      throw e;
-    }
-  }
+  const raw = await chat(systemPrompt, userPrompt, 'claude-sonnet-4-6', 2048);
   const insights = repairAndParseJSON(raw, false);
   insights.avgContractValue   = Math.round(avgValue);
   insights.totalOpportunities = allForNaics.length;

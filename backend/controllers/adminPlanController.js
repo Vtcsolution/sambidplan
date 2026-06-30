@@ -85,7 +85,7 @@ export const createPlan = async (req, res) => {
 export const updatePlan = async (req, res) => {
   try {
     const { id } = req.params;
-    const { displayName, description, priceMonthly, priceYearly, features, limits, order, isActive } = req.body;
+    const { displayName, description, priceMonthly, priceYearly, features, limits, order, isActive, aiCreditsPerMonth, opportunitiesPerMonth, dailyLimit } = req.body;
     
     const plan = await Plan.findById(id);
     if (!plan) {
@@ -106,8 +106,17 @@ export const updatePlan = async (req, res) => {
     }
     if (order !== undefined) plan.order = order;
     if (isActive !== undefined) plan.isActive = isActive;
-    
+    if (aiCreditsPerMonth !== undefined) plan.aiCreditsPerMonth = aiCreditsPerMonth;
+    if (opportunitiesPerMonth !== undefined) plan.opportunitiesPerMonth = opportunitiesPerMonth;
+    if (dailyLimit !== undefined) plan.dailyLimit = dailyLimit;
+
     await plan.save();
+
+    // Clear cached plan credits so changes take effect immediately
+    try {
+      const { clearPlanCreditsCache } = await import('../services/aiCreditService.js');
+      clearPlanCreditsCache();
+    } catch {}
     
     // Create notification
     await AdminNotification.create({

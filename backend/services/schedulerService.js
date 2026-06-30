@@ -29,7 +29,7 @@ import { syncSbaCompanies } from './sbaService.js';
 const MAX_NAICS_PER_FETCH  = 10;    // max unique NAICS codes fetched per master cycle
 const NAICS_FETCH_DELAY_MS = 5000;  // delay between SAM.gov calls (5s — avoids rate limiting)
 const USER_BATCH_DELAY_MS  = 500;   // delay between users during distribution
-const MIN_FETCH_INTERVAL_MS = 55 * 60 * 1000; // don't re-run master fetch if ran < 55 min ago
+const MIN_FETCH_INTERVAL_MS = 8 * 60 * 1000; // don't re-run master fetch if ran < 8 min ago (10-min cron cycle)
 
 // ─── Fetch stats (in-memory, survives per session) ───────────────────────────
 export const fetchStats = {
@@ -105,7 +105,7 @@ export const runMasterFetch = async () => {
     const msSinceLast = Date.now() - new Date(fetchStats.lastMasterFetchAt).getTime();
     if (msSinceLast < MIN_FETCH_INTERVAL_MS) {
       const minsAgo = Math.round(msSinceLast / 60000);
-      console.log(`⏭️  Master fetch skipped — last run was ${minsAgo} min ago (min interval: 55 min)`);
+      console.log(`⏭️  Master fetch skipped — last run was ${minsAgo} min ago (min interval: 8 min)`);
       return;
     }
   }
@@ -384,15 +384,15 @@ export const runUserDistribution = async () => {
 // ─── Scheduler Bootstrap ──────────────────────────────────────────────────────
 export const startScheduler = () => {
   console.log('\n🚀 Starting Hybrid Opportunity Scheduler');
-  console.log('   Phase 1a — API Fetch (per NAICS)        : every 60 min');
+  console.log('   Phase 1a — API Fetch (per NAICS)        : every 10 min');
   console.log('   Phase 1b — Bulk Nightly Download (all)   : 04:00 UTC (09:00 AM Pakistan)');
-  console.log('   Phase 2  — User Distribution             : every hour + 06:00 UTC + 04:10 UTC');
+  console.log('   Phase 2  — User Distribution             : every 10 min');
 
-  // Phase 1a: API fetch every 60 min (reduced from 30 to preserve SAM.gov quota)
-  cron.schedule('0 * * * *', () => runMasterFetch());
+  // Phase 1a: API fetch every 10 min (near real-time within SAM.gov quota)
+  cron.schedule('*/10 * * * *', () => runMasterFetch());
 
-  // Phase 2: distribute to users every hour
-  cron.schedule('0 * * * *', () => runUserDistribution());
+  // Phase 2: distribute to users every 10 min
+  cron.schedule('*/10 * * * *', () => runUserDistribution());
 
   // Daily full cycle at 6 AM
   cron.schedule('0 6 * * *', async () => {

@@ -194,15 +194,15 @@ export const verifyLogin2FA = async (req, res) => {
   }
 };
 
-// GET /api/auth/2fa/backup-codes  — view remaining backup codes (requires 2FA enabled)
+// GET /api/auth/2fa/backup-codes  — returns count only (codes shown only during setup)
 export const getBackupCodes = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('+twoFactorBackupCodes');
     if (!user?.twoFactorEnabled) {
       return res.status(400).json({ success: false, message: '2FA is not enabled.' });
     }
-    res.json({ success: true, data: { backupCodes: user.twoFactorBackupCodes || [] } });
+    res.json({ success: true, data: { remaining: (user.twoFactorBackupCodes || []).length } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'Failed to check backup codes.' });
   }
 };

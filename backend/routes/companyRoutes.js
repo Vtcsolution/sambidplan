@@ -19,8 +19,18 @@ import {
   addComment,
   downloadDocument,
 } from '../controllers/companyController.js';
+import {
+  createWorkspaceUser,
+  listWorkspaceUsers,
+  updateWorkspaceUser,
+  deleteWorkspaceUser,
+  workspaceLogin,
+} from '../controllers/workspaceController.js';
 
 const router = express.Router();
+
+// Public workspace login — no auth required
+router.post('/workspace/login', workspaceLogin);
 
 // Public invite preview — no auth required
 router.get('/join/:token', previewInvite);
@@ -45,6 +55,12 @@ router.post('/invite',                   inviteMember);
 router.put('/members/:memberId/role',    updateMemberRole);
 router.delete('/members/:memberId',      removeMember);
 router.delete('/leave',                  leaveCompany);
+
+// Workspace users (owner only)
+router.get('/workspace/users',                          listWorkspaceUsers);
+router.post('/workspace/users',                         createWorkspaceUser);
+router.put('/workspace/users/:workspaceUserId',         updateWorkspaceUser);
+router.delete('/workspace/users/:workspaceUserId',      deleteWorkspaceUser);
 
 // Documents
 router.get('/documents',             listDocuments);

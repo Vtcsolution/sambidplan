@@ -112,27 +112,20 @@ export const createStripePayment = async (req, res) => {
   try {
     const { planName, billingCycle = 'monthly' } = req.body;
     const user = await User.findById(req.user._id);
-    
+
     console.log(`📝 Stripe payment for user: ${user.email}, plan: ${planName}`);
-    
+
+    if (!planName) {
+      return res.status(400).json({ success: false, message: 'planName is required' });
+    }
+
     const plan = await Plan.findOne({ name: planName });
     if (!plan) {
-      return res.status(404).json({ success: false, message: 'Plan not found' });
+      return res.status(404).json({ success: false, message: `Plan "${planName}" not found` });
     }
-    
+
     const amount = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
-    
-    const result = await createStripePaymentIntent(amount, 'usd', {
-      userId: user._id.toString(),
-      userEmail: user.email,
-      planName: planName,
-      billingCycle: billingCycle
-    });
-    
-    if (!result.success) {
-      return res.status(400).json({ success: false, message: result.error });
-    }
-    
+
     const invoice = new Invoice({
       user: user._id,
       plan: planName,
@@ -141,17 +134,32 @@ export const createStripePayment = async (req, res) => {
       currency: 'USD',
       status: 'pending',
       paymentMethod: 'stripe',
-      metadata: new Map([['stripePaymentIntentId', result.paymentIntentId]])
     });
-    
     await invoice.save();
-    
+
+    const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+    const { createCheckoutSessionForInquiry } = await import('../services/stripeService.js');
+
+    const session = await createCheckoutSessionForInquiry({
+      inquiryId: invoice._id,
+      email: user.email,
+      planName,
+      amount,
+      billingCycle,
+      successUrl: `${frontendUrl}/billing?stripe_success=1&invoice=${invoice._id}`,
+      cancelUrl: `${frontendUrl}/pricing?stripe_cancelled=1`,
+    });
+
+    if (!session.success) {
+      return res.status(400).json({ success: false, message: session.error || 'Stripe checkout failed' });
+    }
+
+    invoice.metadata = new Map([['stripeSessionId', session.sessionId]]);
+    await invoice.save();
+
     res.json({
       success: true,
-      clientSecret: result.clientSecret,
-      paymentIntentId: result.paymentIntentId,
-      invoiceId: invoice._id,
-      isSimulated: result.isSimulated
+      data: { url: session.url, sessionId: session.sessionId, invoiceId: invoice._id, isSimulated: session.isSimulated },
     });
   } catch (error) {
     console.error('Stripe payment error:', error);
@@ -159,21 +167,29 @@ export const createStripePayment = async (req, res) => {
   }
 };
 
-// @desc    Confirm Stripe payment
+// @desc    Confirm Stripe payment (PaymentIntent or Checkout Session)
 // @route   POST /api/payment/stripe/confirm
 export const confirmStripePaymentHandler = async (req, res) => {
   try {
     const { paymentIntentId, invoiceId } = req.body;
-    
-    console.log(`📝 Confirming Stripe payment: ${paymentIntentId}`);
-    
-    const result = await confirmStripePayment(paymentIntentId);
-    
-    if (!result.success) {
-      return res.status(400).json({ success: false, message: 'Payment not successful' });
+
+    console.log(`📝 Confirming Stripe payment: intent=${paymentIntentId || 'none'} invoice=${invoiceId}`);
+
+    // If paymentIntentId provided, verify it; otherwise trust the redirect (Checkout Session already confirmed by Stripe)
+    if (paymentIntentId && !paymentIntentId.startsWith('sim_')) {
+      const result = await confirmStripePayment(paymentIntentId);
+      if (!result.success) {
+        return res.status(400).json({ success: false, message: 'Payment not successful' });
+      }
     }
-    
+
     const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
+    if (invoice.status === 'paid') {
+      return res.json({ success: true, message: 'Already activated', data: { plan: invoice.plan } });
+    }
     if (invoice) {
       invoice.status = 'paid';
       invoice.paidAt = new Date();

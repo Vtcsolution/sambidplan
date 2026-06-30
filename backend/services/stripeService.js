@@ -154,6 +154,51 @@ export const createCheckoutSessionForInquiry = async ({ inquiryId, email, planNa
   }
 };
 
+// Create a Stripe Checkout session to pay a managed-service CommissionInvoice
+// (commission or monthly_fee) — separate from plan-upgrade checkout since the
+// product here is a one-off invoice, not a subscription plan.
+export const createCheckoutSessionForCommissionInvoice = async ({ invoiceId, email, description, amount, successUrl, cancelUrl }) => {
+  if (!getStripe()) {
+    const fakeSessionId = `sim_cs_${Date.now()}`;
+    return {
+      success: true,
+      sessionId: fakeSessionId,
+      url: `${successUrl}?session_id=${fakeSessionId}&simulated=1`,
+      isSimulated: true,
+    };
+  }
+
+  try {
+    const session = await getStripe().checkout.sessions.create({
+      mode: 'payment',
+      customer_email: email,
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: Math.round(amount * 100),
+          product_data: {
+            name: 'Sambid Notify — Managed Service Invoice',
+            description,
+          },
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        commissionInvoiceId: invoiceId.toString(),
+        source: 'managed_service_invoice',
+      },
+      success_url: successUrl + '?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: cancelUrl,
+    });
+
+    return { success: true, sessionId: session.id, url: session.url, isSimulated: false };
+  } catch (error) {
+    console.error('❌ Stripe commission-invoice checkout error:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
 // Refund payment
 export const refundStripePayment = async (paymentIntentId, amount = null) => {
   // SIMULATION MODE

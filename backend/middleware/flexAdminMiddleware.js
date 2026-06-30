@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Admin from '../models/Admin.js';
 
-// Accepts ANY valid token — admin token OR regular user token.
+// Accepts ANY valid token — admin token, regular user token, OR workspace token.
 // Use on routes that both admins and regular users need to access.
 export const protectAny = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -12,6 +12,8 @@ export const protectAny = async (req, res, next) => {
   }
 
   const token = authHeader.split(' ')[1];
+
+  // 1. Try regular / admin JWT
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -25,14 +27,28 @@ export const protectAny = async (req, res, next) => {
       return next();
     }
 
-    // Regular user token
     const user = await User.findById(decoded.id).select('-password');
     if (!user) return res.status(401).json({ success: false, message: 'User not found.' });
     req.user = user;
     return next();
-  } catch (err) {
-    return res.status(401).json({ success: false, message: 'Token invalid or expired.' });
-  }
+  } catch {}
+
+  // 2. Try workspace JWT
+  try {
+    const crypto = await import('crypto');
+    const wsSecret = crypto.createHmac('sha256', process.env.JWT_SECRET).update('workspace').digest('hex');
+    const decoded = jwt.verify(token, wsSecret);
+    if (decoded.ownerId) {
+      const user = await User.findById(decoded.ownerId).select('-password');
+      if (!user) return res.status(401).json({ success: false, message: 'Company owner not found.' });
+      req.user = user;
+      req.isWorkspaceUser = true;
+      req.workspaceSession = decoded;
+      return next();
+    }
+  } catch {}
+
+  return res.status(401).json({ success: false, message: 'Token invalid or expired.' });
 };
 
 export const flexAdmin = async (req, res, next) => {

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Bell, Zap, Clock, Eye, Target, TrendingUp } from 'lucide-react';
 import { opportunityAPI } from '../services/api';
+import HowItWorks from '../components/HowItWorks';
 import { useUserPlan } from '../hooks/useUserPlan';
 import PlanGate from '../components/PlanGate';
 import Card from '../components/Card';
@@ -72,12 +73,31 @@ export default function Alerts() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
         {/* Header */}
         <div className="mb-5 sm:mb-8">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
             <Zap className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 shrink-0" />
             Your Matched Opportunities
+            <HowItWorks
+              title="Smart Alerts & Matching"
+              steps={[
+                { title: 'NAICS-based matching', description: 'System automatically matches SAM.gov opportunities to YOUR registered NAICS codes every hour' },
+                { title: 'AI Match Score (0-100%)', description: 'Each opportunity is scored based on: NAICS code match, set-aside eligibility for your business type, contract value vs your past contract sizes, and agency alignment' },
+                { title: 'Email alerts', description: 'Enterprise: real-time email on new matches. Pro: daily digest. Free/Starter: weekly summary. Configure frequency in Settings → Notifications' },
+                { title: 'Push notifications', description: 'Enable browser push notifications for instant alerts when new high-match opportunities appear' },
+              ]}
+              dataUsed={['SAM.gov (hourly fetch)', 'Your NAICS Codes', 'Your Business Type', 'Your Past Performance']}
+            >
+              <p className="text-sm font-semibold text-gray-700 mt-2">How profile matching works:</p>
+              <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5 mt-1">
+                <li><strong>NAICS match</strong> — your registered codes are compared against each opportunity's NAICS</li>
+                <li><strong>Set-aside fit</strong> — if it's 8(a), WOSB, HUBZone, SDVOSB — does your certification qualify?</li>
+                <li><strong>Value range</strong> — is the contract value within your proven range based on past wins?</li>
+                <li><strong>Agency history</strong> — have you or similar companies won from this agency before?</li>
+                <li><strong>Competition level</strong> — how many competitors have won similar contracts recently?</li>
+              </ul>
+            </HowItWorks>
           </h1>
           <p className="text-sm sm:text-base text-gray-600 mt-0.5 sm:mt-1">
             Automatically matched from SAM.gov based on your NAICS codes

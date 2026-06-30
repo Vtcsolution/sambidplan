@@ -217,7 +217,7 @@ export default function HowItWorks() {
       <SEOHead
         title="How Sambid Works — Federal Contract Discovery Automated"
         description="Sambid scans SAM.gov daily, matches federal contracts to your NAICS codes using AI, and delivers them straight to your dashboard. See the full platform tour."
-        keywords="how to find federal contracts, SAM.gov automation, federal contracting platform, government contract alerts, NAICS code matching, federal RFP discovery"
+        keywords="how to find federal contracts, SAM.gov automation, federal contracting platform, government contract alerts, NAICS code matching, federal RFP discovery, how to bid on government contracts, federal contracting for beginners, how to win federal contracts, SAM.gov tutorial, government contract bidding process"
         canonical="https://sambid.co/how-it-works"
       />
 
@@ -257,7 +257,7 @@ export default function HowItWorks() {
 
       {/* ── 3-Step Setup ── */}
       <section className="py-16 sm:py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <FadeIn className="text-center mb-12">
             <span className="inline-block px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold uppercase tracking-wide mb-3">
               Getting Started
@@ -363,7 +363,7 @@ export default function HowItWorks() {
 
       {/* ── Full Feature Grid ── */}
       <section className="py-16 sm:py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <FadeIn className="text-center mb-12">
             <span className="inline-block px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold uppercase tracking-wide mb-3">
               Platform Features
@@ -398,7 +398,7 @@ export default function HowItWorks() {
 
       {/* ── Who is Sambid For ── */}
       <section className="py-16 sm:py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <FadeIn className="text-center mb-12">
             <span className="inline-block px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold uppercase tracking-wide mb-3">
               Who Uses Sambid

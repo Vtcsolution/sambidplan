@@ -6,11 +6,24 @@ import {
   Zap, Star, BookOpen
 } from 'lucide-react';
 import UserNotificationDropdown from './UserNotificationDropdown';
+import SambidLogo from './SambidLogo';
 
 const platformLinks = [
   { path: '/how-it-works', label: 'How It Works',  icon: HelpCircle, desc: 'See the full platform walkthrough' },
-  { path: '/features',     label: 'Features',       icon: Zap,        desc: 'All 12 tools in one place' },
   { path: '/faq',          label: 'FAQ',            icon: BookOpen,   desc: 'Common questions answered' },
+];
+
+const featureDemoLinks = [
+  { path: '/features/contract-opportunities', label: 'Contract Opportunities', desc: 'Auto-matched SAM.gov contracts' },
+  { path: '/features/ai-summarize',           label: 'AI Summarize',           desc: 'Full contract intelligence' },
+  { path: '/features/bid-analysis',           label: 'AI Bid Analysis',        desc: 'BID/NO-BID with real data' },
+  { path: '/features/proposal-builder',       label: 'AI Proposal Builder',    desc: '7-section proposal writer' },
+  { path: '/features/go-no-go',              label: 'Go/No-Go Decision',      desc: '10-factor scoring matrix' },
+  { path: '/features/competitive-analysis',   label: 'Competitive Analysis',   desc: 'Real competitor intelligence' },
+  { path: '/features/risk-assessment',        label: 'Risk Assessment',        desc: '7-category risk matrix' },
+  { path: '/features/managed-service',        label: 'Managed Bidding',        desc: 'We bid for you — pay on win' },
+  { path: '/features/deadline-calendar',      label: 'Deadline Calendar',      desc: 'Never miss a due date' },
+  { path: '/features/bid-pipeline',           label: 'Bid Pipeline',           desc: 'Track bids through stages' },
 ];
 
 export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, user, onMenuClick }) {
@@ -19,8 +32,10 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen]           = useState(false);
   const [isPlatformOpen, setIsPlatformOpen]               = useState(false);
+  const [isFeaturesOpen, setIsFeaturesOpen]               = useState(false);
   const dropdownRef  = useRef(null);
   const platformRef  = useRef(null);
+  const featuresRef  = useRef(null);
 
   const dashboardRoutes = [
     '/dashboard', '/opportunities', '/opportunity',
@@ -40,6 +55,8 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
         setIsProfileDropdownOpen(false);
       if (platformRef.current && !platformRef.current.contains(e.target))
         setIsPlatformOpen(false);
+      if (featuresRef.current && !featuresRef.current.contains(e.target))
+        setIsFeaturesOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -48,6 +65,7 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
   useEffect(() => {
     setIsMobileMenuOpen(false);
     setIsPlatformOpen(false);
+    setIsFeaturesOpen(false);
   }, [location.pathname]);
 
   const handleLogout = () => {
@@ -73,8 +91,8 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
 
   return (
     <>
-      <nav className="bg-white shadow-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <nav className="bg-white shadow-md">
+        <div className={`mx-auto px-4 sm:px-6 lg:px-8 ${isDashboardRoute && isAuthenticated ? '' : 'max-w-[1440px]'}`}>
           <div className="flex justify-between items-center h-16">
 
             {/* Left — hamburger + logo */}
@@ -101,9 +119,7 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                 to={isAuthenticated && isDashboardRoute ? '/dashboard' : '/'}
                 className="flex items-center gap-2"
               >
-                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg flex items-center justify-center shadow-sm">
-                  <span className="text-white font-bold text-sm">S</span>
-                </div>
+                <SambidLogo size={32} />
                 <span className="text-lg sm:text-xl font-bold bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
                   Sambid
                 </span>
@@ -124,17 +140,56 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                     Home
                   </Link>
 
-                  {/* Platform dropdown */}
+                  {/* Features dropdown */}
+                  <div className="relative" ref={featuresRef}>
+                    <button
+                      onClick={() => { setIsFeaturesOpen(o => !o); setIsPlatformOpen(false); }}
+                      className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isFeaturesOpen || location.pathname.startsWith('/features')
+                          ? 'text-indigo-600 bg-indigo-50'
+                          : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Features
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${isFeaturesOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isFeaturesOpen && (
+                      <div className="absolute left-0 top-full mt-2 w-[520px] bg-white rounded-xl shadow-xl border border-gray-100 p-4 z-50">
+                        <div className="grid grid-cols-2 gap-1">
+                          {featureDemoLinks.map(l => (
+                            <Link key={l.path} to={l.path} onClick={() => setIsFeaturesOpen(false)}
+                              className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-indigo-50 transition-colors">
+                              <Zap className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900">{l.label}</p>
+                                <p className="text-xs text-gray-500">{l.desc}</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                        <div className="border-t border-gray-100 mt-3 pt-3 flex items-center justify-between">
+                          <Link to="/features" onClick={() => setIsFeaturesOpen(false)}
+                            className="text-sm text-indigo-600 font-semibold hover:underline">
+                            View All Features →
+                          </Link>
+                          <span className="text-xs text-gray-400">18 features available</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Resources dropdown */}
                   <div className="relative" ref={platformRef}>
                     <button
-                      onClick={() => setIsPlatformOpen(o => !o)}
+                      onClick={() => { setIsPlatformOpen(o => !o); setIsFeaturesOpen(false); }}
                       className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                         isPlatPath || isPlatformOpen
                           ? 'text-indigo-600 bg-indigo-50'
                           : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-50'
                       }`}
                     >
-                      Platform
+                      Resources
                       <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${isPlatformOpen ? 'rotate-180' : ''}`} />
                     </button>
 
@@ -143,20 +198,13 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                         {platformLinks.map(l => {
                           const Icon = l.icon;
                           return (
-                            <Link
-                              key={l.path}
-                              to={l.path}
-                              className={`flex items-start gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors ${
-                                isActive(l.path) ? 'bg-indigo-50' : ''
-                              }`}
-                            >
+                            <Link key={l.path} to={l.path} onClick={() => setIsPlatformOpen(false)}
+                              className={`flex items-start gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors ${isActive(l.path) ? 'bg-indigo-50' : ''}`}>
                               <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
                                 <Icon className="w-4 h-4 text-indigo-600" />
                               </div>
                               <div>
-                                <p className={`text-sm font-semibold ${isActive(l.path) ? 'text-indigo-600' : 'text-gray-900'}`}>
-                                  {l.label}
-                                </p>
+                                <p className={`text-sm font-semibold ${isActive(l.path) ? 'text-indigo-600' : 'text-gray-900'}`}>{l.label}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">{l.desc}</p>
                               </div>
                             </Link>
@@ -301,21 +349,35 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                     Home
                   </Link>
 
-                  {/* Platform section */}
+                  {/* Features section */}
                   <div className="px-3 pt-2 pb-1">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Platform</p>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Features</p>
+                  </div>
+                  <Link to="/features" onClick={() => setIsMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive('/features') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'}`}>
+                    <Zap className="w-4 h-4 shrink-0 text-indigo-500" /> All Features
+                  </Link>
+                  {featureDemoLinks.slice(0, 5).map(l => (
+                    <Link key={l.path} to={l.path} onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                      <Zap className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      {l.label}
+                    </Link>
+                  ))}
+                  <Link to="/features" onClick={() => setIsMobileMenuOpen(false)}
+                    className="px-3 py-2 text-xs text-indigo-600 font-semibold hover:underline">
+                    View all 18 features →
+                  </Link>
+
+                  {/* Resources section */}
+                  <div className="px-3 pt-2 pb-1">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Resources</p>
                   </div>
                   {platformLinks.map(l => {
                     const Icon = l.icon;
                     return (
-                      <Link
-                        key={l.path}
-                        to={l.path}
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                          isActive(l.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
+                      <Link key={l.path} to={l.path} onClick={() => setIsMobileMenuOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive(l.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'}`}>
                         <Icon className="w-4 h-4 shrink-0" />
                         {l.label}
                       </Link>

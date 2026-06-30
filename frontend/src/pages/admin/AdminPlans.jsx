@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import AdminHowItWorks from '../../components/AdminHowItWorks';
 import {
   Layers, Edit2, ToggleLeft, ToggleRight, RefreshCw, Save, X,
-  CheckCircle, XCircle, DollarSign, TrendingDown, AlertCircle, Plus, Trash2,
+  CheckCircle, XCircle, DollarSign, TrendingDown, AlertCircle, Plus, Trash2, Sparkles, FileText,
 } from 'lucide-react';
 import { adminPanelAPI } from '../../services/adminApi';
+import { invalidatePlanCache } from '../../hooks/usePlans';
 
 const PLAN_COLORS = {
   free:       'bg-gray-100 text-gray-600',
@@ -34,11 +36,14 @@ function savingsPct(monthly, yearly) {
 // ── Edit Modal ────────────────────────────────────────────────────────────────
 function EditModal({ plan, onClose, onSaved }) {
   const [form, setForm] = useState({
-    displayName:  plan.displayName || '',
-    description:  plan.description || '',
-    priceMonthly: plan.priceMonthly ?? 0,
-    priceYearly:  plan.priceYearly  ?? 0,
-    order:        plan.order        ?? 0,
+    displayName:          plan.displayName || '',
+    description:          plan.description || '',
+    priceMonthly:         plan.priceMonthly ?? 0,
+    priceYearly:          plan.priceYearly  ?? 0,
+    aiCreditsPerMonth:    plan.aiCreditsPerMonth ?? 0,
+    opportunitiesPerMonth: plan.opportunitiesPerMonth ?? 0,
+    dailyLimit:           plan.dailyLimit ?? 0,
+    order:                plan.order        ?? 0,
     features: (plan.features || []).map(f => ({ name: f.name, included: f.included })),
     limits: {
       maxSavedOpportunities: plan.limits?.maxSavedOpportunities ?? 10,
@@ -72,7 +77,7 @@ function EditModal({ plan, onClose, onSaved }) {
     });
 
   const set = (field) => (e) =>
-    setForm(f => ({ ...f, [field]: field === 'priceMonthly' || field === 'priceYearly' || field === 'order'
+    setForm(f => ({ ...f, [field]: ['priceMonthly', 'priceYearly', 'order', 'aiCreditsPerMonth', 'opportunitiesPerMonth', 'dailyLimit'].includes(field)
       ? Number(e.target.value)
       : e.target.value }));
 
@@ -173,6 +178,49 @@ function EditModal({ plan, onClose, onSaved }) {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Plan Limits */}
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Plan Limits</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Monthly AI Credits</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={form.aiCreditsPerMonth}
+                  onChange={set('aiCreditsPerMonth')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  {form.aiCreditsPerMonth > 0 ? `~${Math.floor(form.aiCreditsPerMonth / 15)} AI calls/month` : 'No AI access'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Monthly Opportunities</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={form.opportunitiesPerMonth}
+                  onChange={set('opportunitiesPerMonth')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  {form.opportunitiesPerMonth > 0 ? `${form.opportunitiesPerMonth} contracts/month` : 'Unlimited'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Daily Limit (Trial / Free only)</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={form.dailyLimit}
+                  onChange={set('dailyLimit')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  {form.dailyLimit > 0 ? `${form.dailyLimit} matches/day — only applies to the "free" plan (covers Trial + Free)` : 'Not applicable'}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Display info */}
@@ -527,6 +575,7 @@ export default function AdminPlans() {
 
   const handleSaved = () => {
     showToast('Plan updated successfully.');
+    invalidatePlanCache();
     loadPlans();
   };
 
@@ -543,7 +592,7 @@ export default function AdminPlans() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Plan Pricing</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Plan Pricing<AdminHowItWorks page="plans" /></h1>
           <p className="text-gray-500 text-sm mt-0.5">Manage subscription plans, monthly and yearly pricing, and plan limits.</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
@@ -640,6 +689,29 @@ export default function AdminPlans() {
                       </p>
                     </div>
                   )}
+
+                  {/* Opportunities */}
+                  <div className="flex items-center justify-between bg-emerald-50 rounded-xl px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-xs font-medium text-emerald-700">Opportunities</span>
+                    </div>
+                    <span className="font-bold text-emerald-700 text-sm">
+                      {(plan.opportunitiesPerMonth || 0) > 0 ? `${plan.opportunitiesPerMonth}/mo` : 'Unlimited'}
+                    </span>
+                  </div>
+
+                  {/* AI Credits */}
+                  <div className="flex items-center justify-between bg-violet-50 rounded-xl px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                      <span className="text-xs font-medium text-violet-700">AI Credits</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-violet-700 text-sm">{plan.aiCreditsPerMonth || 0}/mo</span>
+                      {(plan.aiCreditsPerMonth || 0) > 0 && <p className="text-violet-400 text-xs">~{Math.floor(plan.aiCreditsPerMonth / 15)} calls</p>}
+                    </div>
+                  </div>
 
                   {/* Limits summary */}
                   <div className="pt-1 space-y-1">
