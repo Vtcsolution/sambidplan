@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { authAPI, opportunityAPI, paymentAPI } from '../services/api';
 import HowItWorks from '../components/HowItWorks';
-import { searchNAICS, NAICS_CODES } from '../data/naicsCodes';
+import { searchNAICS, NAICS_CODES, getFamily } from '../data/naicsCodes';
 import PushNotificationToggle from '../components/PushNotificationToggle';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { usePlans } from '../hooks/usePlans';
@@ -68,10 +68,11 @@ export default function Settings() {
   const naicsInputRef = useRef(null);
 
   // ── Notifications tab ──────────────────────────────────────────────────────
-  const [emailAlerts,    setEmailAlerts]    = useState(true);
-  const [alertFrequency, setAlertFrequency] = useState('daily');
-  const [notifSaving,    setNotifSaving]    = useState(false);
-  const [notifMsg,       setNotifMsg]       = useState({ text: '', type: '' });
+  const [emailAlerts,      setEmailAlerts]      = useState(true);
+  const [alertFrequency,   setAlertFrequency]   = useState('daily');
+  const [deadlineAlertDays, setDeadlineAlertDays] = useState(30);
+  const [notifSaving,      setNotifSaving]      = useState(false);
+  const [notifMsg,         setNotifMsg]         = useState({ text: '', type: '' });
 
   // ── Security tab ──────────────────────────────────────────────────────────
   const [currentPw, setCurrentPw] = useState('');
@@ -129,6 +130,7 @@ export default function Settings() {
           setSelectedNAICS(u.naicsCodes || []);
           setEmailAlerts(u.emailAlertsEnabled !== false);
           setAlertFrequency(u.alertFrequency || 'daily');
+          setDeadlineAlertDays(u.deadlineAlertDays || 30);
         }
       } catch {}
       setLoading(false);
@@ -142,12 +144,19 @@ export default function Settings() {
   }, [naicsQuery]);
 
   const addNAICS = (code) => {
-    if (!selectedNAICS.includes(code) && selectedNAICS.length < 5) {
+    if (!selectedNAICS.includes(code) && selectedNAICS.length < 10) {
       setSelectedNAICS(prev => [...prev, code]);
     }
     setNaicsQuery('');
     setNaicsResults([]);
     naicsInputRef.current?.focus();
+  };
+
+  const handleNaicsKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      const q = naicsQuery.trim();
+      if (/^\d{6}$/.test(q)) addNAICS(q);
+    }
   };
   const removeNAICS = (code) => setSelectedNAICS(prev => prev.filter(c => c !== code));
 
@@ -172,19 +181,20 @@ export default function Settings() {
     setNaicsSaving(true); setNaicsMsg({ text: '', type: '' });
     try {
       await opportunityAPI.updateProfile({ naicsCodes: selectedNAICS });
-      setNaicsMsg({ text: 'NAICS codes saved! Your opportunity feed will refresh shortly.', type: 'success' });
+      opportunityAPI.refreshMyFeed().catch(() => {}); // fire-and-forget — pulls new opps for updated codes
+      setNaicsMsg({ text: `NAICS codes saved! Fetching new opportunities for your ${selectedNAICS.length > 0 ? selectedNAICS.length + ' code' + (selectedNAICS.length !== 1 ? 's' : '') + ' + their families' : 'codes'}…`, type: 'success' });
     } catch (e) {
       setNaicsMsg({ text: e.response?.data?.message || 'Failed to save', type: 'error' });
     } finally {
       setNaicsSaving(false);
-      setTimeout(() => setNaicsMsg({ text: '', type: '' }), 4000);
+      setTimeout(() => setNaicsMsg({ text: '', type: '' }), 5000);
     }
   };
 
   const saveNotifications = async () => {
     setNotifSaving(true); setNotifMsg({ text: '', type: '' });
     try {
-      await authAPI.updateProfile({ emailAlertsEnabled: emailAlerts, alertFrequency });
+      await authAPI.updateProfile({ emailAlertsEnabled: emailAlerts, alertFrequency, deadlineAlertDays });
       setNotifMsg({ text: 'Notification preferences saved!', type: 'success' });
     } catch (e) {
       setNotifMsg({ text: e.response?.data?.message || 'Failed to save', type: 'error' });
@@ -472,31 +482,67 @@ export default function Settings() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-1">NAICS Industry Codes</h2>
                 <p className="text-sm text-gray-500 mb-5">
-                  These codes determine which federal contracts are matched to you. Add up to 5 codes.
+                  Add your NAICS codes. Each code automatically covers its entire 4-digit family — so <span className="font-mono font-medium text-indigo-600">541511</span> also pulls <span className="font-mono text-indigo-600">541512</span>, <span className="font-mono text-indigo-600">541513</span>, <span className="font-mono text-indigo-600">541519</span>. You can type any 6-digit code directly.
                 </p>
                 <Toast msg={naicsMsg.text} type={naicsMsg.type} />
 
-                {/* Selected chips */}
+                {/* Selected codes with family expansion */}
                 {selectedNAICS.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-4 p-3 bg-indigo-50 rounded-xl">
+                  <div className="space-y-3 mb-4">
                     {selectedNAICS.map(code => {
                       const entry = NAICS_CODES.find(n => n.code === code);
-                      const desc  = entry?.label.split(' — ')[1] || '';
+                      const desc = entry?.label.split(' — ')[1] || 'Custom NAICS Code';
+                      const family = getFamily(code);
+                      const prefix = code.slice(0, 4);
                       return (
-                        <span key={code} className="inline-flex items-center gap-1.5 bg-indigo-600 text-white text-xs px-3 py-1.5 rounded-full font-medium">
-                          <span className="font-mono">{code}</span>
-                          {desc && <span className="opacity-75 hidden sm:inline">{desc.substring(0, 30)}</span>}
-                          <button onClick={() => removeNAICS(code)} className="hover:bg-indigo-500 rounded-full p-0.5 transition-colors">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
+                        <div key={code} className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono font-bold text-indigo-700 text-sm">{code}</span>
+                                <span className="text-xs text-gray-600">{desc}</span>
+                              </div>
+                              {/* Family expansion */}
+                              <div className="mt-2">
+                                <div className="text-xs text-indigo-500 font-medium mb-1.5">
+                                  {family.length > 1
+                                    ? `Covers entire ${prefix}xx family (${family.length} codes):`
+                                    : `Auto-matched family: ${prefix}xx`}
+                                </div>
+                                {family.length > 1 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {family.map(n => (
+                                      <span
+                                        key={n.code}
+                                        title={n.label.split(' — ')[1]}
+                                        className={`text-xs px-2 py-0.5 rounded-full font-mono border ${
+                                          n.code === code
+                                            ? 'bg-indigo-600 text-white border-indigo-600'
+                                            : 'bg-white text-indigo-600 border-indigo-300'
+                                        }`}
+                                      >
+                                        {n.code}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => removeNAICS(code)}
+                              className="flex-shrink-0 p-1.5 text-indigo-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
                 )}
 
-                {/* Search */}
-                {selectedNAICS.length < 5 ? (
+                {/* Search / direct entry */}
+                {selectedNAICS.length < 10 ? (
                   <div className="relative mb-4">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
@@ -504,7 +550,8 @@ export default function Settings() {
                       type="text"
                       value={naicsQuery}
                       onChange={e => setNaicsQuery(e.target.value)}
-                      placeholder="Search by keyword or code — e.g. 'software', 'construction', '541512'"
+                      onKeyDown={handleNaicsKeyDown}
+                      placeholder="Search by keyword or type any 6-digit code — press Enter to add directly"
                       className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 text-sm"
                     />
                     {naicsResults.length > 0 && (
@@ -517,8 +564,10 @@ export default function Settings() {
                             className="w-full text-left px-4 py-3 text-sm hover:bg-indigo-50 border-b border-gray-50 last:border-0 flex items-center gap-3"
                           >
                             <span className="font-mono font-bold text-indigo-600 w-14 flex-shrink-0">{n.code}</span>
-                            <span className="text-gray-700">{n.label.split(' — ')[1]}</span>
-                            <span className="ml-auto text-xs text-indigo-500 flex-shrink-0">+ Add</span>
+                            <span className="text-gray-700 flex-1 truncate">{n.label.split(' — ')[1]}</span>
+                            {n.isCustom
+                              ? <span className="ml-auto text-xs text-amber-600 flex-shrink-0 font-medium">+ Add custom</span>
+                              : <span className="ml-auto text-xs text-indigo-500 flex-shrink-0">+ Add</span>}
                           </button>
                         ))}
                       </div>
@@ -526,7 +575,7 @@ export default function Settings() {
                   </div>
                 ) : (
                   <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-                    Maximum 5 NAICS codes reached. Remove one to add another.
+                    Maximum 10 NAICS codes reached. Remove one to add another.
                   </div>
                 )}
 
@@ -534,12 +583,12 @@ export default function Settings() {
                   <div className="text-center py-8 text-gray-400">
                     <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">No NAICS codes added yet.</p>
-                    <p className="text-xs mt-1">Search above to add your industry codes.</p>
+                    <p className="text-xs mt-1">Search above or type any 6-digit code and press Enter.</p>
                   </div>
                 )}
 
                 <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
-                  <strong>💡 Tip:</strong> Your NAICS codes control which contracts are fetched for you daily. More specific codes = more relevant matches.
+                  <strong>How it works:</strong> Each NAICS code you add automatically expands to its entire 4-digit family group. For example, adding <span className="font-mono font-semibold">541511</span> also fetches opportunities coded as <span className="font-mono">541512</span>, <span className="font-mono">541513</span>, and <span className="font-mono">541519</span> — because contracting officers sometimes enter sibling codes by mistake. You can also type any code not in the list (like <span className="font-mono">467373</span>) and hit Enter.
                 </div>
 
                 <div className="flex justify-end mt-6">
@@ -549,7 +598,7 @@ export default function Settings() {
                     className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                   >
                     {naicsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {naicsSaving ? 'Saving…' : 'Save NAICS Codes'}
+                    {naicsSaving ? 'Saving & fetching…' : 'Save NAICS Codes'}
                   </button>
                 </div>
               </div>
@@ -612,6 +661,32 @@ export default function Settings() {
                     </div>
                   </div>
                 )}
+
+                {/* Deadline alert window */}
+                <div className="mt-6">
+                  <p className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-orange-500" /> Deadline Alert Window
+                  </p>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Get an email alert when a matched opportunity's deadline is within this many days. You'll also receive hourly reminders when 24 h remain, and 3 urgent alerts in the final hour.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {[15, 30, 60, 90].map(days => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => setDeadlineAlertDays(days)}
+                        className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
+                          deadlineAlertDays === days
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {days} days
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {/* Push notifications */}
                 <div className="mt-6">

@@ -106,7 +106,7 @@ const defaultPlans = [
       { name: 'Priority email support',              included: true  },
       { name: 'API access',                          included: false },
     ],
-    aiCreditsPerMonth: 150,
+    aiCreditsPerMonth: 1000,
     opportunitiesPerMonth: 500,
     limits: {
       maxSavedOpportunities: 100,

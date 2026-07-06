@@ -40,6 +40,7 @@ export default function GoNoGo() {
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [docsMeta, setDocsMeta] = useState(null);
 
   useEffect(() => {
     if (isPro) loadOpportunities();
@@ -66,7 +67,7 @@ export default function GoNoGo() {
 
   const handleAnalyze = async () => {
     if (!selectedOpp) { setError('Please select an opportunity first.'); return; }
-    setLoading(true); setError(''); setResult('');
+    setLoading(true); setError(''); setResult(''); setDocsMeta(null);
     try {
       const res = await aiAPI.goNoGo({
         opportunityId: selectedOpp._id,
@@ -74,6 +75,9 @@ export default function GoNoGo() {
         notes,
       });
       setResult(res.data.data.analysis);
+      if (res.data.data.totalDocs > 0) {
+        setDocsMeta({ docsAnalyzed: res.data.data.docsAnalyzed, totalDocs: res.data.data.totalDocs });
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Analysis failed. Please try again.');
     } finally {
@@ -140,7 +144,7 @@ export default function GoNoGo() {
         <div className="mb-6 p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-start gap-3">
           <Database className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
           <div className="text-sm text-indigo-700">
-            <strong>AI analyzes 4 real data sources:</strong> Complete SAM.gov opportunity data (full SOW/description) + Historical winners from USASpending.gov + Your verified company profile (UEI, certs, past wins) + Real market pricing benchmarks
+            <strong>AI analyzes 5 real data sources:</strong> All attached solicitation PDFs (SOW, RFP, attachments) + Complete SAM.gov opportunity record + Historical winners from USASpending.gov + Your verified company profile + Real market pricing benchmarks
           </div>
         </div>
 
@@ -255,7 +259,7 @@ export default function GoNoGo() {
               {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing with Real Data...</> : <><Sparkles className="w-4 h-4" /> Run Go/No-Go Analysis</>}
             </button>
             {loading && (
-              <p className="text-xs text-gray-400 text-center">Fetching competitor data from USASpending.gov + your company profile + full opportunity data...</p>
+              <p className="text-xs text-gray-400 text-center">Reading solicitation PDFs + fetching competitor data + loading company profile…  This may take 20–40 seconds.</p>
             )}
           </div>
 
@@ -283,14 +287,23 @@ export default function GoNoGo() {
 
                 {/* Data sources used */}
                 <div className="flex flex-wrap gap-1.5">
-                  {['SAM.gov Data', 'USASpending Competitors', 'Company Profile', 'Past Wins'].map(s => (
-                    <span key={s} className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                  {[
+                    docsMeta
+                      ? `${docsMeta.docsAnalyzed} of ${docsMeta.totalDocs} PDFs Read`
+                      : 'SAM.gov Data',
+                    'USASpending Competitors',
+                    'Company Profile',
+                    'Past Wins',
+                  ].map(s => (
+                    <span key={s} className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${
+                      s.includes('PDF') ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700'
+                    }`}>
                       <CheckCircle className="w-2.5 h-2.5" />{s}
                     </span>
                   ))}
                 </div>
 
-                <div className="bg-gray-50 rounded-xl p-4 max-h-[600px] overflow-y-auto border border-gray-100"><AIResponseRenderer content={result} /></div>
+                <div className="bg-gray-50 rounded-xl p-4 max-h-[800px] overflow-y-auto border border-gray-100"><AIResponseRenderer content={result} /></div>
 
                 <button onClick={() => { navigator.clipboard.writeText(result); }} className="w-full py-2 text-sm text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 font-medium">
                   Copy Analysis to Clipboard

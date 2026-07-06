@@ -714,6 +714,7 @@ export default function ProposalBuilder() {
   const [proposal,   setProposal]   = useState('');
   const [sectionEdits, setSectionEdits] = useState({});
   const [aiProvider, setAiProvider] = useState('');
+  const [docsAnalyzed, setDocsAnalyzed] = useState(0);
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState('');
   const [copied,     setCopied]     = useState(false);
@@ -739,6 +740,7 @@ export default function ProposalBuilder() {
       const res = await aiAPI.fullProposal(opportunityId);
       setProposal(res.data.data.proposal);
       setAiProvider(res.data.data.aiProvider || 'AI');
+      setDocsAnalyzed(res.data.data.docsAnalyzed || 0);
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to generate. Please try again.');
@@ -1083,6 +1085,13 @@ export default function ProposalBuilder() {
               </button>
             </div>
           </div>
+
+          {docsAnalyzed > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 mb-3">
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span><strong>{docsAnalyzed} RFP document{docsAnalyzed !== 1 ? 's' : ''} analyzed</strong> — proposal written from actual solicitation files</span>
+            </div>
+          )}
 
           {sections.length > 0 ? (
             <div className="space-y-3">

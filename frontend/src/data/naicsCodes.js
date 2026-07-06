@@ -89,8 +89,21 @@ export const NAICS_CODES = [
 
 export const searchNAICS = (query) => {
   if (!query || query.trim().length < 2) return [];
-  const q = query.toLowerCase();
-  return NAICS_CODES.filter(
+  const q = query.trim().toLowerCase();
+  const results = NAICS_CODES.filter(
     n => n.code.includes(q) || n.label.toLowerCase().includes(q)
   ).slice(0, 10);
+
+  // If query is exactly 6 digits and not already listed, offer it as a custom entry
+  if (/^\d{6}$/.test(q) && !results.find(n => n.code === q)) {
+    results.unshift({ code: q, label: `${q} — Custom NAICS Code`, isCustom: true });
+  }
+  return results;
+};
+
+// Returns all known codes in the same 4-digit industry group (e.g. 5415xx for 541511)
+export const getFamily = (code) => {
+  if (!code || code.length < 4) return [];
+  const prefix = code.slice(0, 4);
+  return NAICS_CODES.filter(n => n.code.startsWith(prefix));
 };

@@ -15,6 +15,8 @@ import {
   getAdminStats,
   triggerSAMFetch,
   triggerBulkFetch,
+  triggerSAMFetchTest,
+  triggerBulkFetchTest,
   getHybridOpportunities,
   // Settings Controllers
   getSettings,
@@ -63,6 +65,7 @@ import { reconcileReferralCommissions } from '../controllers/referralController.
 import {
   getCreditUsageLogs, getCreditUsageSummary,
   getUserCreditHistory, sendCreditReport,
+  resetUserCredits, addBonusCredits,
 } from '../controllers/adminCreditController.js';
 import { getAIKeyStatus } from '../controllers/adminAIKeysController.js';
 
@@ -77,6 +80,8 @@ router.get('/analytics',              getDashboardAnalytics);
 router.get('/pending-counts',         getPendingCounts);
 router.post('/trigger-fetch',         triggerSAMFetch);
 router.post('/trigger-bulk',          triggerBulkFetch);
+router.post('/trigger-fetch-test',    triggerSAMFetchTest);
+router.post('/trigger-bulk-test',     triggerBulkFetchTest);
 router.get('/hybrid-opportunities',   getHybridOpportunities);
 router.get('/recent-activity',        getRecentActivity);
 
@@ -139,9 +144,11 @@ router.post('/companies/clear',             clearAllCompanies);
 router.get('/ai-keys/status',        getAIKeyStatus);
 
 // AI Credit Usage
-router.get('/credits/logs',           getCreditUsageLogs);
-router.get('/credits/summary',        getCreditUsageSummary);
-router.get('/credits/user/:userId',   getUserCreditHistory);
-router.post('/credits/send-report',   sendCreditReport);
+router.get('/credits/logs',                 getCreditUsageLogs);
+router.get('/credits/summary',              getCreditUsageSummary);
+router.get('/credits/user/:userId',         getUserCreditHistory);
+router.post('/credits/send-report',         sendCreditReport);
+router.post('/credits/reset/:userId',       resetUserCredits);
+router.post('/credits/add-bonus/:userId',   addBonusCredits);
 
 export default router;

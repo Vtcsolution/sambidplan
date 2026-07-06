@@ -14,7 +14,7 @@ const opportunitySchema = new mongoose.Schema({
   },
   fetchSource: {
     type: String,
-    enum: ['api', 'bulk'],
+    enum: ['api', 'bulk', 'keyword'],
     default: 'api',
   },
   title: {
@@ -52,6 +52,7 @@ const opportunitySchema = new mongoose.Schema({
     type: String
   },
   placeOfPerformance: {
+    streetAddress: String,
     city: String,
     state: String,
     zipCode: String,
@@ -75,6 +76,8 @@ const opportunitySchema = new mongoose.Schema({
   resourceLinks: [{
     url:  { type: String },
     name: { type: String },
+    size: { type: String },
+    type: { type: String },
   }],
   lastFetched: {
     type: Date,
@@ -82,6 +85,7 @@ const opportunitySchema = new mongoose.Schema({
   },
 
   // ── Extended fields from SAM.gov ──────────────────────────────
+  noticeId:   { type: String, default: '' }, // SAM.gov UUID — used for direct links and resource fetching
   noticeType: { type: String, default: '' },
   archiveDate: { type: Date, default: null },
   archiveType: { type: String, default: '' },
@@ -90,6 +94,7 @@ const opportunitySchema = new mongoose.Schema({
   subTier: { type: String, default: '' },
   office: { type: String, default: '' },
   officeAddress: {
+    streetAddress: String,
     city: String,
     state: String,
     zipCode: String,
@@ -99,6 +104,14 @@ const opportunitySchema = new mongoose.Schema({
   pscDescription: { type: String, default: '' },
   additionalInfoLink: { type: String, default: '' },
   organizationType: { type: String, default: '' },
+  relatedNotice: { type: String, default: '' },
+  majorCommand: { type: String, default: '' },
+  subCommand1:  { type: String, default: '' },
+  subCommand2:  { type: String, default: '' },
+  subCommand3:  { type: String, default: '' },
+
+  // NAICS codes suggested by keyword-search matching (catches wrong-NAICS opportunities)
+  suggestedNaics: [{ type: String }],
 
   // Award details
   award: {
@@ -135,11 +148,21 @@ const opportunitySchema = new mongoose.Schema({
     email: String,
     phone: String,
     fax: String
-  }]
+  }],
+
+  // Cached PDF text — populated when any AI feature successfully reads the attachments.
+  // Reused by all subsequent AI calls so SAM.gov is not hit again.
+  docCache: {
+    text:       { type: String, default: '' },
+    fetchedAt:  { type: Date,   default: null },
+    docsRead:   { type: Number, default: 0 },
+    totalDocs:  { type: Number, default: 0 },
+  }
 });
 
 // Indexes for fast searching
 opportunitySchema.index({ naicsCode: 1, dueDate: 1 });
+opportunitySchema.index({ suggestedNaics: 1 });
 opportunitySchema.index({ title: 'text', description: 'text' });
 opportunitySchema.index({ agency: 1 });
 opportunitySchema.index({ estimatedValue: 1 });

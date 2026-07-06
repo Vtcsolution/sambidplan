@@ -28,8 +28,11 @@ export const ENV_MAP = {
   'api.openaiApiKey':              'OPENAI_API_KEY',
   'api.geminiApiKey':              'GEMINI_API_KEY',
 
-  // SAM.gov
+  // SAM.gov — up to 4 keys rotate automatically on 429 (1,000 req/day each)
   'api.samApiKey':                 'SAM_API_KEY',
+  'api.samApiKey2':                'SAM_API_KEY_2',
+  'api.samApiKey3':                'SAM_API_KEY_3',
+  'api.samApiKey4':                'SAM_API_KEY_4',
   'api.samApiUrl':                 'SAM_API_URL',
   'api.usaspendingApiUrl':         'USASPENDING_API_URL',
 

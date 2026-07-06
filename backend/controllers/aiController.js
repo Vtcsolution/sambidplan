@@ -13,6 +13,7 @@ import {
   generateGoNoGoAnalysis,
   generateMarketResearchReport,
   generateSourcesSoughtResponse,
+  deepAnalyzeWithDocuments,
 } from '../services/geminiService.js';
 import { buildCompanyProfile } from '../services/companyIntelService.js';
 import multer from 'multer';
@@ -25,10 +26,169 @@ const pdfParse = _require('pdf-parse/lib/pdf-parse');
 const rfpUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 export const rfpUploadMiddleware = rfpUpload.single('rfp');
 
+// ── Shared PDF fetcher — used by ALL AI features that need document content ───
+// Checks DB cache first (24h TTL). On cache miss, fetches from SAM.gov and
+// saves the result so every subsequent call uses the cache — no repeated hits.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const fetchOpportunityDocuments = async (resourceLinks, opportunityId = null) => {
+  const samApiKey = process.env.SAM_API_KEY;
+  const links = (resourceLinks || []).filter(r => r.url);
+
+  // ── Check DB cache ───────────────────────────────────────────────────────────
+  if (opportunityId) {
+    try {
+      const cached = await Opportunity.findById(opportunityId).select('docCache').lean();
+      if (
+        cached?.docCache?.text &&
+        cached.docCache.docsRead > 0 &&
+        cached.docCache.fetchedAt &&
+        Date.now() - new Date(cached.docCache.fetchedAt).getTime() < CACHE_TTL_MS
+      ) {
+        console.log(`📦 PDF cache hit for ${opportunityId} (${cached.docCache.docsRead}/${cached.docCache.totalDocs} docs)`);
+        return {
+          combinedText: cached.docCache.text,
+          fetchedCount: cached.docCache.docsRead,
+          totalDocs: cached.docCache.totalDocs,
+          fromCache: true,
+        };
+      }
+    } catch { /* cache read failure is non-fatal — fall through to live fetch */ }
+  }
+
+  if (!links.length) return { combinedText: '', fetchedCount: 0, totalDocs: 0 };
+
+  // ── Live fetch from SAM.gov ──────────────────────────────────────────────────
+  const fetchOne = async (link, idx) => {
+    try {
+      let fetchUrl = link.url;
+      if (samApiKey && fetchUrl.includes('sam.gov') && !fetchUrl.includes('api_key=')) {
+        fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + `api_key=${samApiKey}`;
+      }
+
+      const fileRes = await axios.get(fetchUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60000, // 60s per file — large SAM.gov PDFs (5MB+) need more time
+        maxRedirects: 5,
+        headers: {
+          Accept: 'application/pdf,application/octet-stream,*/*',
+          'User-Agent': 'Mozilla/5.0 (compatible; FedNotify/1.0)',
+        },
+      });
+
+      const contentType = fileRes.headers['content-type'] || '';
+      const isBinary = contentType.includes('pdf') || contentType.includes('octet-stream')
+        || fetchUrl.toLowerCase().includes('.pdf')
+        || link.name?.toLowerCase().endsWith('.pdf');
+
+      const parsePdf = (buf) => Promise.race([
+        pdfParse(buf),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('pdf-parse timeout')), 25000)), // 25s for large PDFs
+      ]);
+
+      let text;
+      if (isBinary) {
+        const parsed = await parsePdf(Buffer.from(fileRes.data));
+        text = parsed.text;
+      } else if (contentType.includes('text') || contentType.includes('html') || contentType.includes('json')) {
+        text = Buffer.from(fileRes.data).toString('utf8').replace(/<[^>]+>/g, ' ').trim();
+      } else {
+        try {
+          const parsed = await parsePdf(Buffer.from(fileRes.data));
+          text = parsed.text;
+        } catch {
+          text = Buffer.from(fileRes.data).toString('utf8');
+        }
+      }
+
+      const clean = text?.replace(/\s{3,}/g, '\n').trim();
+      if (!clean || clean.length < 80) return null;
+
+      const label = link.name && link.name.toLowerCase() !== 'download' ? link.name : `Document ${idx + 1}`;
+      return `\n${'─'.repeat(60)}\nFILE ${idx + 1}: ${label}\n${'─'.repeat(60)}\n${clean}`;
+    } catch {
+      return null;
+    }
+  };
+
+  const results = await Promise.race([
+    Promise.all(links.map((link, i) => fetchOne(link, i))),
+    new Promise(r => setTimeout(() => r(new Array(links.length).fill(null)), 180000)), // 3-min cap for all files
+  ]);
+
+  const successful = results.filter(Boolean);
+  const combinedText = successful.join('\n\n');
+  const fetchedCount = successful.length;
+
+  // ── Save to DB cache if we read anything ────────────────────────────────────
+  if (opportunityId && fetchedCount > 0) {
+    Opportunity.findByIdAndUpdate(opportunityId, {
+      docCache: {
+        text: combinedText,
+        fetchedAt: new Date(),
+        docsRead: fetchedCount,
+        totalDocs: links.length,
+      },
+    }).catch(() => {}); // fire-and-forget, non-fatal
+  }
+
+  return { combinedText, fetchedCount, totalDocs: links.length };
+};
+
+// Fetch real SOW text when description is a SAM.gov API URL, save to DB for future calls
+const resolveDescription = async (opp) => {
+  const desc = opp.description || '';
+  if (!desc.startsWith('https://api.sam.gov')) return desc;
+
+  const samApiKey = process.env.SAM_API_KEY;
+  if (!samApiKey) return '';
+
+  try {
+    const url = desc.includes('api_key=') ? desc : `${desc}${desc.includes('?') ? '&' : '?'}api_key=${samApiKey}`;
+    const r = await axios.get(url, {
+      timeout: 15000,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FedNotify/1.0)' },
+    });
+    const text = String(r.data || '').replace(/<[^>]+>/g, ' ').replace(/\s{3,}/g, '\n').trim();
+    if (text.length > 100) {
+      Opportunity.findByIdAndUpdate(opp._id, { description: text }).catch(() => {});
+      return text;
+    }
+  } catch (e) {
+    console.warn('resolveDescription fetch failed:', e.message);
+  }
+  return '';
+};
+
+// Async version of formatOpportunityContext — resolves description URL first
+const buildOpportunityContext = async (opp) => {
+  const resolved = await resolveDescription(opp);
+  const oppWithDesc = resolved ? { ...opp, description: resolved } : opp;
+  return formatOpportunityContext(oppWithDesc);
+};
+
 const checkProPlan = (user) => {
   if (!['pro', 'enterprise'].includes(user.plan)) {
     throw new Error('Pro plan required for AI features. Please upgrade.');
   }
+};
+
+// Translate raw AI API errors into user-friendly messages
+const aiErrorMessage = (error) => {
+  const msg = error.message || '';
+  if (msg.includes('credit balance is too low') || msg.includes('insufficient_quota') || msg.includes('exceeded your current quota'))
+    return 'AI service quota exhausted. Please contact the administrator to add OpenAI API credits (platform.openai.com → Billing).';
+  if (msg.includes('Incorrect API key') || msg.includes('invalid_api_key'))
+    return 'AI service configuration error — invalid API key. Please contact the administrator.';
+  if (msg.includes('OPENAI_API_KEY not set'))
+    return 'AI service is not configured. The administrator needs to add the OpenAI API key to the server .env file.';
+  if (msg.includes('rate limit') || msg.includes('429'))
+    return 'AI service rate limit reached. Please wait a moment and try again.';
+  if (msg.includes('timeout') || msg.includes('timed out'))
+    return 'AI analysis timed out (document too large). Please try again.';
+  if (msg.includes('Pro plan'))
+    return msg;
+  return 'AI service temporarily unavailable. Please try again.';
 };
 
 // ── Fetch real competitive intelligence from USASpending ─────────────────────
@@ -96,7 +256,13 @@ const formatOpportunityContext = (opp) => {
   lines.push(`Agency: ${opp.agency}`);
   if (opp.department) lines.push(`Department: ${opp.department}`);
   if (opp.subTier) lines.push(`Sub-Tier: ${opp.subTier}`);
+  if (opp.majorCommand) lines.push(`Major Command: ${opp.majorCommand}`);
+  if (opp.subCommand1) lines.push(`Sub Command 1: ${opp.subCommand1}`);
+  if (opp.subCommand2) lines.push(`Sub Command 2: ${opp.subCommand2}`);
+  if (opp.subCommand3) lines.push(`Sub Command 3: ${opp.subCommand3}`);
   if (opp.office) lines.push(`Contracting Office: ${opp.office}`);
+  if (opp.relatedNotice) lines.push(`Related Notice: ${opp.relatedNotice}`);
+  if (opp.archiveType) lines.push(`Inactive Policy: ${opp.archiveType}`);
   if (opp.noticeType) lines.push(`Notice Type: ${opp.noticeType}`);
   lines.push(`NAICS Code: ${opp.naicsCode}${opp.naicsDescription ? ' — ' + opp.naicsDescription : ''}`);
   if (opp.pscCode) lines.push(`PSC Code: ${opp.pscCode}${opp.pscDescription ? ' — ' + opp.pscDescription : ''}`);
@@ -131,7 +297,11 @@ const formatOpportunityContext = (opp) => {
     });
   }
 
-  lines.push(`\nFULL DESCRIPTION / STATEMENT OF WORK:\n${(opp.description || 'No description available').substring(0, 8000)}`);
+  const desc = opp.description || '';
+  const descText = desc.startsWith('https://api.sam.gov')
+    ? '[Description not yet loaded — see attached documents for full scope]'
+    : (desc || 'No description available');
+  lines.push(`\nFULL DESCRIPTION / STATEMENT OF WORK:\n${descText.substring(0, 8000)}`);
   return lines.join('\n');
 };
 
@@ -173,10 +343,12 @@ export const analyzeRFP = async (req, res) => {
     if (req.file) {
       const mime = req.file.mimetype;
       if (mime === 'application/pdf' || req.file.originalname?.toLowerCase().endsWith('.pdf')) {
-        const parsed = await pdfParse(req.file.buffer);
+        const parsed = await Promise.race([
+          pdfParse(req.file.buffer),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('pdf-parse timeout')), 15000)),
+        ]);
         rfpText = parsed.text;
       } else {
-        // Plain text / doc
         rfpText = req.file.buffer.toString('utf8');
       }
     }
@@ -185,19 +357,25 @@ export const analyzeRFP = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please provide RFP text (minimum 100 characters).' });
     }
 
-    // Trim to 80k chars so AI doesn't time out on massive documents
     const trimmed = rfpText.length > 80000 ? rfpText.slice(0, 80000) + '\n\n[Document truncated at 80,000 characters]' : rfpText;
 
-    const analysis = await analyzeRFPDocument(trimmed, req.user.naicsCodes?.join(', '));
+    // Fetch company profile for personalized fit assessment (non-fatal)
+    let companyProfileText = '';
+    try {
+      const cp = await buildCompanyProfile(req.user);
+      companyProfileText = cp.profileText || '';
+    } catch { /* non-fatal */ }
+
+    const analysis = await analyzeRFPDocument(trimmed, req.user.naicsCodes?.join(', '), companyProfileText);
     res.json({ success: true, data: { analysis } });
   } catch (error) {
-    if (error.message.includes('Pro plan')) return res.status(403).json({ success: false, message: error.message });
-    console.error('RFP analysis error:', error);
-    res.status(500).json({ success: false, message: 'AI service temporarily unavailable.' });
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('RFP analysis error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
-// @desc    AI: Go/No-Go workflow — auto-fetches real data when opportunityId is provided
+// @desc    AI: Go/No-Go workflow — fetches PDFs + real competitor data + company profile
 // @route   POST /api/ai/go-no-go
 export const goNoGoWorkflow = async (req, res) => {
   try {
@@ -208,19 +386,42 @@ export const goNoGoWorkflow = async (req, res) => {
     let compContext = '';
     let companyProfileText = '';
     let opportunity = null;
+    let combinedDocText = '';
+    let fetchedCount = 0;
+    let totalDocs = 0;
 
     if (opportunityId) {
-      opportunity = await Opportunity.findById(opportunityId);
+      opportunity = await Opportunity.findById(opportunityId).lean();
       if (!opportunity) return res.status(404).json({ success: false, message: 'Opportunity not found.' });
 
+      // Step 1: Resolve description URL → real SOW text (same as deep analysis)
+      const resolvedDesc = await resolveDescription(opportunity);
+      if (resolvedDesc) opportunity.description = resolvedDesc;
+
+      // Step 2: Fetch PDFs using the shared fetcher (with DB cache)
+      const docResult = await fetchOpportunityDocuments(opportunity.resourceLinks, opportunity._id.toString());
+      fetchedCount = docResult.fetchedCount;
+      totalDocs = docResult.totalDocs;
+      combinedDocText = docResult.combinedText;
+      console.log(`🔍 Go/No-Go: ${fetchedCount}/${totalDocs} docs read for "${opportunity.title?.substring(0, 50)}"${docResult.fromCache ? ' [cache]' : ''}`);
+
+      // Step 3: Fetch competitive intel + company profile in parallel
       const [oCtx, intel, cp] = await Promise.all([
         Promise.resolve(formatOpportunityContext(opportunity)),
         fetchCompetitiveIntel(opportunity),
         buildCompanyProfile(req.user),
       ]);
+
       oppContext = oCtx;
       compContext = formatCompetitiveContext(intel);
       companyProfileText = cp.profileText;
+
+      // Always include SOW text as extra context — even when PDFs exist (description has unique info)
+      const descForDocs = resolvedDesc || (opportunity.description && !opportunity.description.startsWith('https://') ? opportunity.description : '');
+      if (descForDocs && descForDocs.length > 100) {
+        const descBlock = `${'─'.repeat(60)}\nSAM.GOV FULL DESCRIPTION / SOW\n${'─'.repeat(60)}\n${descForDocs}`;
+        combinedDocText = combinedDocText ? `${descBlock}\n\n${combinedDocText}` : descBlock;
+      }
     }
 
     const result = await generateGoNoGoAnalysis({
@@ -232,13 +433,22 @@ export const goNoGoWorkflow = async (req, res) => {
       notes: notes || '',
       userNaics: req.user.naicsCodes,
       businessName: req.user.businessName,
+      docsText: combinedDocText,
+      docCount: fetchedCount,
     });
 
-    res.json({ success: true, data: { analysis: result } });
+    res.json({
+      success: true,
+      data: {
+        analysis: result,
+        docsAnalyzed: fetchedCount,
+        totalDocs,
+      },
+    });
   } catch (error) {
-    if (error.message.includes('Pro plan')) return res.status(403).json({ success: false, message: error.message });
-    console.error('Go/No-Go error:', error);
-    res.status(500).json({ success: false, message: 'AI service temporarily unavailable.' });
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Go/No-Go error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -296,11 +506,22 @@ export const marketResearch = async (req, res) => {
     if (!['enterprise'].includes(req.user.plan)) {
       return res.status(403).json({ success: false, message: 'Enterprise plan required for Market Research reports.' });
     }
-    const report = await generateMarketResearchReport({ naicsCodes: req.user.naicsCodes, businessName: req.user.businessName });
+
+    let companyProfileText = '';
+    try {
+      const cp = await buildCompanyProfile(req.user);
+      companyProfileText = cp.profileText || '';
+    } catch { /* non-fatal */ }
+
+    const report = await generateMarketResearchReport({
+      naicsCodes:     req.user.naicsCodes,
+      businessName:   req.user.businessName,
+      companyProfile: companyProfileText,
+    });
     res.json({ success: true, data: { report } });
   } catch (error) {
-    console.error('Market research error:', error);
-    res.status(500).json({ success: false, message: 'AI service temporarily unavailable.' });
+    console.error('Market research error:', error.message);
+    res.status(500).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -312,6 +533,13 @@ export const generateCapabilityStatementAI = async (req, res) => {
     const user = req.user;
     const { certifications, coreCompetencies, pastPerformance, differentiators, targetAgency, contactInfo } = req.body;
 
+    // Fetch full company profile (UEI, CAGE, SAM data, past performance, USASpending awards)
+    let companyProfileText = '';
+    try {
+      const cp = await buildCompanyProfile(user);
+      companyProfileText = cp.profileText || '';
+    } catch { /* non-fatal */ }
+
     const statement = await generateCapabilityStatement({
       businessName:     user.businessName || user.name,
       naicsCodes:       user.naicsCodes,
@@ -322,13 +550,14 @@ export const generateCapabilityStatementAI = async (req, res) => {
       differentiators,
       targetAgency,
       contactInfo,
+      companyProfile:   companyProfileText,
     });
 
     res.json({ success: true, data: { statement } });
   } catch (error) {
-    if (error.message.includes('Pro plan')) return res.status(403).json({ success: false, message: error.message });
-    console.error('Capability statement error:', error);
-    res.status(500).json({ success: false, message: 'AI service temporarily unavailable.' });
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Capability statement error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -338,25 +567,33 @@ export const summarizeOpportunity = async (req, res) => {
   try {
     checkProPlan(req.user);
 
-    const opportunity = await Opportunity.findById(req.params.opportunityId);
+    const opportunity = await Opportunity.findById(req.params.opportunityId).lean();
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
 
-    const [oppContext, companyProfile] = await Promise.all([
-      Promise.resolve(formatOpportunityContext(opportunity)),
-      buildCompanyProfile(req.user),
-    ]);
-    const summary = await summarizeRFP(opportunity, oppContext, companyProfile.profileText);
+    const resolvedDesc = await resolveDescription(opportunity);
+    if (resolvedDesc) opportunity.description = resolvedDesc;
 
-    res.json({ success: true, data: { summary } });
-  } catch (error) {
-    if (error.message.includes('Pro plan')) {
-      res.status(403).json({ success: false, message: error.message });
-    } else {
-      console.error('Summarize error:', error);
-      res.status(500).json({ success: false, message: 'AI service temporarily unavailable. Please try again.' });
+    const [oppContext, companyProfile, docResult] = await Promise.all([
+      Promise.resolve(formatOpportunityContext(opportunity)),
+      buildCompanyProfile(req.user).catch(() => ({ profileText: '' })),
+      fetchOpportunityDocuments(opportunity.resourceLinks, opportunity._id.toString()),
+    ]);
+
+    // Merge description + PDFs so summarizer has full text
+    let fullText = oppContext;
+    const descText = resolvedDesc || (opportunity.description && !opportunity.description.startsWith('https://') ? opportunity.description : '');
+    if (descText && descText.length > 100 && docResult.combinedText) {
+      fullText += `\n\n${'─'.repeat(60)}\nATTACHED DOCUMENTS (${docResult.fetchedCount} files)\n${'─'.repeat(60)}\n${docResult.combinedText.substring(0, 40000)}`;
     }
+
+    const summary = await summarizeRFP(opportunity, fullText, companyProfile.profileText);
+    res.json({ success: true, data: { summary, docsAnalyzed: docResult.fetchedCount } });
+  } catch (error) {
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Summarize error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -366,27 +603,35 @@ export const analyzeBid = async (req, res) => {
   try {
     checkProPlan(req.user);
 
-    const opportunity = await Opportunity.findById(req.params.opportunityId);
+    const opportunity = await Opportunity.findById(req.params.opportunityId).lean();
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
 
-    const [oppContext, intel, companyProfile] = await Promise.all([
+    const resolvedDesc = await resolveDescription(opportunity);
+    if (resolvedDesc) opportunity.description = resolvedDesc;
+
+    const [oppContext, intel, companyProfile, docResult] = await Promise.all([
       Promise.resolve(formatOpportunityContext(opportunity)),
       fetchCompetitiveIntel(opportunity),
-      buildCompanyProfile(req.user),
+      buildCompanyProfile(req.user).catch(() => ({ profileText: '' })),
+      fetchOpportunityDocuments(opportunity.resourceLinks, opportunity._id.toString()),
     ]);
-    const compContext = formatCompetitiveContext(intel);
-    const analysis = await bidNoBidAnalysis(opportunity, req.user, oppContext, compContext, companyProfile.profileText);
 
-    res.json({ success: true, data: { analysis } });
-  } catch (error) {
-    if (error.message.includes('Pro plan')) {
-      res.status(403).json({ success: false, message: error.message });
-    } else {
-      console.error('Bid analysis error:', error);
-      res.status(500).json({ success: false, message: 'AI service temporarily unavailable. Please try again.' });
+    // Merge PDFs into opportunity context so bid analysis reads the full SOW
+    let fullOppContext = oppContext;
+    if (docResult.combinedText) {
+      fullOppContext += `\n\n${'─'.repeat(60)}\nATTACHED SOLICITATION DOCUMENTS (${docResult.fetchedCount} files)\n${'─'.repeat(60)}\n${docResult.combinedText.substring(0, 50000)}`;
     }
+
+    const compContext = formatCompetitiveContext(intel);
+    const analysis = await bidNoBidAnalysis(opportunity, req.user, fullOppContext, compContext, companyProfile.profileText);
+
+    res.json({ success: true, data: { analysis, docsAnalyzed: docResult.fetchedCount } });
+  } catch (error) {
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Bid analysis error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -401,22 +646,52 @@ export const generateFullProposalAI = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
 
+    // Step 1: Resolve description URL → real SOW text
+    const resolvedDesc = await resolveDescription(opportunity);
+    if (resolvedDesc) opportunity.description = resolvedDesc;
+
+    // Step 2: Fetch all attached RFP PDFs (SOW, PWS, amendments) — same as Go/No-Go
+    const docResult = await fetchOpportunityDocuments(opportunity.resourceLinks, opportunity._id.toString());
+    console.log(`📄 Proposal builder: ${docResult.fetchedCount}/${docResult.totalDocs} docs fetched${docResult.fromCache ? ' [cache]' : ''}`);
+
+    // Step 3: Build all context in parallel
     const [oppContext, intel, companyProfile] = await Promise.all([
       Promise.resolve(formatOpportunityContext(opportunity)),
       fetchCompetitiveIntel(opportunity),
       buildCompanyProfile(req.user),
     ]);
-    const compContext = formatCompetitiveContext(intel);
-    const proposal = await generateFullProposal(opportunity, req.user, oppContext, compContext, companyProfile.profileText);
 
-    res.json({ success: true, data: { proposal } });
-  } catch (error) {
-    if (error.message.includes('Pro plan')) {
-      res.status(403).json({ success: false, message: error.message });
-    } else {
-      console.error('Proposal generation error:', error);
-      res.status(500).json({ success: false, message: 'AI service temporarily unavailable. Please try again.' });
+    // Step 4: Merge SAM.gov description into document text so AI has both
+    const descText = resolvedDesc || (opportunity.description && !opportunity.description.startsWith('https://') ? opportunity.description : '');
+    let docsText = docResult.combinedText || '';
+    if (descText && descText.length > 100) {
+      const descBlock = `${'─'.repeat(60)}\nSAM.GOV FULL DESCRIPTION / SOW\n${'─'.repeat(60)}\n${descText}`;
+      docsText = docsText ? `${descBlock}\n\n${docsText}` : descBlock;
     }
+
+    const compContext = formatCompetitiveContext(intel);
+    const proposal = await generateFullProposal(
+      opportunity,
+      req.user,
+      oppContext,
+      compContext,
+      companyProfile.profileText,
+      docsText,
+      docResult.fetchedCount,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        proposal,
+        docsAnalyzed: docResult.fetchedCount,
+        totalDocs: docResult.totalDocs,
+      },
+    });
+  } catch (error) {
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Proposal generation error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -431,22 +706,31 @@ export const askQuestion = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Question is required' });
     }
 
-    const opportunity = await Opportunity.findById(req.params.opportunityId);
+    const opportunity = await Opportunity.findById(req.params.opportunityId).lean();
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
 
+    // Resolve description + fetch cached PDFs + company profile in parallel
+    const [resolvedDesc, docResult, companyProfile] = await Promise.all([
+      resolveDescription(opportunity),
+      fetchOpportunityDocuments(opportunity.resourceLinks, opportunity._id.toString()),
+      buildCompanyProfile(req.user).catch(() => ({ profileText: '' })),
+    ]);
+    if (resolvedDesc) opportunity.description = resolvedDesc;
+
     const oppContext = formatOpportunityContext(opportunity);
-    const answer = await answerRFPQuestion(opportunity, question, oppContext);
+    const answer = await answerRFPQuestion(
+      opportunity, question, oppContext,
+      companyProfile.profileText || '',
+      docResult.combinedText || '',
+    );
 
     res.json({ success: true, data: { question, answer } });
   } catch (error) {
-    if (error.message.includes('Pro plan')) {
-      res.status(403).json({ success: false, message: error.message });
-    } else {
-      console.error('Q&A error:', error);
-      res.status(500).json({ success: false, message: 'AI service temporarily unavailable. Please try again.' });
-    }
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Q&A error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -462,7 +746,7 @@ export const analyzeCompetition = async (req, res) => {
     }
 
     const [oppContext, intel, companyProfile] = await Promise.all([
-      Promise.resolve(formatOpportunityContext(opportunity)),
+      buildOpportunityContext(opportunity),
       fetchCompetitiveIntel(opportunity),
       buildCompanyProfile(req.user),
     ]);
@@ -471,12 +755,9 @@ export const analyzeCompetition = async (req, res) => {
 
     res.json({ success: true, data: { analysis } });
   } catch (error) {
-    if (error.message.includes('Pro plan')) {
-      res.status(403).json({ success: false, message: error.message });
-    } else {
-      console.error('Competitive analysis error:', error);
-      res.status(500).json({ success: false, message: 'AI service temporarily unavailable. Please try again.' });
-    }
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Competitive analysis error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -486,27 +767,35 @@ export const assessRisk = async (req, res) => {
   try {
     checkProPlan(req.user);
 
-    const opportunity = await Opportunity.findById(req.params.opportunityId);
+    const opportunity = await Opportunity.findById(req.params.opportunityId).lean();
     if (!opportunity) {
       return res.status(404).json({ success: false, message: 'Opportunity not found' });
     }
 
-    const [oppContext, intel, companyProfile] = await Promise.all([
+    const resolvedDesc = await resolveDescription(opportunity);
+    if (resolvedDesc) opportunity.description = resolvedDesc;
+
+    const [oppContext, intel, companyProfile, docResult] = await Promise.all([
       Promise.resolve(formatOpportunityContext(opportunity)),
       fetchCompetitiveIntel(opportunity),
-      buildCompanyProfile(req.user),
+      buildCompanyProfile(req.user).catch(() => ({ profileText: '' })),
+      fetchOpportunityDocuments(opportunity.resourceLinks, opportunity._id.toString()),
     ]);
-    const compContext = formatCompetitiveContext(intel);
-    const assessment = await riskAssessment(opportunity, oppContext, compContext, companyProfile.profileText);
 
-    res.json({ success: true, data: { assessment } });
-  } catch (error) {
-    if (error.message.includes('Pro plan')) {
-      res.status(403).json({ success: false, message: error.message });
-    } else {
-      console.error('Risk assessment error:', error);
-      res.status(500).json({ success: false, message: 'AI service temporarily unavailable. Please try again.' });
+    // Merge PDFs into opportunity context so risk assessment reads the full SOW
+    let fullOppContext = oppContext;
+    if (docResult.combinedText) {
+      fullOppContext += `\n\n${'─'.repeat(60)}\nATTACHED SOLICITATION DOCUMENTS (${docResult.fetchedCount} files)\n${'─'.repeat(60)}\n${docResult.combinedText.substring(0, 50000)}`;
     }
+
+    const compContext = formatCompetitiveContext(intel);
+    const assessment = await riskAssessment(opportunity, fullOppContext, compContext, companyProfile.profileText);
+
+    res.json({ success: true, data: { assessment, docsAnalyzed: docResult.fetchedCount } });
+  } catch (error) {
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Risk assessment error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -515,19 +804,28 @@ export const assessRisk = async (req, res) => {
 export const sourcesSought = async (req, res) => {
   try {
     checkProPlan(req.user);
+
+    // Fetch full company profile (UEI, CAGE, SAM data, past performance, USASpending awards)
+    let companyProfileText = '';
+    try {
+      const cp = await buildCompanyProfile(req.user);
+      companyProfileText = cp.profileText || '';
+    } catch { /* non-fatal */ }
+
     const data = {
       ...req.body,
       businessName:     req.user.businessName,
       businessType:     req.user.businessType,
       naicsCodes:       req.user.naicsCodes,
       certifications:   req.user.certifications?.map(c => c.name || c).join(', '),
+      companyProfile:   companyProfileText,
     };
     const response = await generateSourcesSoughtResponse(data);
     res.json({ success: true, data: { response } });
   } catch (error) {
-    if (error.message.includes('Pro plan')) return res.status(403).json({ success: false, message: error.message });
-    console.error('Sources Sought error:', error);
-    res.status(500).json({ success: false, message: 'AI service temporarily unavailable.' });
+    const status = error.message?.includes('Pro plan') ? 403 : 500;
+    console.error('Sources Sought error:', error.message);
+    res.status(status).json({ success: false, message: aiErrorMessage(error) });
   }
 };
 
@@ -549,7 +847,10 @@ export const analyzeAttachment = async (req, res) => {
     const contentType = fileRes.headers['content-type'] || '';
     let rfpText;
     if (contentType.includes('pdf') || attachmentUrl.toLowerCase().endsWith('.pdf')) {
-      const parsed = await pdfParse(Buffer.from(fileRes.data));
+      const parsed = await Promise.race([
+        pdfParse(Buffer.from(fileRes.data)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('pdf-parse timeout')), 10000)),
+      ]);
       rfpText = parsed.text;
     } else {
       rfpText = Buffer.from(fileRes.data).toString('utf8');
@@ -566,5 +867,62 @@ export const analyzeAttachment = async (req, res) => {
     if (error.message.includes('Pro plan')) return res.status(403).json({ success: false, message: error.message });
     console.error('Attachment analysis error:', error.message);
     res.status(500).json({ success: false, message: 'Could not fetch or analyze this attachment. It may require SAM.gov login.' });
+  }
+};
+
+// @desc    Deep multi-document AI analysis — fetches ALL SAM.gov attachments + full opportunity
+//          context, combines into one analysis. Far more accurate than single-doc or metadata-only.
+// @route   POST /api/ai/deep-summarize/:opportunityId
+export const deepSummarize = async (req, res) => {
+  try {
+    checkProPlan(req.user);
+    const opp = await Opportunity.findById(req.params.opportunityId).lean();
+    if (!opp) return res.status(404).json({ success: false, message: 'Opportunity not found.' });
+
+    // Resolve description URL → real SOW text (uses 1 SAM.gov API call, saves to DB)
+    const resolvedDesc = await resolveDescription(opp);
+    if (resolvedDesc) opp.description = resolvedDesc;
+
+    // Build full opportunity context (includes title, agency, description/SOW, contacts, dates, etc.)
+    const oppContext = formatOpportunityContext(opp);
+
+    // Fetch all attached PDFs using the shared fetcher (with DB cache)
+    const { combinedText: combinedDocText, fetchedCount, totalDocs, fromCache } = await fetchOpportunityDocuments(opp.resourceLinks, opp._id.toString());
+    console.log(`🔍 Deep-summarize: ${fetchedCount}/${totalDocs} docs read for "${opp.title?.substring(0, 50)}"${fromCache ? ' [cache]' : ''}`);
+
+    // Always include full SOW text as extra context when available — PDFs may have drawings only
+    const extraDesc = resolvedDesc && resolvedDesc.length > 100
+      ? `\n\n${'─'.repeat(60)}\nSAM.GOV FULL DESCRIPTION / SOW\n${'─'.repeat(60)}\n${resolvedDesc}`
+      : (!resolvedDesc && opp.description && opp.description.length > 500 && !opp.description.startsWith('https://'))
+        ? `\n\n${'─'.repeat(60)}\nSAM.GOV FULL DESCRIPTION / SOW\n${'─'.repeat(60)}\n${opp.description}`
+        : '';
+
+    // Fetch company profile + competitive intel in parallel (both non-fatal)
+    const [companyProfile, intel] = await Promise.all([
+      buildCompanyProfile(req.user).catch(() => ({ profileText: '' })),
+      fetchCompetitiveIntel(opp).catch(() => ({ awards: [], topWinners: [], totalAwards: 0 })),
+    ]);
+    const compContext = formatCompetitiveContext(intel);
+
+    const analysis = await deepAnalyzeWithDocuments(
+      oppContext + extraDesc,
+      combinedDocText,
+      req.user.naicsCodes?.join(', '),
+      fetchedCount,
+      companyProfile.profileText || '',
+      compContext,
+    );
+
+    const message = fetchedCount === 0
+      ? `SAM.gov PDFs require direct login to download. Analysis is based on the full opportunity description and all metadata stored in our database.`
+      : fetchedCount < totalDocs
+        ? `Read ${fetchedCount} of ${totalDocs} documents. ${totalDocs - fetchedCount} could not be fetched (may require SAM.gov login).`
+        : `Successfully read all ${fetchedCount} solicitation document${fetchedCount !== 1 ? 's' : ''}.`;
+
+    res.json({ success: true, data: { analysis, docsAnalyzed: fetchedCount, totalDocs, message } });
+  } catch (error) {
+    if (error.message?.includes('Pro plan')) return res.status(403).json({ success: false, message: error.message });
+    console.error('Deep-summarize error:', error.message);
+    res.status(500).json({ success: false, message: 'AI analysis failed: ' + error.message });
   }
 };

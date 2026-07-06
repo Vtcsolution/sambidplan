@@ -4,7 +4,8 @@ import UserOpportunity from '../models/UserOpportunity.js';
 import User from '../models/User.js';
 import { fetchUSAspendingOpportunities } from '../services/usaspendingApiService.js';
 import { triggerManualFetch, distributeToUser } from '../services/schedulerService.js';
-import { fetchSAMOpportunities } from '../services/samApiService.js';
+import axios from 'axios';
+import { fetchSAMOpportunities, fetchSAMResourceLinks, samGetWithRotation } from '../services/samApiService.js';
 import Company from '../models/Company.js';
 import Plan from '../models/Plan.js';
 
@@ -153,9 +154,14 @@ const calculateMatchScore = (opportunity, user) => {
   let score = 0;
   const reasons = [];
 
-  // 1. NAICS match (50 points)
-  if (user.naicsCodes?.includes(opportunity.naicsCode)) {
+  // 1. NAICS match (50 pts exact, 35 pts same 4-digit family)
+  const exactNaicsMatch = user.naicsCodes?.includes(opportunity.naicsCode);
+  const naicsFamilyPfx = [...new Set((user.naicsCodes || []).map(c => c.slice(0, 4)))];
+  const familyNaicsMatch = !exactNaicsMatch && naicsFamilyPfx.some(p => opportunity.naicsCode?.startsWith(p));
+  if (exactNaicsMatch) {
     score += 50; reasons.push('✓ Your NAICS code matches this opportunity');
+  } else if (familyNaicsMatch) {
+    score += 35; reasons.push('✓ Same NAICS industry group — likely relevant');
   } else if (user.naicsCodes?.length > 0) {
     score += 5;  reasons.push('✗ NAICS code mismatch');
   } else {
@@ -222,6 +228,7 @@ export const getOpportunities = async (req, res) => {
     const {
       page = 1, limit = 20,
       search = '',
+      keywordMode = 'any',           // any | all | exact
       status: statusFilter = 'all',
       minValue, maxValue,
       setAside: setAsideFilter = '',
@@ -231,9 +238,34 @@ export const getOpportunities = async (req, res) => {
       postedFrom = '', postedTo = '',
       noticeType: noticeTypeFilter = '',
       agency: agencyFilter = '',
+      placeOfPerformance: popFilter = '', // state or city text
+      pscCode: pscFilter = '',
+      daysLeft: daysLeftFilter = '',  // e.g. '15', '30', '60', '90'
+      includePotential = 'true',     // include sector-matched potential matches
     } = req.query;
     const pageNum  = parseInt(page);
     const limitNum = parseInt(limit);
+
+    // Helper: keyword-mode aware text search
+    const matchesKeyword = (opp, q) => {
+      if (!q.trim()) return true;
+      const haystack = `${opp.title || ''} ${opp.description || ''} ${opp.agency || ''} ${opp.naicsDescription || ''} ${opp.pscDescription || ''}`.toLowerCase();
+      const terms = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (keywordMode === 'exact') return haystack.includes(q.trim().toLowerCase());
+      if (keywordMode === 'all')   return terms.every(t => haystack.includes(t));
+      return terms.some(t => haystack.includes(t)); // 'any' (default)
+    };
+
+    // Helper: compute deadline status for a dueDate
+    const deadlineStatus = (dueDate) => {
+      if (!dueDate) return { isExpired: false, hoursUntilDue: null, deadlineStatus: 'unknown' };
+      const msLeft = new Date(dueDate) - new Date();
+      const h = msLeft / (1000 * 60 * 60);
+      if (h < 0)   return { isExpired: true,  hoursUntilDue: Math.round(h * 10) / 10, deadlineStatus: 'expired' };
+      if (h < 24)  return { isExpired: false,  hoursUntilDue: Math.round(h * 10) / 10, deadlineStatus: 'closing_soon' };
+      if (h < 72)  return { isExpired: false,  hoursUntilDue: Math.round(h * 10) / 10, deadlineStatus: 'due_soon' };
+      return { isExpired: false, hoursUntilDue: Math.round(h * 10) / 10, deadlineStatus: 'active' };
+    };
 
     // Enrich user with company certifications for set-aside eligibility checking
     if (!req.user.certifications) {
@@ -262,8 +294,8 @@ export const getOpportunities = async (req, res) => {
 
       const data = pageOpps.map(opp => {
         const { score, reasons } = calculateMatchScore(opp, req.user);
-        const isActive = opp.dueDate && new Date(opp.dueDate) > new Date();
-        return { ...opp, aiMatchScore: score, matchReasons: reasons, status: isActive ? 'active' : 'historical', canApply: isActive };
+        const ds = deadlineStatus(opp.dueDate);
+        return { ...opp, aiMatchScore: score, matchReasons: reasons, ...ds, status: ds.isExpired ? 'expired' : 'active', canApply: !ds.isExpired };
       });
 
       return res.json({
@@ -301,7 +333,10 @@ export const getOpportunities = async (req, res) => {
       const masterQuery = {
         dueDate: { $gt: now }  // strictly future — only requirement for enterprise
       };
-      if (req.user.naicsCodes?.length) masterQuery.naicsCode = { $in: req.user.naicsCodes };
+      if (req.user.naicsCodes?.length) {
+        const entPrefixes = [...new Set(req.user.naicsCodes.map(c => c.slice(0, 4)))];
+        masterQuery.naicsCode = { $regex: new RegExp(`^(${entPrefixes.join('|')})`) };
+      }
       if (naicsFilter) masterQuery.naicsCode = naicsFilter;
 
       let allOpps = await Opportunity.find(masterQuery).sort({ dueDate: 1 }).lean();
@@ -309,16 +344,12 @@ export const getOpportunities = async (req, res) => {
       // Score and rank
       let enterpriseResult = allOpps.map(opp => {
         const { score, reasons } = calculateMatchScore(opp, req.user);
-        return { ...opp, aiMatchScore: score, matchReasons: reasons, status: 'active', canApply: true };
+        const ds = deadlineStatus(opp.dueDate);
+        return { ...opp, aiMatchScore: score, matchReasons: reasons, ...ds, status: ds.isExpired ? 'expired' : 'active', canApply: !ds.isExpired };
       }).sort((a, b) => b.aiMatchScore - a.aiMatchScore);
 
       // Apply filters
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        enterpriseResult = enterpriseResult.filter(o =>
-          o.title?.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q) || o.agency?.toLowerCase().includes(q)
-        );
-      }
+      if (search.trim())     enterpriseResult = enterpriseResult.filter(o => matchesKeyword(o, search));
       if (setAsideFilter)    enterpriseResult = enterpriseResult.filter(o => o.setAside === setAsideFilter);
       if (minValue)          enterpriseResult = enterpriseResult.filter(o => (o.estimatedValue || 0) >= parseFloat(minValue));
       if (maxValue)          enterpriseResult = enterpriseResult.filter(o => (o.estimatedValue || 0) <= parseFloat(maxValue));
@@ -328,6 +359,28 @@ export const getOpportunities = async (req, res) => {
       if (postedTo)          enterpriseResult = enterpriseResult.filter(o => o.postedDate && new Date(o.postedDate) <= new Date(postedTo + 'T23:59:59'));
       if (noticeTypeFilter)  enterpriseResult = enterpriseResult.filter(o => o.noticeType === noticeTypeFilter);
       if (agencyFilter)      enterpriseResult = enterpriseResult.filter(o => o.agency?.toLowerCase().includes(agencyFilter.toLowerCase()));
+      if (popFilter) {
+        const pq = popFilter.trim().toLowerCase();
+        const isStateAbbr = /^[a-z]{2}$/.test(pq);
+        enterpriseResult = enterpriseResult.filter(o => {
+          const pop = o.placeOfPerformance;
+          if (!pop) return false;
+          if (isStateAbbr) return pop.state?.toLowerCase() === pq;
+          return pop.state?.toLowerCase().includes(pq) || pop.city?.toLowerCase().includes(pq) || pop.stateName?.toLowerCase().includes(pq);
+        });
+      }
+      if (pscFilter)         enterpriseResult = enterpriseResult.filter(o => o.pscCode?.toLowerCase().includes(pscFilter.toLowerCase()) || o.pscDescription?.toLowerCase().includes(pscFilter.toLowerCase()));
+      if (daysLeftFilter) {
+        const maxDays = parseInt(daysLeftFilter);
+        if (!isNaN(maxDays)) {
+          const now = Date.now();
+          enterpriseResult = enterpriseResult.filter(o => {
+            if (!o.dueDate) return false;
+            const days = (new Date(o.dueDate) - now) / 86400000;
+            return days > 0 && days <= maxDays;
+          });
+        }
+      }
       if (sortBy === 'dueDate')  enterpriseResult.sort((a, b) => new Date(a.dueDate||0) - new Date(b.dueDate||0));
       else if (sortBy === 'value')  enterpriseResult.sort((a, b) => (b.estimatedValue||0) - (a.estimatedValue||0));
       else if (sortBy === 'posted') enterpriseResult.sort((a, b) => new Date(b.postedDate||0) - new Date(a.postedDate||0));
@@ -357,12 +410,15 @@ export const getOpportunities = async (req, res) => {
       .sort({ matchScore: -1, fetchedAt: -1 })
       .lean();
 
-    // Remove stale records: past due-date OR missing due-date (award notices)
+    // 48-hour grace: remove opportunities whose dueDate has passed by more than 48 hours.
+    // Opportunities with NO dueDate (award notices, special notices) are kept — they are
+    // permanent records and may still be valuable to the user.
+    const EXPIRED_GRACE_MS = 48 * 60 * 60 * 1000;
     const staleUOIds = userOpps
       .filter(uo => {
-        if (!uo.opportunity) return true; // orphaned
-        if (!uo.opportunity.dueDate) return true; // no deadline = award notice, exclude
-        return new Date(uo.opportunity.dueDate) <= now; // past deadline
+        if (!uo.opportunity) return true; // orphaned record — opportunity was deleted
+        if (!uo.opportunity.dueDate) return false; // no deadline → keep it (award notice etc.)
+        return new Date(uo.opportunity.dueDate) <= new Date(now - EXPIRED_GRACE_MS);
       })
       .map(uo => uo._id);
 
@@ -373,8 +429,9 @@ export const getOpportunities = async (req, res) => {
     // Always check for new unassigned opportunities in the master store
     if (req.user.naicsCodes?.length > 0) {
       const existingOppIds = userOpps.filter(uo => uo.opportunity).map(uo => uo.opportunity._id);
+      const userFamilyPfx = [...new Set(req.user.naicsCodes.map(c => c.slice(0, 4)))];
       const newInMaster = await Opportunity.countDocuments({
-        naicsCode: { $in: req.user.naicsCodes },
+        naicsCode: { $regex: new RegExp(`^(${userFamilyPfx.join('|')})`) },
         dueDate: { $gt: now },
         source: { $ne: 'usaspending' },
         _id: { $nin: existingOppIds },
@@ -391,8 +448,10 @@ export const getOpportunities = async (req, res) => {
     if (userOpps.filter(uo => uo.opportunity).length === 0 && req.user.naicsCodes?.length > 0) {
       console.log(`🔄 Empty feed for ${req.user.email} — triggering on-demand fill`);
 
+      const fillFamilyPfx = [...new Set(req.user.naicsCodes.map(c => c.slice(0, 4)))];
+      const fillFamilyFilter = { naicsCode: { $regex: new RegExp(`^(${fillFamilyPfx.join('|')})`) } };
       const masterCount = await Opportunity.countDocuments({
-        naicsCode: { $in: req.user.naicsCodes },
+        ...fillFamilyFilter,
         dueDate: { $gt: now }
       });
 
@@ -402,7 +461,7 @@ export const getOpportunities = async (req, res) => {
           await fetchSAMOpportunities(code, 200).catch(() => {});
         }
         const afterFetch = await Opportunity.countDocuments({
-          naicsCode: { $in: req.user.naicsCodes },
+          ...fillFamilyFilter,
           dueDate: { $gt: now },
         });
         if (afterFetch === 0) {
@@ -416,34 +475,30 @@ export const getOpportunities = async (req, res) => {
         .populate('opportunity').sort({ matchScore: -1, fetchedAt: -1 }).lean();
     }
 
-    // Keep only records that have a dueDate strictly in the future
+    // Keep opps with dueDate in future OR within the 48h expired grace window
     let valid = userOpps.filter(uo =>
-      uo.opportunity && uo.opportunity.dueDate && new Date(uo.opportunity.dueDate) > now
+      uo.opportunity && uo.opportunity.dueDate &&
+      new Date(uo.opportunity.dueDate) > new Date(now - EXPIRED_GRACE_MS)
     );
 
     const result = valid.map(uo => {
       const opp = uo.opportunity;
+      const ds = deadlineStatus(opp.dueDate);
       return {
         ...opp,
         aiMatchScore: uo.matchScore,
         matchReasons: uo.matchReasons,
-        status:       'active',
-        canApply:     true,
-        assignedAt:   uo.fetchedAt
+        ...ds,
+        status:     ds.isExpired ? 'expired' : 'active',
+        canApply:   !ds.isExpired,
+        assignedAt: uo.fetchedAt
       };
     });
 
     // ── Advanced filters ──────────────────────────────────────────────────────
     let filtered = result;
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(o =>
-        o.title?.toLowerCase().includes(q) ||
-        o.description?.toLowerCase().includes(q) ||
-        o.agency?.toLowerCase().includes(q)
-      );
-    }
+    if (search.trim())     filtered = filtered.filter(o => matchesKeyword(o, search));
     if (setAsideFilter)    filtered = filtered.filter(o => o.setAside === setAsideFilter);
     if (naicsFilter)       filtered = filtered.filter(o => o.naicsCode === naicsFilter);
     if (minValue)          filtered = filtered.filter(o => (o.estimatedValue || 0) >= parseFloat(minValue));
@@ -454,6 +509,28 @@ export const getOpportunities = async (req, res) => {
     if (postedTo)          filtered = filtered.filter(o => o.postedDate && new Date(o.postedDate) <= new Date(postedTo + 'T23:59:59'));
     if (noticeTypeFilter)  filtered = filtered.filter(o => o.noticeType === noticeTypeFilter);
     if (agencyFilter)      filtered = filtered.filter(o => o.agency?.toLowerCase().includes(agencyFilter.toLowerCase()));
+    if (popFilter) {
+      const pq = popFilter.trim().toLowerCase();
+      const isStateAbbr = /^[a-z]{2}$/.test(pq);
+      filtered = filtered.filter(o => {
+        const pop = o.placeOfPerformance;
+        if (!pop) return false;
+        if (isStateAbbr) return pop.state?.toLowerCase() === pq;
+        return pop.state?.toLowerCase().includes(pq) || pop.city?.toLowerCase().includes(pq) || pop.stateName?.toLowerCase().includes(pq);
+      });
+    }
+    if (pscFilter)         filtered = filtered.filter(o => o.pscCode?.toLowerCase().includes(pscFilter.toLowerCase()) || o.pscDescription?.toLowerCase().includes(pscFilter.toLowerCase()));
+    if (daysLeftFilter) {
+      const maxDays = parseInt(daysLeftFilter);
+      if (!isNaN(maxDays)) {
+        const now = Date.now();
+        filtered = filtered.filter(o => {
+          if (!o.dueDate) return false;
+          const days = (new Date(o.dueDate) - now) / 86400000;
+          return days > 0 && days <= maxDays;
+        });
+      }
+    }
 
     // ── Sort ──────────────────────────────────────────────────────────────────
     if (sortBy === 'dueDate')    filtered.sort((a, b) => new Date(a.dueDate||0) - new Date(b.dueDate||0));
@@ -463,9 +540,43 @@ export const getOpportunities = async (req, res) => {
     const start     = (pageNum - 1) * limitNum;
     const paginated = filtered.slice(start, start + limitNum);
 
+    // ── Potential Matches: sector-level NAICS fallback (Problem 1 fix) ──────────
+    // Catches opportunities where the CO entered the wrong NAICS code.
+    // Looks for opps in the same 2-digit NAICS sector, outside user's exact codes.
+    let potentialMatches = [];
+    if (includePotential !== 'false' && req.user.naicsCodes?.length > 0 && pageNum === 1) {
+      try {
+        const sectorPrefixes = [...new Set(req.user.naicsCodes.map(n => String(n).slice(0, 2)))];
+        const sectorRegex = new RegExp(`^(${sectorPrefixes.join('|')})`);
+        const existingOppIds = valid.map(uo => uo._id || uo.opportunity?._id).filter(Boolean);
+
+        const sectorOpps = await Opportunity.find({
+          naicsCode: { $nin: req.user.naicsCodes, $regex: sectorRegex },
+          dueDate: { $gt: now },
+          source: { $ne: 'usaspending' },
+          _id: { $nin: existingOppIds },
+        }).sort({ postedDate: -1 }).limit(15).lean();
+
+        potentialMatches = sectorOpps.map(opp => {
+          const { score } = calculateMatchScore(opp, req.user);
+          const ds = deadlineStatus(opp.dueDate);
+          return {
+            ...opp,
+            isPotentialMatch: true,
+            aiMatchScore: Math.min(score, 45),
+            potentialMatchReason: `NAICS ${opp.naicsCode} is in the same industry sector as your registered codes. The contracting officer may have entered an incorrect code — this opportunity may still be relevant to your business.`,
+            ...ds,
+            status: 'active',
+            canApply: true,
+          };
+        });
+      } catch {}
+    }
+
     res.json({
       success: true,
       data: paginated,
+      potentialMatches,
       userProfile: {
         naicsCodes:         req.user.naicsCodes || [],
         plan:               access.plan,
@@ -579,10 +690,100 @@ export const getWinningBidsAnalysis = async (req, res) => {
 };
 
 // ─── GET /api/opportunities/:id ───────────────────────────────────────────────
+// Extract noticeId (UUID) from stored fields or embedded URLs
+// SAM.gov noticeId can be 32-char hex (no dashes) or standard UUID with dashes (36 chars).
+// Always strip dashes before validating so both forms pass.
+const isValidNoticeId = (s) => s && /^[a-f0-9]{32}$/i.test(s.replace(/-/g, ''));
+
+const extractNoticeId = (opp) => {
+  if (isValidNoticeId(opp.noticeId)) return opp.noticeId;
+  if (opp.url) {
+    // URL may contain UUID with or without dashes: /opp/<uuid>/view
+    const m = opp.url.match(/\/opp\/([a-f0-9-]{32,36})\//i);
+    if (m && isValidNoticeId(m[1])) return m[1];
+  }
+  if (opp.description && opp.description.startsWith('https://api.sam.gov')) {
+    const fromDesc = opp.description.split('noticeid=')[1]?.split('&')[0];
+    if (fromDesc) return fromDesc;
+  }
+  if (isValidNoticeId(opp.sourceId)) return opp.sourceId;
+  return null;
+};
+
 export const getOpportunityById = async (req, res) => {
   try {
     const opportunity = await Opportunity.findById(req.params.id);
     if (!opportunity) return res.status(404).json({ success: false, message: 'Not found' });
+
+    const SAM_API_KEY = process.env.SAM_API_KEY || '';
+    let dirty = false;
+
+    // ── 1. Re-fetch description if it's a SAM.gov URL or missing/placeholder ──
+    const isDescUrl     = opportunity.description?.startsWith('https://api.sam.gov') || opportunity.description?.startsWith('http://api.sam.gov');
+    const isDescMissing = !opportunity.description || opportunity.description === 'No description available';
+
+    if (isDescUrl || isDescMissing) {
+      // Build base URL (no api_key — samGetWithRotation injects it per-key)
+      let baseDescUrl = null;
+
+      if (isDescUrl) {
+        baseDescUrl = opportunity.description.replace(/[&?]api_key=[^&]*/i, '');
+      } else if (isDescMissing) {
+        const noticeId = extractNoticeId(opportunity);
+        if (noticeId) {
+          const noDashes = noticeId.replace(/-/g, '');
+          baseDescUrl = `https://api.sam.gov/prod/opportunities/v1/noticedesc?noticeid=${noDashes}`;
+        }
+      }
+
+      if (baseDescUrl) {
+        try {
+          const sep = baseDescUrl.includes('?') ? '&' : '?';
+          const descRes = await samGetWithRotation(
+            key => `${baseDescUrl}${sep}api_key=${key}`,
+            { timeout: 15000, headers: { Accept: 'text/plain, text/html, application/json, */*', 'User-Agent': 'Mozilla/5.0 (compatible; FedNotify/1.0)' } }
+          );
+          // SAM.gov noticedesc returns plain string, HTML string, or JSON object
+          let raw = String(descRes.data || '');
+          let realText = raw.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+          // If stripping produced empty/short result, try JSON parse for {description:...}
+          if (realText.length < 50) {
+            try {
+              const parsed = JSON.parse(raw);
+              realText = String(parsed.description || parsed.content || parsed.text || '');
+            } catch {}
+          }
+          if (realText && realText.length > 50 && !realText.startsWith('https://')) {
+            opportunity.description = realText.substring(0, 15000);
+            dirty = true;
+          }
+        } catch (e) {
+          console.warn('getOpportunityById: description re-fetch failed:', e.message);
+          // Primary URL was prod endpoint — retry with the standard (non-prod) endpoint
+        }
+      }
+    }
+
+    // ── 2. Re-fetch resource links if empty ──────────────────────────────────
+    if (!opportunity.resourceLinks || opportunity.resourceLinks.length === 0) {
+      const noticeId = extractNoticeId(opportunity);
+      if (noticeId && SAM_API_KEY) {
+        try {
+          const links = await fetchSAMResourceLinks(SAM_API_KEY, noticeId);
+          if (links.length > 0) {
+            opportunity.resourceLinks = links;
+            dirty = true;
+          }
+        } catch (e) {
+          console.warn('getOpportunityById: could not re-fetch resource links:', e.message);
+        }
+      }
+    }
+
+    // Persist updates so next load is instant
+    if (dirty) {
+      await opportunity.save().catch(e => console.warn('getOpportunityById save error:', e.message));
+    }
 
     const { score, reasons } = calculateMatchScore(opportunity, req.user);
     const isActive = opportunity.dueDate && new Date(opportunity.dueDate) > new Date();
@@ -708,40 +909,30 @@ export const refreshUserFeed = async (req, res) => {
       });
     }
 
-    // Clear existing feed so distributeToUser treats it as fresh
-    await UserOpportunity.deleteMany({ user: req.user._id });
-
     const now = new Date();
 
-    // Ensure master store has active candidates for this user's NAICS codes
-    const masterCount = await Opportunity.countDocuments({
-      naicsCode: { $in: req.user.naicsCodes },
-      source: { $ne: 'usaspending' },
-      dueDate: { $gt: now },
-    });
-
-    if (masterCount === 0) {
-      // Try fetching from SAM.gov
-      for (const code of req.user.naicsCodes.slice(0, 3)) {
-        await fetchSAMOpportunities(code, 50).catch(() => {});
-      }
-
-      // If SAM.gov returned nothing (no API data locally), seed sample data so feed isn't empty
-      const afterFetch = await Opportunity.countDocuments({
-        naicsCode: { $in: req.user.naicsCodes },
-        source: { $ne: 'usaspending' },
-        dueDate: { $gt: now },
-      });
-      if (afterFetch === 0) {
-        await seedSampleForUser(req.user.naicsCodes.slice(0, 3));
-        console.log(`🧪 Seeded sample opportunities for ${req.user.email} (no SAM.gov data available)`);
-      }
+    // Remove only truly expired opportunities (dueDate > 48h ago).
+    // NEVER delete the entire feed — that loses all historical records.
+    const EXPIRED_GRACE_MS = 48 * 60 * 60 * 1000;
+    const expiredUOs = await UserOpportunity.find({ user: req.user._id })
+      .populate('opportunity', 'dueDate')
+      .lean();
+    const expiredIds = expiredUOs
+      .filter(uo => {
+        if (!uo.opportunity) return true; // orphaned
+        if (!uo.opportunity.dueDate) return false; // no deadline → keep
+        return new Date(uo.opportunity.dueDate) <= new Date(now - EXPIRED_GRACE_MS);
+      })
+      .map(uo => uo._id);
+    if (expiredIds.length > 0) {
+      await UserOpportunity.deleteMany({ _id: { $in: expiredIds } });
     }
 
+    // Add new matching opportunities from master store on top of existing feed
     const added = await distributeToUser(req.user);
-    console.log(`✅ User feed refreshed for ${req.user.email}: ${added || 0} opportunities`);
+    console.log(`✅ User feed refreshed for ${req.user.email}: ${added || 0} new opportunities added`);
 
-    res.json({ success: true, message: 'Your feed has been refreshed.', count: added || 0 });
+    res.json({ success: true, message: `Feed refreshed — ${added || 0} new opportunities added.`, count: added || 0 });
   } catch (error) {
     console.error('Refresh user feed error:', error);
     res.status(500).json({ success: false, message: error.message });

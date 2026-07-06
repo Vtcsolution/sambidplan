@@ -200,6 +200,7 @@ export const aiAPI = {
     : api.post('/ai/analyze-rfp', data),
   sourcesSought:        (data) => api.post('/ai/sources-sought', data),
   analyzeAttachment:    (attachmentUrl) => api.post('/ai/analyze-attachment', { attachmentUrl }),
+  deepSummarize:        (opportunityId) => api.post(`/ai/deep-summarize/${opportunityId}`),
   goNoGo:               (data) => api.post('/ai/go-no-go', data),
   marketResearch:       () => api.post('/ai/market-research'),
   incumbentIntelligence: (opportunityId) => api.get(`/ai/incumbent/${opportunityId}`),
@@ -286,10 +287,11 @@ export const validateCoupon = (code) =>
 // Company Workspace APIs
 export const companyAPI = {
   // Company profile
-  create:       (data)          => api.post('/company', data),
-  getMine:      ()              => api.get('/company/mine'),
-  update:       (data)          => api.put('/company', data),
-  verifyUEI:    (data)          => api.post('/company/verify-uei', data),
+  create:        (data)          => api.post('/company', data),
+  getMine:       ()              => api.get('/company/mine'),
+  update:        (data)          => api.put('/company', data),
+  verifyUEI:     (data)          => api.post('/company/verify-uei', data),
+  aiReadiness:   ()              => api.get('/company/ai-readiness'),
 
   // Team members
   invite:        (data)          => api.post('/company/invite', data),

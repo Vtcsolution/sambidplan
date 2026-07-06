@@ -1918,3 +1918,110 @@ export const sendSubcontractorPaymentEmail = async (vendorEmail, vendorName, mil
     });
   } catch (e) { console.error('sendSubcontractorPaymentEmail error:', e.message); }
 };
+
+// ─── Deadline Alert Emails ─────────────────────────────────────────────────────
+
+const _deadlineHdr = (bgColor, emoji, heading) => `
+  <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+    <div style="text-align:center;padding:18px;background:${bgColor};border-radius:12px;color:white;">
+      <h2 style="margin:0;">${emoji} ${heading}</h2>
+      <p style="margin:6px 0 0;opacity:.9;font-size:13px;">Sambid · Federal Contract Intelligence</p>
+    </div>`;
+
+const _deadlineOppBox = (opp, dueLabel) => `
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:18px;margin:20px 0;">
+    <h3 style="margin:0 0 10px;color:#1f2937;font-size:16px;">${opp.title || 'Untitled Opportunity'}</h3>
+    <table style="width:100%;font-size:14px;color:#4b5563;border-collapse:collapse;">
+      <tr><td style="padding:4px 0;width:130px;"><strong>Agency</strong></td><td>${opp.agency || '—'}</td></tr>
+      <tr><td style="padding:4px 0;"><strong>NAICS</strong></td><td>${opp.naicsCode || '—'}</td></tr>
+      <tr><td style="padding:4px 0;"><strong>Deadline</strong></td><td><strong style="color:#dc2626;">${dueLabel}</strong></td></tr>
+      ${opp.estimatedValue ? `<tr><td style="padding:4px 0;"><strong>Value</strong></td><td>$${Number(opp.estimatedValue).toLocaleString()}</td></tr>` : ''}
+      ${opp.setAside ? `<tr><td style="padding:4px 0;"><strong>Set-Aside</strong></td><td>${opp.setAside}</td></tr>` : ''}
+    </table>
+    <div style="margin-top:14px;text-align:center;">
+      <a href="${process.env.FRONTEND_URL || ''}/opportunity/${opp._id}"
+         style="background:#6366f1;color:white;padding:10px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;display:inline-block;">
+        View Opportunity →
+      </a>
+    </div>
+  </div>`;
+
+const _deadlineFtr = () => `
+    <p style="color:#9ca3af;font-size:12px;text-align:center;margin-top:20px;">
+      Manage your deadline alerts in <a href="${process.env.FRONTEND_URL || ''}/settings" style="color:#6366f1;">Settings → Notifications</a>
+    </p>
+  </div>`;
+
+/**
+ * "Upcoming deadline" — first notice when an opp enters the user's alert window
+ */
+export const sendDeadlineUpcomingAlert = async (user, opp, daysLeft) => {
+  const dueLabel = `${new Date(opp.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`;
+  const html = `
+    ${_deadlineHdr('linear-gradient(135deg,#6366f1,#8b5cf6)', '📅', 'Upcoming Proposal Deadline')}
+    <div style="padding:24px;background:white;border-radius:12px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <p style="color:#4b5563;margin-top:0;">Hi ${user.name || 'there'},</p>
+      <p style="color:#4b5563;">You have a federal contract opportunity with a deadline in <strong>${daysLeft} day${daysLeft !== 1 ? 's' : ''}</strong>. Make sure your proposal is ready!</p>
+      ${_deadlineOppBox(opp, dueLabel)}
+      ${_deadlineFtr()}`;
+
+  await transporter.sendMail({
+    from: FROM.noreply(),
+    to: user.email,
+    subject: `📅 Deadline in ${daysLeft} days — ${(opp.title || '').substring(0, 60)}`,
+    html,
+  });
+  console.log(`📧 Upcoming deadline alert sent to ${user.email} (${daysLeft}d left)`);
+};
+
+/**
+ * "1-day countdown" — up to 5 emails every 5h when <24h remain
+ */
+export const sendDeadline1DayAlert = async (user, opp, alertIndex, hoursLeft) => {
+  const h = Math.max(0, Math.round(hoursLeft));
+  const dueLabel = `${new Date(opp.dueDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })} — ~${h}h remaining`;
+  const html = `
+    ${_deadlineHdr('linear-gradient(135deg,#f59e0b,#d97706)', '⚠️', `Deadline Tomorrow — Reminder ${alertIndex} of 5`)}
+    <div style="padding:24px;background:white;border-radius:12px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <p style="color:#4b5563;margin-top:0;">Hi ${user.name || 'there'},</p>
+      <p style="color:#4b5563;">Approximately <strong>${h} hour${h !== 1 ? 's' : ''}</strong> remain to submit your proposal for this opportunity!</p>
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px;margin:12px 0;text-align:center;font-weight:bold;color:#92400e;">
+        ⏰ ACT NOW — Less than 24 hours to deadline
+      </div>
+      ${_deadlineOppBox(opp, dueLabel)}
+      ${_deadlineFtr()}`;
+
+  await transporter.sendMail({
+    from: FROM.noreply(),
+    to: user.email,
+    subject: `⚠️ ${h}h left to apply — ${(opp.title || '').substring(0, 55)}`,
+    html,
+  });
+  console.log(`📧 1-day alert #${alertIndex} sent to ${user.email} (~${h}h left)`);
+};
+
+/**
+ * "Final hour" — 3 emails every 20min when <60min remain
+ */
+export const sendDeadlineFinalAlert = async (user, opp, alertIndex, minutesLeft) => {
+  const m = Math.max(0, Math.round(minutesLeft));
+  const dueLabel = `${new Date(opp.dueDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })} — ${m} min remaining`;
+  const html = `
+    ${_deadlineHdr('linear-gradient(135deg,#dc2626,#991b1b)', '🚨', `URGENT — Final Hour Alert ${alertIndex} of 3`)}
+    <div style="padding:24px;background:white;border-radius:12px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <p style="color:#4b5563;margin-top:0;">Hi ${user.name || 'there'},</p>
+      <p style="color:#4b5563;"><strong>Only ${m} minute${m !== 1 ? 's' : ''} left!</strong> Submit your proposal immediately.</p>
+      <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin:12px 0;text-align:center;font-weight:bold;color:#991b1b;font-size:16px;">
+        🚨 LAST ${m} MINUTES — SUBMIT NOW
+      </div>
+      ${_deadlineOppBox(opp, dueLabel)}
+      ${_deadlineFtr()}`;
+
+  await transporter.sendMail({
+    from: FROM.noreply(),
+    to: user.email,
+    subject: `🚨 URGENT: ${m} min left — ${(opp.title || '').substring(0, 55)}`,
+    html,
+  });
+  console.log(`📧 Final-hour alert #${alertIndex} sent to ${user.email} (~${m}min left)`);
+};

@@ -1,12 +1,12 @@
 // frontend/src/components/AIPanel.jsx
 import { useState } from 'react';
 import AIResponseRenderer from '../components/AIResponseRenderer';
-import { 
-  Sparkles, 
-  FileText, 
-  TrendingUp, 
-  Shield, 
-  Users, 
+import CompanyReadinessModal from '../components/CompanyReadinessModal';
+import {
+  Sparkles,
+  FileText,
+  TrendingUp,
+  Shield,
   MessageCircle,
   Loader2,
   ChevronDown,
@@ -18,22 +18,35 @@ import { aiAPI } from '../services/api';
 import Button from './Button';
 import Card from './Card';
 
-export default function AIPanel({ opportunityId, userPlan }) {
+export default function AIPanel({ opportunityId, userPlan, resourceLinks = [] }) {
   const [activeFeature, setActiveFeature] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [deepMeta, setDeepMeta] = useState(null);
   const [question, setQuestion] = useState('');
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
+  // Readiness modal state
+  const [readinessModal, setReadinessModal] = useState(null); // { feature } | null
+
+  const hasDocuments = resourceLinks.length > 0;
 
   const features = [
     {
       id: 'summarize',
-      name: 'AI Summarize',
+      name: hasDocuments ? 'Deep AI Analysis' : 'AI Summarize',
       icon: FileText,
-      description: 'Get a quick summary of the RFP',
+      description: hasDocuments
+        ? `Reads all ${resourceLinks.length} doc${resourceLinks.length !== 1 ? 's' : ''} + full RFP data`
+        : 'Full summary of the opportunity',
       color: 'blue',
+      badge: hasDocuments ? `${resourceLinks.length} docs` : null,
       action: async () => {
+        if (hasDocuments) {
+          const res = await aiAPI.deepSummarize(opportunityId);
+          setDeepMeta(res.data.data);
+          return res.data.data.analysis;
+        }
         const res = await aiAPI.summarize(opportunityId);
         return res.data.data.summary;
       }
@@ -50,28 +63,6 @@ export default function AIPanel({ opportunityId, userPlan }) {
       }
     },
     {
-      id: 'fullProposal',
-      name: 'Full Proposal',
-      icon: Sparkles,
-      description: 'Generate complete proposal',
-      color: 'purple',
-      action: async () => {
-        const res = await aiAPI.fullProposal(opportunityId);
-        return res.data.data.proposal;
-      }
-    },
-    {
-      id: 'competitive',
-      name: 'Competitive Analysis',
-      icon: Users,
-      description: 'Analyze competitors',
-      color: 'orange',
-      action: async () => {
-        const res = await aiAPI.competitiveAnalysis(opportunityId);
-        return res.data.data.analysis;
-      }
-    },
-    {
       id: 'risk',
       name: 'Risk Assessment',
       icon: Shield,
@@ -81,28 +72,37 @@ export default function AIPanel({ opportunityId, userPlan }) {
         const res = await aiAPI.riskAssessment(opportunityId);
         return res.data.data.assessment;
       }
-    }
+    },
   ];
 
-  const handleFeatureClick = async (feature) => {
-    if (userPlan !== 'pro' && userPlan !== 'enterprise') {
-      alert('Pro plan required for AI features. Please upgrade.');
-      return;
-    }
-
+  const runFeature = async (feature) => {
     setActiveFeature(feature.id);
     setLoading(true);
     setResult(null);
-    
+    setReadinessModal(null);
     try {
       const content = await feature.action();
       setResult(content);
     } catch (error) {
       console.error('AI feature error:', error);
-      setResult('⚠️ AI service temporarily unavailable. Please try again.');
+      const msg = error?.response?.data?.message || error.message || '';
+      setResult(`⚠️ ${msg || 'AI service temporarily unavailable. Please try again.'}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFeatureClick = (feature) => {
+    if (userPlan !== 'pro' && userPlan !== 'enterprise') {
+      alert('Pro plan required for AI features. Please upgrade.');
+      return;
+    }
+    // Show readiness modal for deep analysis and risk assessment
+    if (feature.id === 'summarize' || feature.id === 'risk') {
+      setReadinessModal(feature);
+      return;
+    }
+    runFeature(feature);
   };
 
   const handleAskQuestion = async () => {
@@ -163,6 +163,14 @@ export default function AIPanel({ opportunityId, userPlan }) {
   }
 
   return (
+    <>
+    {readinessModal && (
+      <CompanyReadinessModal
+        featureName={readinessModal.name}
+        onProceed={() => runFeature(readinessModal)}
+        onClose={() => setReadinessModal(null)}
+      />
+    )}
     <Card className="mb-6">
       <button
         onClick={() => setExpanded(!expanded)}
@@ -179,7 +187,7 @@ export default function AIPanel({ opportunityId, userPlan }) {
       {expanded && (
         <div className="p-4 pt-0 border-t border-gray-100">
           {/* Feature Buttons */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-3 gap-3 mb-6">
             {features.map((feature) => (
               <button
                 key={feature.id}
@@ -189,8 +197,18 @@ export default function AIPanel({ opportunityId, userPlan }) {
                   activeFeature === feature.id && loading ? 'opacity-50' : ''
                 }`}
               >
-                <feature.icon className="w-5 h-5 mx-auto mb-1" />
-                <span className="text-xs font-medium">{feature.name}</span>
+                <div className="relative">
+                  <feature.icon className="w-5 h-5 mx-auto mb-1" />
+                  {feature.badge && (
+                    <span className="absolute -top-1 -right-1 text-[9px] bg-indigo-600 text-white px-1 rounded-full leading-tight">
+                      {feature.badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs font-medium leading-tight">{feature.name}</span>
+                {feature.description && feature.id === 'summarize' && (
+                  <span className="text-[10px] opacity-70 leading-tight mt-0.5 block">{feature.description}</span>
+                )}
               </button>
             ))}
           </div>
@@ -222,29 +240,49 @@ export default function AIPanel({ opportunityId, userPlan }) {
 
           {/* Loading State */}
           {loading && (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-              <span className="ml-2 text-gray-600">AI is thinking...</span>
+              <span className="text-gray-600 text-sm font-medium">
+                {hasDocuments
+                  ? `Reading ${resourceLinks.length} document${resourceLinks.length !== 1 ? 's' : ''} from SAM.gov…`
+                  : 'AI is thinking…'}
+              </span>
+              {hasDocuments && (
+                <span className="text-xs text-gray-400">This may take 15–30 seconds for large RFPs</span>
+              )}
             </div>
           )}
 
           {/* Result Display */}
           {result && !loading && (
-            <div className="relative">
-              <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                <AIResponseRenderer content={result} />
+            <div>
+              {/* Deep-analyze document count banner */}
+              {deepMeta && activeFeature === 'summarize' && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-2 ${
+                  deepMeta.docsAnalyzed > 0
+                    ? 'bg-green-50 border border-green-200 text-green-700'
+                    : 'bg-amber-50 border border-amber-200 text-amber-700'
+                }`}>
+                  <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                  {deepMeta.message}
+                </div>
+              )}
+              <div className="relative">
+                <div className="bg-gray-50 rounded-lg p-4 max-h-[600px] overflow-y-auto">
+                  <AIResponseRenderer content={result} />
+                </div>
+                <button
+                  onClick={copyToClipboard}
+                  className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+                  title="Copy to clipboard"
+                >
+                  {copied ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
               </div>
-              <button
-                onClick={copyToClipboard}
-                className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
-                title="Copy to clipboard"
-              >
-                {copied ? (
-                  <Check className="w-4 h-4 text-green-500" />
-                ) : (
-                  <Copy className="w-4 h-4 text-gray-500" />
-                )}
-              </button>
             </div>
           )}
 
@@ -257,5 +295,6 @@ export default function AIPanel({ opportunityId, userPlan }) {
         </div>
       )}
     </Card>
+    </>
   );
 }

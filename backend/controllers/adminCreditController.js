@@ -136,6 +136,38 @@ export const getUserCreditHistory = async (req, res) => {
   }
 };
 
+// POST /api/admin/credits/reset/:userId — zero out a user's monthly counter
+export const resetUserCredits = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { monthlyAIGenerationsUsed: 0, lastAIReset: new Date() },
+      { new: true }
+    ).select('name email businessName plan monthlyAIGenerationsUsed');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.json({ success: true, message: `Credits reset for ${user.email}`, data: user });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin/credits/add/:userId — add bonus credits to a user
+export const addBonusCredits = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || amount < 1) return res.status(400).json({ success: false, message: 'Amount required' });
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { $inc: { bonusAICredits: Number(amount) } },
+      { new: true }
+    ).select('name email businessName plan bonusAICredits');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.json({ success: true, message: `Added ${amount} bonus credits to ${user.email}`, data: user });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 export const sendCreditReport = async (req, res) => {
   try {
     const { userId, month, year } = req.body;

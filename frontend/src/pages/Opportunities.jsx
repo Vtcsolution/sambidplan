@@ -1,12 +1,13 @@
 // frontend/src/pages/Opportunities.jsx
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Clock, Search, Filter, ChevronRight, AlertCircle, Briefcase, History, Database, Crown, CheckCircle, ExternalLink, SlidersHorizontal, X, ChevronDown, CalendarDays, Hash, Building, Tag } from 'lucide-react';
+import { Clock, Search, ChevronRight, AlertCircle, Briefcase, History, Database, Crown, CheckCircle, ExternalLink, SlidersHorizontal, X, ChevronDown, CalendarDays, Hash, Building, Tag, AlertOctagon, Zap, Globe, BookOpen, XCircle } from 'lucide-react';
 import { opportunityAPI } from '../services/api';
 import ExportButton from '../components/ExportButton';
 import { exportOpportunitiesPDF, exportOpportunitiesCSV } from '../utils/exportUtils';
 import HowItWorks from '../components/HowItWorks';
 import { usePlans } from '../hooks/usePlans';
+import { searchNAICS, NAICS_CODES } from '../data/naicsCodes';
 
 const SET_ASIDE_OPTIONS = [
   { value: '', label: 'Any' },
@@ -27,6 +28,33 @@ const NOTICE_TYPE_OPTIONS = [
   { value: 'Award Notice', label: 'Award Notice' },
   { value: 'Special Notice', label: 'Special Notice' },
   { value: 'Justification and Authorization', label: 'Justification' },
+];
+
+// Top federal contracting states (used for one-click location pills)
+const US_STATES = [
+  { abbr: 'VA', name: 'Virginia' },
+  { abbr: 'DC', name: 'Washington DC' },
+  { abbr: 'TX', name: 'Texas' },
+  { abbr: 'CA', name: 'California' },
+  { abbr: 'MD', name: 'Maryland' },
+  { abbr: 'GA', name: 'Georgia' },
+  { abbr: 'FL', name: 'Florida' },
+  { abbr: 'NY', name: 'New York' },
+  { abbr: 'CO', name: 'Colorado' },
+  { abbr: 'WA', name: 'Washington' },
+  { abbr: 'OH', name: 'Ohio' },
+  { abbr: 'NC', name: 'North Carolina' },
+  { abbr: 'PA', name: 'Pennsylvania' },
+  { abbr: 'AZ', name: 'Arizona' },
+  { abbr: 'IL', name: 'Illinois' },
+];
+
+// Contract value quick-select presets
+const VALUE_PRESETS = [
+  { label: '< $150k',   min: '',      max: '150000' },
+  { label: '$150k–$1M', min: '150000', max: '1000000' },
+  { label: '$1M–$10M',  min: '1000000', max: '10000000' },
+  { label: '> $10M',    min: '10000000', max: '' },
 ];
 
 const toDateStr = (d) => d.toISOString().slice(0, 10);
@@ -70,7 +98,35 @@ export default function Opportunities() {
   const [agencyFilter, setAgencyFilter] = useState('');
   const [activePreset, setActivePreset] = useState('');
 
+  // New filters
+  const [keywordMode, setKeywordMode] = useState('any'); // any | all | exact
+  const [pscFilter, setPscFilter] = useState('');
+  const [popFilter, setPopFilter] = useState('');        // place of performance (state/city)
+  const [daysLeftFilter, setDaysLeftFilter] = useState(''); // e.g. '15', '30', '60', '90'
+
+  // NAICS autocomplete state
+  const [naicsQuery, setNaicsQuery] = useState('');
+  const [naicsDropdown, setNaicsDropdown] = useState([]);
+  const [showNaicsDropdown, setShowNaicsDropdown] = useState(false);
+
+  // Active value preset label
+  const [activeValuePreset, setActiveValuePreset] = useState('');
+
+  // Potential matches + expired popup
+  const [potentialMatches, setPotentialMatches] = useState([]);
+  const [showPotential, setShowPotential] = useState(true);
+  const [expiredPopup, setExpiredPopup] = useState(null); // opp object to show warning for
+
   const location = useLocation();
+
+  // Deadline badge for Problem 2
+  const getDeadlineBadge = (opp) => {
+    const status = opp.deadlineStatus;
+    if (status === 'expired' || opp.isExpired) return { label: 'EXPIRED', cls: 'bg-red-100 text-red-700 border border-red-300', icon: XCircle };
+    if (status === 'closing_soon') return { label: 'Closing Soon', cls: 'bg-amber-100 text-amber-700 border border-amber-300', icon: AlertOctagon };
+    if (status === 'due_soon') return { label: 'Due Soon', cls: 'bg-orange-100 text-orange-700 border border-orange-200', icon: Clock };
+    return null;
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -80,7 +136,23 @@ export default function Opportunities() {
       window.history.replaceState({}, '', '/opportunities');
     }
     fetchOpportunities();
-  }, [pagination.page, pageSize, searchTerm, statusFilter, minValue, maxValue, setAsideFilter, sortBy, dueDateFrom, dueDateTo, postedFrom, postedTo, naicsFilter, noticeTypeFilter, agencyFilter]);
+  }, [pagination.page, pageSize, searchTerm, keywordMode, statusFilter, minValue, maxValue, setAsideFilter, sortBy, dueDateFrom, dueDateTo, postedFrom, postedTo, naicsFilter, noticeTypeFilter, agencyFilter, pscFilter, popFilter, daysLeftFilter]);
+
+  // NAICS autocomplete — search predefined list + support any 6-digit code
+  useEffect(() => {
+    if (!naicsQuery.trim()) { setNaicsDropdown([]); return; }
+    const q = naicsQuery.trim();
+    const results = searchNAICS(q);
+    // Also prepend user's own NAICS codes that match
+    const userMatches = (userProfile?.naicsCodes || [])
+      .filter(c => c.includes(q))
+      .filter(c => !results.find(r => r.code === c))
+      .map(c => {
+        const entry = NAICS_CODES.find(n => n.code === c);
+        return { code: c, label: entry?.label || `${c} — Your Code`, isUserCode: true };
+      });
+    setNaicsDropdown([...userMatches, ...results].slice(0, 12));
+  }, [naicsQuery, userProfile]);
 
   const resetFilters = () => {
     setSearchTerm('');
@@ -94,10 +166,44 @@ export default function Opportunities() {
     setPostedFrom('');
     setPostedTo('');
     setNaicsFilter('');
+    setNaicsQuery('');
     setNoticeTypeFilter('');
     setAgencyFilter('');
     setActivePreset('');
+    setKeywordMode('any');
+    setPscFilter('');
+    setPopFilter('');
+    setDaysLeftFilter('');
+    setActiveValuePreset('');
     setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const selectNaics = (code) => {
+    setNaicsFilter(code);
+    setNaicsQuery(code);
+    setShowNaicsDropdown(false);
+    setPagination(p => ({ ...p, page: 1 }));
+  };
+
+  const clearNaicsFilter = () => {
+    setNaicsFilter('');
+    setNaicsQuery('');
+    setNaicsDropdown([]);
+    setPagination(p => ({ ...p, page: 1 }));
+  };
+
+  const selectState = (abbr) => {
+    setPopFilter(prev => prev === abbr ? '' : abbr);
+    setPagination(p => ({ ...p, page: 1 }));
+  };
+
+  const applyValuePreset = (preset) => {
+    if (activeValuePreset === preset.label) {
+      setMinValue(''); setMaxValue(''); setActiveValuePreset('');
+    } else {
+      setMinValue(preset.min); setMaxValue(preset.max); setActiveValuePreset(preset.label);
+    }
+    setPagination(p => ({ ...p, page: 1 }));
   };
 
   const applyDueDatePreset = (preset) => {
@@ -114,8 +220,8 @@ export default function Opportunities() {
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
-  const hasActiveFilters = searchTerm || statusFilter !== 'all' || minValue || maxValue || setAsideFilter || sortBy !== 'matchScore' || dueDateFrom || dueDateTo || postedFrom || postedTo || naicsFilter || noticeTypeFilter || agencyFilter;
-  const activeFilterCount = [searchTerm, statusFilter !== 'all', minValue, maxValue, setAsideFilter, dueDateFrom, dueDateTo, postedFrom, postedTo, naicsFilter, noticeTypeFilter, agencyFilter].filter(Boolean).length;
+  const hasActiveFilters = searchTerm || statusFilter !== 'all' || minValue || maxValue || setAsideFilter || sortBy !== 'matchScore' || dueDateFrom || dueDateTo || postedFrom || postedTo || naicsFilter || noticeTypeFilter || agencyFilter || pscFilter || popFilter || daysLeftFilter || keywordMode !== 'any';
+  const activeFilterCount = [searchTerm, statusFilter !== 'all', minValue, maxValue, setAsideFilter, dueDateFrom, dueDateTo, postedFrom, postedTo, naicsFilter, noticeTypeFilter, agencyFilter, pscFilter, popFilter, daysLeftFilter, keywordMode !== 'any'].filter(Boolean).length;
 
   const fetchOpportunities = async () => {
     setLoading(true);
@@ -125,6 +231,7 @@ export default function Opportunities() {
         page: pagination.page,
         limit: pageSize,
         ...(searchTerm.trim() && { search: searchTerm.trim() }),
+        ...(keywordMode !== 'any' && { keywordMode }),
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(minValue && { minValue }),
         ...(maxValue && { maxValue }),
@@ -137,12 +244,15 @@ export default function Opportunities() {
         ...(naicsFilter && { naicsCode: naicsFilter }),
         ...(noticeTypeFilter && { noticeType: noticeTypeFilter }),
         ...(agencyFilter && { agency: agencyFilter }),
+        ...(pscFilter && { pscCode: pscFilter }),
+        ...(popFilter && { placeOfPerformance: popFilter }),
+        ...(daysLeftFilter && { daysLeft: daysLeftFilter }),
       };
       const response = await opportunityAPI.getAll(params);
-      console.log('API Response:', response.data);
-      
+
       if (response.data.success) {
         setOpportunities(response.data.data || []);
+        setPotentialMatches(response.data.potentialMatches || []);
         setUserProfile(response.data.userProfile);
         setPagination(prev => ({
           ...prev,
@@ -378,15 +488,25 @@ export default function Opportunities() {
         <div className="bg-white rounded-xl shadow-sm p-3 sm:p-4 mb-5 sm:mb-6">
           {/* Row 1: search + sort + toggle */}
           <div className="flex flex-col gap-2 sm:gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by title, agency, description…"
-                value={searchTerm}
-                onChange={e => { setSearchTerm(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
-                className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-              />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by title, agency, description…"
+                  value={searchTerm}
+                  onChange={e => { setSearchTerm(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                />
+              </div>
+              {searchTerm && (
+                <select value={keywordMode} onChange={e => { setKeywordMode(e.target.value); setPagination(p => ({...p, page:1})); }}
+                  className="text-xs border border-gray-300 rounded-lg px-2 py-2 bg-white focus:ring-2 focus:ring-indigo-500 shrink-0">
+                  <option value="any">Any Words</option>
+                  <option value="all">All Words</option>
+                  <option value="exact">Exact Phrase</option>
+                </select>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               <select
@@ -427,7 +547,97 @@ export default function Opportunities() {
 
           {/* Smart Filters Panel */}
           {showAdvanced && (
-            <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-5">
+
+              {/* ══ NICHE + CITY smart row ══════════════════════════════════════ */}
+              <div className="p-3 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl">
+                <p className="text-xs font-bold text-indigo-700 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" /> Smart Search — Niche + Location
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                  {/* NAICS / Niche autocomplete */}
+                  <div className="relative">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 mb-1">
+                      <Hash className="w-3.5 h-3.5 text-purple-500" /> Industry / NAICS Code
+                    </label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Type industry or code — e.g. 'IT services', '541511'…"
+                        value={naicsQuery}
+                        onChange={e => { setNaicsQuery(e.target.value); setShowNaicsDropdown(true); if (!e.target.value.trim()) clearNaicsFilter(); }}
+                        onFocus={() => setShowNaicsDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowNaicsDropdown(false), 200)}
+                        className={`w-full pl-8 pr-8 py-2.5 text-sm border rounded-lg focus:ring-2 focus:ring-indigo-500 ${naicsFilter ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 bg-white'}`}
+                      />
+                      {naicsFilter && (
+                        <button onClick={clearNaicsFilter}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {showNaicsDropdown && naicsDropdown.length > 0 && (
+                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+                        {naicsDropdown.map(n => (
+                          <button key={n.code} type="button" onMouseDown={() => selectNaics(n.code)}
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-indigo-50 border-b border-gray-50 last:border-0 flex items-center gap-2.5">
+                            <span className={`font-mono font-bold text-xs w-14 flex-shrink-0 ${n.isUserCode ? 'text-indigo-700' : 'text-purple-600'}`}>
+                              {n.code}
+                            </span>
+                            <span className="text-gray-700 flex-1 truncate text-xs">{n.label.split(' — ')[1]}</span>
+                            {n.isUserCode && <span className="text-xs text-indigo-400 flex-shrink-0">My code</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {naicsFilter && (
+                      <p className="mt-1 text-xs text-indigo-600">
+                        Filtering: <span className="font-mono font-semibold">{naicsFilter}</span>
+                        {(() => { const e = NAICS_CODES.find(n => n.code === naicsFilter); return e ? ` — ${e.label.split(' — ')[1]}` : ''; })()}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Location / State */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 mb-1">
+                      <Globe className="w-3.5 h-3.5 text-blue-500" /> City / State
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Type city or state — e.g. 'Virginia', 'Austin TX'…"
+                        value={popFilter}
+                        onChange={e => { setPopFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
+                        className={`w-full pr-8 py-2.5 px-3 text-sm border rounded-lg focus:ring-2 focus:ring-indigo-500 ${popFilter ? 'border-blue-400 bg-blue-50' : 'border-gray-300 bg-white'}`}
+                      />
+                      {popFilter && (
+                        <button onClick={() => { setPopFilter(''); setPagination(p => ({...p, page:1})); }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {/* State quick-select pills */}
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {US_STATES.map(s => (
+                        <button key={s.abbr} onClick={() => selectState(s.abbr)}
+                          title={s.name}
+                          className={`px-2 py-0.5 rounded-md text-xs font-medium transition-all ${
+                            popFilter === s.abbr
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                          }`}>
+                          {s.abbr}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               {/* ── Due Date Range with Quick Presets ──────────────── */}
               <div>
@@ -464,22 +674,38 @@ export default function Opportunities() {
                 </div>
               </div>
 
-              {/* ── Main Filters Grid ─────────────────────────────── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-
-                {/* NAICS Code Filter */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
-                    <Hash className="w-3.5 h-3.5 text-purple-500" /> NAICS Code
-                  </label>
-                  <select value={naicsFilter} onChange={e => { setNaicsFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
-                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500">
-                    <option value="">All My NAICS</option>
-                    {userProfile?.naicsCodes?.map(code => (
-                      <option key={code} value={code}>{code}</option>
-                    ))}
-                  </select>
+              {/* ── Days Remaining Quick Filter ────────────────────── */}
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                  <Clock className="w-3.5 h-3.5 text-orange-500" /> Days Left to Apply
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'Due in 15 days', value: '15' },
+                    { label: 'Due in 30 days', value: '30' },
+                    { label: 'Due in 60 days', value: '60' },
+                    { label: 'Due in 90 days', value: '90' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        setDaysLeftFilter(prev => prev === opt.value ? '' : opt.value);
+                        setPagination(p => ({ ...p, page: 1 }));
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        daysLeftFilter === opt.value
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
+              </div>
+
+              {/* ── Secondary Filters Grid ─────────────────────────── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 
                 {/* Notice Type */}
                 <div>
@@ -508,24 +734,51 @@ export default function Opportunities() {
                   <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
                     <Building className="w-3.5 h-3.5 text-orange-500" /> Agency
                   </label>
-                  <input type="text" placeholder="e.g. Defense, NASA…" value={agencyFilter}
+                  <input type="text" placeholder="e.g. Defense, NASA, VA…" value={agencyFilter}
                     onChange={e => { setAgencyFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
                     className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
                 </div>
               </div>
 
-              {/* ── Value Range + Posted Date ─────────────────────── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Min Value ($)</label>
-                  <input type="number" placeholder="e.g. 50,000" value={minValue}
-                    onChange={e => { setMinValue(e.target.value); setPagination(p => ({...p, page:1})); }}
-                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+              {/* ── Contract Value ────────────────────────────────────── */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Contract Value</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {VALUE_PRESETS.map(p => (
+                    <button key={p.label} onClick={() => applyValuePreset(p)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        activeValuePreset === p.label
+                          ? 'bg-green-600 text-white border-green-600'
+                          : 'bg-white border-gray-300 text-gray-600 hover:border-green-400 hover:text-green-700'
+                      }`}>
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-0.5">Custom Min ($)</label>
+                    <input type="number" placeholder="e.g. 50,000" value={minValue}
+                      onChange={e => { setMinValue(e.target.value); setActiveValuePreset(''); setPagination(p => ({...p, page:1})); }}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-0.5">Custom Max ($)</label>
+                    <input type="number" placeholder="e.g. 5,000,000" value={maxValue}
+                      onChange={e => { setMaxValue(e.target.value); setActiveValuePreset(''); setPagination(p => ({...p, page:1})); }}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── PSC Code + Posted Date ────────────────────────── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Max Value ($)</label>
-                  <input type="number" placeholder="e.g. 5,000,000" value={maxValue}
-                    onChange={e => { setMaxValue(e.target.value); setPagination(p => ({...p, page:1})); }}
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
+                    <BookOpen className="w-3.5 h-3.5 text-teal-500" /> PSC Code
+                  </label>
+                  <input type="text" placeholder="e.g. D307, IT Software…" value={pscFilter}
+                    onChange={e => { setPscFilter(e.target.value); setPagination(p => ({...p, page:1})); }}
                     className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
@@ -561,7 +814,7 @@ export default function Opportunities() {
                   {naicsFilter && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium">
                       NAICS: {naicsFilter}
-                      <button onClick={() => setNaicsFilter('')} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
+                      <button onClick={clearNaicsFilter} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {noticeTypeFilter && (
@@ -600,16 +853,99 @@ export default function Opportunities() {
                       <button onClick={() => { setPostedFrom(''); setPostedTo(''); }} className="hover:text-gray-900"><X className="w-3 h-3" /></button>
                     </span>
                   )}
+                  {pscFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 text-teal-700 rounded-full text-xs font-medium">
+                      PSC: {pscFilter}
+                      <button onClick={() => setPscFilter('')} className="hover:text-teal-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {popFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                      Location: {popFilter}
+                      <button onClick={() => setPopFilter('')} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
+                  {keywordMode !== 'any' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+                      Mode: {keywordMode === 'all' ? 'All Words' : 'Exact Phrase'}
+                      <button onClick={() => setKeywordMode('any')} className="hover:text-gray-900"><X className="w-3 h-3" /></button>
+                    </span>
+                  )}
                 </div>
               )}
             </div>
           )}
         </div>
 
+        {/* Active filter chips — always visible when any filter is on */}
+        {hasActiveFilters && (
+          <div className="mb-4 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-gray-400 mr-0.5">Filtering by:</span>
+            {searchTerm && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                "{searchTerm}" {keywordMode !== 'any' && `(${keywordMode})`}
+                <button onClick={() => { setSearchTerm(''); setKeywordMode('any'); setPagination(p=>({...p,page:1})); }}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {naicsFilter && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                <Hash className="w-3 h-3" />{naicsFilter}
+                <button onClick={clearNaicsFilter}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {popFilter && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                <Globe className="w-3 h-3" />{popFilter}
+                <button onClick={() => { setPopFilter(''); setPagination(p=>({...p,page:1})); }}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {setAsideFilter && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                {SET_ASIDE_OPTIONS.find(o => o.value === setAsideFilter)?.label || setAsideFilter}
+                <button onClick={() => { setSetAsideFilter(''); setPagination(p=>({...p,page:1})); }}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {noticeTypeFilter && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                {noticeTypeFilter}
+                <button onClick={() => { setNoticeTypeFilter(''); setPagination(p=>({...p,page:1})); }}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {agencyFilter && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
+                Agency: {agencyFilter}
+                <button onClick={() => { setAgencyFilter(''); setPagination(p=>({...p,page:1})); }}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {(activeValuePreset || minValue || maxValue) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                {activeValuePreset || `$${minValue ? Number(minValue).toLocaleString() : '0'} – $${maxValue ? Number(maxValue).toLocaleString() : '∞'}`}
+                <button onClick={() => { setMinValue(''); setMaxValue(''); setActiveValuePreset(''); setPagination(p=>({...p,page:1})); }}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {(dueDateFrom || dueDateTo) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                <CalendarDays className="w-3 h-3" />{activePreset || `${dueDateFrom || '…'} → ${dueDateTo || '…'}`}
+                <button onClick={clearDueDateRange}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            {pscFilter && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
+                PSC: {pscFilter}
+                <button onClick={() => { setPscFilter(''); setPagination(p=>({...p,page:1})); }}><X className="w-3 h-3" /></button>
+              </span>
+            )}
+            <button onClick={resetFilters}
+              className="ml-1 text-xs text-red-500 hover:text-red-700 font-medium underline underline-offset-2">
+              Clear all
+            </button>
+          </div>
+        )}
+
         {/* Results Count */}
         <div className="mb-4 flex items-center justify-between text-sm text-gray-500">
           <span>Showing {opportunities.length} of {pagination.total} opportunities</span>
-          {hasActiveFilters && <span className="text-indigo-600 font-medium">Filters active</span>}
+          {hasActiveFilters && <span className="text-indigo-600 font-medium">{activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''} active</span>}
         </div>
 
         {/* Results */}
@@ -636,8 +972,10 @@ export default function Opportunities() {
           <div className="space-y-4">
             {filteredOpportunities.map((opp, index) => {
               const isActive = isActiveOpportunity(opp.dueDate);
+              const deadlineBadge = getDeadlineBadge(opp);
+              const borderColor = opp.isExpired ? 'border-l-red-500' : opp.deadlineStatus === 'closing_soon' ? 'border-l-amber-400' : isActive ? 'border-l-green-500' : 'border-l-gray-300';
               return (
-                <div key={opp._id || opp.sourceId || index} className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all p-5 ${isActive ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-gray-300'}`}>
+                <div key={opp._id || opp.sourceId || index} className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all p-5 border-l-4 ${borderColor} ${opp.isExpired ? 'opacity-80' : ''}`}>
                   <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                     <div className="flex-1 min-w-0">
 
@@ -651,7 +989,12 @@ export default function Opportunities() {
                             {opp.aiMatchScore}% Match
                           </span>
                         )}
-                        {isActive ? (
+                        {/* Deadline status badge (Problem 2) */}
+                        {deadlineBadge ? (
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded shrink-0 ${deadlineBadge.cls}`}>
+                            <deadlineBadge.icon className="w-3 h-3" /> {deadlineBadge.label}
+                          </span>
+                        ) : isActive ? (
                           <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium shrink-0">✓ Open</span>
                         ) : (
                           <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded flex items-center gap-1 shrink-0">
@@ -659,6 +1002,19 @@ export default function Opportunities() {
                           </span>
                         )}
                       </div>
+                      {/* Expired warning bar */}
+                      {opp.isExpired && (
+                        <div className="mb-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+                          <XCircle className="w-4 h-4 shrink-0" />
+                          <span><strong>Deadline has passed.</strong> This opportunity is shown for research purposes only. You cannot submit a response.</span>
+                        </div>
+                      )}
+                      {opp.deadlineStatus === 'closing_soon' && (
+                        <div className="mb-2 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                          <AlertOctagon className="w-4 h-4 shrink-0" />
+                          <span><strong>Less than 24 hours left.</strong> Deadline is {opp.hoursUntilDue ? `in ~${Math.round(opp.hoursUntilDue)}h` : 'very soon'} — act immediately.</span>
+                        </div>
+                      )}
 
                       {/* Agency */}
                       <p className="text-sm text-gray-600 mb-2">{opp.agency}</p>
@@ -717,12 +1073,21 @@ export default function Opportunities() {
 
                     {/* Right-side actions */}
                     <div className="flex sm:flex-col gap-2 shrink-0 mt-2 sm:mt-0">
-                      <Link
-                        to={`/opportunity/${opp._id}`}
-                        className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors whitespace-nowrap"
-                      >
-                        View Details <ChevronRight className="w-3.5 h-3.5" />
-                      </Link>
+                      {opp.isExpired ? (
+                        <button
+                          onClick={() => setExpiredPopup(opp)}
+                          className="flex items-center gap-1 px-3 py-2 bg-gray-400 text-white rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap"
+                        >
+                          <XCircle className="w-3.5 h-3.5" /> Expired
+                        </button>
+                      ) : (
+                        <Link
+                          to={`/opportunity/${opp._id}`}
+                          className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors whitespace-nowrap"
+                        >
+                          View Details <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
+                      )}
                       {(opp.sourceId || (opp.url && opp.url !== '#')) && (
                         <a
                           href={opp.url && opp.url !== '#' && opp.url.includes('sam.gov')
@@ -784,6 +1149,110 @@ export default function Opportunities() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+        {/* ── Potential Matches (Problem 1: wrong NAICS by CO) ───────────────── */}
+        {potentialMatches.length > 0 && (
+          <div className="mt-8">
+            <button onClick={() => setShowPotential(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-3.5 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-600" />
+                <span className="font-semibold text-amber-800 text-sm">
+                  Potential Matches — {potentialMatches.length} opportunities in your industry sector
+                </span>
+                <span className="text-xs text-amber-600 hidden sm:inline">
+                  (Contracting officers sometimes enter incorrect NAICS codes — these are in your same sector)
+                </span>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-amber-600 transition-transform ${showPotential ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showPotential && (
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-gray-500 px-1">
+                  ⚠️ These opportunities have different NAICS codes but are in the same industry sector as your registered codes. They may be worth reviewing — a CO may have entered the wrong code.
+                </p>
+                {potentialMatches.map((opp, i) => (
+                  <div key={opp._id || i} className="bg-white rounded-xl border border-amber-200 border-l-4 border-l-amber-400 shadow-sm p-5 hover:shadow-md transition-all">
+                    <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start gap-2 flex-wrap mb-1">
+                          <Link to={`/opportunity/${opp._id}`} className="flex-1">
+                            <h3 className="text-sm font-semibold text-gray-900 hover:text-indigo-700 transition-colors">{opp.title}</h3>
+                          </Link>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 shrink-0">
+                            ⚠️ Potential Match
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold shrink-0 ${getMatchColor(opp.aiMatchScore)}`}>
+                            {opp.aiMatchScore}% Match
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-1">{opp.agency}</p>
+                        <p className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded mb-2">{opp.potentialMatchReason}</p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                          {opp.estimatedValue && <span className="text-green-700 font-semibold">${opp.estimatedValue.toLocaleString()}</span>}
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Due: {opp.dueDate ? new Date(opp.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</span>
+                          <span>NAICS: <span className="font-mono">{opp.naicsCode}</span></span>
+                          {opp.naicsDescription && <span className="text-gray-400">({opp.naicsDescription})</span>}
+                          {opp.noticeType && <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{opp.noticeType}</span>}
+                        </div>
+                      </div>
+                      <div className="flex sm:flex-col gap-2 shrink-0">
+                        <Link to={`/opportunity/${opp._id}`}
+                          className="flex items-center gap-1 px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 transition-colors whitespace-nowrap">
+                          Review <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
+                        <a href={`https://sam.gov/search/?index=opp&q=${encodeURIComponent(opp.sourceId || opp.title || '')}&is_active=true`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 px-3 py-2 bg-white border border-blue-300 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-50 transition-colors whitespace-nowrap">
+                          <ExternalLink className="w-3.5 h-3.5" /> SAM.gov
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Expired Opportunity Popup (Problem 2) ───────────────────────────── */}
+        {expiredPopup && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setExpiredPopup(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                  <XCircle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Submission Deadline Passed</h3>
+                  <p className="text-xs text-gray-500">This opportunity is no longer accepting responses</p>
+                </div>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-sm font-semibold text-gray-900 mb-1 line-clamp-2">{expiredPopup.title}</p>
+                <p className="text-xs text-gray-500 mb-2">{expiredPopup.agency}</p>
+                <div className="flex items-center gap-2 text-xs text-red-700 font-semibold">
+                  <Clock className="w-3.5 h-3.5" />
+                  Deadline: {expiredPopup.dueDate ? new Date(expiredPopup.dueDate).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : 'N/A'}
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-5">
+                The proposal submission window for this opportunity has closed. You can still view it for <strong>market research</strong> and <strong>past performance tracking</strong>, but no new bids can be submitted.
+              </p>
+              <div className="flex gap-3">
+                <Link to={`/opportunity/${expiredPopup._id}`}
+                  className="flex-1 text-center px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors"
+                  onClick={() => setExpiredPopup(null)}>
+                  View for Research
+                </Link>
+                <button onClick={() => setExpiredPopup(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

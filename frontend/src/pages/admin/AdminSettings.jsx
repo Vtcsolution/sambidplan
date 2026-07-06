@@ -91,7 +91,8 @@ const DEFAULTS = {
     emailNoreply: 'noreply@sambid.co', emailSupport: 'support@sambid.co', emailBilling: 'billing@sambid.co',
   },
   api: {
-    openaiApiKey: '', geminiApiKey: '', samApiKey: '',
+    openaiApiKey: '', geminiApiKey: '',
+    samApiKey: '', samApiKey2: '', samApiKey3: '', samApiKey4: '',
     samApiUrl: 'https://api.sam.gov/opportunities/v2/search',
     usaspendingApiUrl: 'https://api.usaspending.gov/api/v2',
   },
@@ -259,11 +260,26 @@ export default function AdminSettings() {
       {/* ── 4. SAM.gov ──────────────────────────────────────────────────── */}
       <SectionCard icon={Server} color="bg-emerald-50 text-emerald-700" title="SAM.gov">
         <div className="grid grid-cols-2 gap-4">
-          <SecretInput label="SAM.gov API Key"
+          <SecretInput label="SAM.gov API Key 1 (Primary)"
             value={g('api').samApiKey || ''}
             onChange={v => set('api','samApiKey',v)}
             placeholder="SAM-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            hint="Get from sam.gov → My Profile → Developer → API Keys" />
+            hint="Get from sam.gov → My Profile → Developer → API Keys. Each key = 1,000 requests/day." />
+          <SecretInput label="SAM.gov API Key 2 (Backup)"
+            value={g('api').samApiKey2 || ''}
+            onChange={v => set('api','samApiKey2',v)}
+            placeholder="SAM-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            hint="Auto-used when Key 1 hits daily quota. Register a second SAM.gov account to get this." />
+          <SecretInput label="SAM.gov API Key 3 (Backup)"
+            value={g('api').samApiKey3 || ''}
+            onChange={v => set('api','samApiKey3',v)}
+            placeholder="SAM-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            hint="3rd key — adds another 1,000 requests/day to your quota." />
+          <SecretInput label="SAM.gov API Key 4 (Backup)"
+            value={g('api').samApiKey4 || ''}
+            onChange={v => set('api','samApiKey4',v)}
+            placeholder="SAM-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            hint="4th key — 4 keys total = 4,000 requests/day, enough to fully resolve all active contracts nightly." />
           <TextInput label="SAM.gov API URL" value={g('api').samApiUrl || ''} onChange={v => set('api','samApiUrl',v)}
             placeholder="https://api.sam.gov/opportunities/v2/search" />
           <div className="col-span-2">

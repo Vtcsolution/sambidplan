@@ -7,7 +7,6 @@ import { useUserPlan } from '../hooks/useUserPlan';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import AIPanel from '../components/AIPanel';
-import { exportSingleOpportunityPDF } from '../utils/exportUtils';
 import AIResponseRenderer from '../components/AIResponseRenderer';
 import HowItWorks from '../components/HowItWorks';
 
@@ -38,6 +37,9 @@ export default function OpportunityDetail() {
   // Attachment analysis
   const [analyzingUrl, setAnalyzingUrl] = useState(null);
   const [attachAnalysis, setAttachAnalysis] = useState({});
+  const [deepLoading, setDeepLoading] = useState(false);
+  const [deepResult, setDeepResult] = useState(null);
+  const [deepMeta, setDeepDocMeta] = useState(null);
 
   useEffect(() => {
     fetchOpportunity();
@@ -125,7 +127,8 @@ export default function OpportunityDetail() {
   const getSamSearchUrl = () => {
     const sol = getSolicitationNumber();
     if (sol) {
-      return `https://sam.gov/search/?index=opp&q=${encodeURIComponent(sol)}&is_active=true&sort=-relevance`;
+      // Search by exact solicitation number — SAM.gov will show the exact match at top
+      return `https://sam.gov/search/?index=opp&q=${encodeURIComponent(sol)}&sort=-relevance`;
     }
     return null;
   };
@@ -150,13 +153,21 @@ export default function OpportunityDetail() {
   };
 
   // Direct link to the opportunity on SAM.gov.
-  // SAM.gov direct view requires the internal noticeId (UUID), not the solicitation number.
-  // If we have a stored sam.gov URL with the correct noticeId, use it.
-  // Otherwise fall back to the search URL which auto-searches by solicitation number.
+  // Priority: stored noticeId UUID → stored url (if it's a direct /opp/ link) → search fallback
   const getSamDirectUrl = () => {
-    if (opportunity.url && opportunity.url !== '#' && opportunity.url.includes('sam.gov')) {
+    // noticeId can be 32-char hex (no dashes) OR standard UUID with dashes (36 chars).
+    // Strip dashes before validating so both forms are accepted.
+    if (opportunity.noticeId) {
+      const stripped = opportunity.noticeId.replace(/-/g, '');
+      if (/^[a-f0-9]{32}$/i.test(stripped)) {
+        return `https://sam.gov/opp/${opportunity.noticeId}/view`;
+      }
+    }
+    // Direct URL stored from uiLink (already a /opp/<uuid>/view URL)
+    if (opportunity.url && opportunity.url !== '#' && opportunity.url.includes('/opp/')) {
       return opportunity.url;
     }
+    // Fall back to search by solicitation number
     return getSamSearchUrl();
   };
 
@@ -187,8 +198,50 @@ export default function OpportunityDetail() {
     return 'bg-gray-100 text-gray-700';
   };
 
+  // SAM.gov returns postedDate as "YYYY-MM-DD" (date-only, no time) — JS parses that as
+  // midnight UTC, which in Eastern timezone shifts back to the previous day at 8 PM.
+  // Detection: if time is 00:00:00 UTC it was a date-only value → show date in UTC to keep
+  // the correct calendar day.  If there's a real time (non-zero UTC), show with Eastern tz.
+  const fmtDateTime = (d) => {
+    if (!d) return 'N/A';
+    const dt = new Date(d);
+    const isMidnightUTC = dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 && dt.getUTCSeconds() === 0;
+    if (isMidnightUTC) {
+      // Date-only value from API — show correct calendar date without time
+      return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit', timeZone: 'UTC' });
+    }
+    // Full timestamp — show with exact time in Eastern timezone
+    return dt.toLocaleString('en-US', {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'America/New_York', timeZoneName: 'short',
+    });
+  };
+  // For date-only display (archive, performance period, etc.) always use UTC to avoid day shifts
+  const fmtDate = (d) => {
+    if (!d) return 'N/A';
+    return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  };
+
   const solicitationNumber = getSolicitationNumber();
   const samSearchUrl = getSamSearchUrl();
+
+  // Parse agency hierarchy from the stored " > " path for records fetched before the new fields were added
+  const agencyParts = (opportunity.agency || '').split(' > ').map(s => s.trim()).filter(Boolean);
+  const derivedDept    = opportunity.department   || agencyParts[0] || '';
+  const derivedSubTier = opportunity.subTier      || agencyParts[1] || '';
+  const derivedMajCmd  = opportunity.majorCommand || agencyParts[2] || '';
+  const derivedSubCmd1 = opportunity.subCommand1  || agencyParts[3] || '';
+  const derivedSubCmd2 = opportunity.subCommand2  || agencyParts[4] || '';
+  const derivedSubCmd3 = opportunity.subCommand3  || agencyParts[5] || '';
+  // Show Office only if it's different from all hierarchy levels above.
+  // For old DB records: if office === subCommand3, the last hierarchy level IS the office —
+  // display it under "Office" and suppress the "Sub Command 3" row to match SAM.gov layout.
+  const hierarchySet = new Set([derivedDept, derivedSubTier, derivedMajCmd, derivedSubCmd1, derivedSubCmd2].filter(Boolean));
+  const officeIsSubCmd3 = opportunity.office && opportunity.office === derivedSubCmd3;
+  const displaySubCmd3 = officeIsSubCmd3 ? '' : derivedSubCmd3;
+  const derivedOffice = opportunity.office && !hierarchySet.has(opportunity.office) ? opportunity.office : '';
+  const hasOrgData = derivedDept || derivedSubTier || derivedMajCmd || derivedSubCmd1;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -201,6 +254,19 @@ export default function OpportunityDetail() {
           <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 mr-1" />
           Back to Opportunities
         </button>
+
+        {/* Sample data warning */}
+        {opportunity.sourceId?.includes('SAMPLE') && (
+          <div className="mb-4 flex items-start gap-3 p-4 bg-amber-50 border border-amber-300 rounded-xl">
+            <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">This is a sample placeholder — not a real SAM.gov opportunity</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Your database was empty so sample records were created automatically. Go to <strong>Admin → Hybrid Data Pipeline</strong> and click <strong>"Test: Fetch Next 10"</strong> to load real opportunities from SAM.gov.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Main Card */}
         <Card className="mb-5 sm:mb-6">
@@ -263,38 +329,51 @@ export default function OpportunityDetail() {
                   </span>
                 </div>
               )}
-              <div className="flex items-center text-gray-600">
-                <Clock className="w-5 h-5 mr-2 text-orange-500 shrink-0" />
-                <span className="font-medium">Response Due:</span>
-                <span className="ml-2">
-                  {opportunity.dueDate
-                    ? new Date(opportunity.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-                    : 'N/A'}
-                </span>
+              <div className="flex items-start text-gray-600">
+                <Clock className="w-5 h-5 mr-2 text-orange-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-medium">Response Due:</span>
+                  <span className="ml-2">{fmtDateTime(opportunity.dueDate)}</span>
+                </div>
               </div>
-              <div className="flex items-center text-gray-600">
-                <Calendar className="w-5 h-5 mr-2 text-blue-500 shrink-0" />
-                <span className="font-medium">Posted:</span>
-                <span className="ml-2">
-                  {new Date(opportunity.postedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                </span>
+              <div className="flex items-start text-gray-600">
+                <Calendar className="w-5 h-5 mr-2 text-blue-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-medium">Published Date:</span>
+                  <span className="ml-2">{fmtDateTime(opportunity.postedDate)}</span>
+                </div>
               </div>
               {opportunity.modifiedDate && (
                 <div className="flex items-center text-gray-600">
                   <Calendar className="w-5 h-5 mr-2 text-gray-400 shrink-0" />
                   <span className="font-medium">Last Updated:</span>
-                  <span className="ml-2">
-                    {new Date(opportunity.modifiedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                  </span>
+                  <span className="ml-2">{fmtDate(opportunity.modifiedDate)}</span>
                 </div>
               )}
               {opportunity.archiveDate && (
                 <div className="flex items-center text-gray-600">
                   <Calendar className="w-5 h-5 mr-2 text-red-400 shrink-0" />
-                  <span className="font-medium">Archive Date:</span>
-                  <span className="ml-2">
-                    {new Date(opportunity.archiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                  </span>
+                  <span className="font-medium">Inactive Date:</span>
+                  <span className="ml-2">{fmtDate(opportunity.archiveDate)}</span>
+                </div>
+              )}
+              {opportunity.archiveType && (
+                <div className="flex items-center text-gray-600">
+                  <Calendar className="w-5 h-5 mr-2 text-gray-300 shrink-0" />
+                  <span className="font-medium">Inactive Policy:</span>
+                  <span className="ml-2">{{
+                    autocustom: 'Manual',
+                    auto15: '15 days after response deadline',
+                    auto30: '30 days after response deadline',
+                    autoexpire: 'Auto-expire',
+                  }[opportunity.archiveType] || opportunity.archiveType}</span>
+                </div>
+              )}
+              {opportunity.relatedNotice && (
+                <div className="flex items-center text-gray-600">
+                  <FileText className="w-5 h-5 mr-2 text-gray-400 shrink-0" />
+                  <span className="font-medium">Related Notice:</span>
+                  <span className="ml-2 font-mono text-sm">{opportunity.relatedNotice}</span>
                 </div>
               )}
             </div>
@@ -339,6 +418,13 @@ export default function OpportunityDetail() {
                   <span className="ml-2 font-mono text-sm bg-gray-100 px-2 py-1 rounded">
                     {solicitationNumber}
                   </span>
+                  <button
+                    onClick={handleCopySolicitation}
+                    title="Copy solicitation number"
+                    className={`ml-2 p-1 rounded transition-colors ${copied ? 'text-green-600' : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                  >
+                    {copied ? <CheckCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
                 </div>
               )}
               {opportunity.organizationType && (
@@ -352,28 +438,52 @@ export default function OpportunityDetail() {
           </div>
 
           {/* ── Contracting Office Hierarchy ───────────────────────── */}
-          {(opportunity.department || opportunity.subTier || opportunity.office) && (
+          {hasOrgData && (
             <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
               <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 mb-3">
                 <Building className="w-4 h-4 text-slate-500" /> Contracting Organization
               </h3>
-              <div className="grid sm:grid-cols-3 gap-3 text-sm">
-                {opportunity.department && (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                {derivedDept && (
                   <div>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Department</p>
-                    <p className="text-slate-800 font-medium mt-0.5">{opportunity.department}</p>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Department / Ind. Agency</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{derivedDept}</p>
                   </div>
                 )}
-                {opportunity.subTier && (
+                {derivedSubTier && (
                   <div>
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sub-Tier</p>
-                    <p className="text-slate-800 font-medium mt-0.5">{opportunity.subTier}</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{derivedSubTier}</p>
                   </div>
                 )}
-                {opportunity.office && (
+                {derivedMajCmd && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Major Command</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{derivedMajCmd}</p>
+                  </div>
+                )}
+                {derivedSubCmd1 && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sub Command 1</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{derivedSubCmd1}</p>
+                  </div>
+                )}
+                {derivedSubCmd2 && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sub Command 2</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{derivedSubCmd2}</p>
+                  </div>
+                )}
+                {displaySubCmd3 && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sub Command 3</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{displaySubCmd3}</p>
+                  </div>
+                )}
+                {derivedOffice && (
                   <div>
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Office</p>
-                    <p className="text-slate-800 font-medium mt-0.5">{opportunity.office}</p>
+                    <p className="text-slate-800 font-medium mt-0.5">{derivedOffice}</p>
                   </div>
                 )}
               </div>
@@ -430,9 +540,7 @@ export default function OpportunityDetail() {
                   {opportunity.award.date && (
                     <div>
                       <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Award Date</p>
-                      <p className="text-green-900 font-semibold mt-0.5">
-                        {new Date(opportunity.award.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                      </p>
+                      <p className="text-green-900 font-semibold mt-0.5">{fmtDate(opportunity.award.date)}</p>
                     </div>
                   )}
                   {opportunity.award.amount && (
@@ -462,17 +570,13 @@ export default function OpportunityDetail() {
                 {opportunity.performancePeriod.startDate && (
                   <div>
                     <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Start Date</p>
-                    <p className="text-blue-900 font-semibold mt-0.5">
-                      {new Date(opportunity.performancePeriod.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </p>
+                    <p className="text-blue-900 font-semibold mt-0.5">{fmtDate(opportunity.performancePeriod.startDate)}</p>
                   </div>
                 )}
                 {opportunity.performancePeriod.endDate && (
                   <div>
                     <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Estimated Completion Date</p>
-                    <p className="text-blue-900 font-semibold mt-0.5">
-                      {new Date(opportunity.performancePeriod.endDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </p>
+                    <p className="text-blue-900 font-semibold mt-0.5">{fmtDate(opportunity.performancePeriod.endDate)}</p>
                   </div>
                 )}
               </div>
@@ -569,7 +673,12 @@ export default function OpportunityDetail() {
           {/* Description */}
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Description</h3>
-            <p className="text-gray-700 whitespace-pre-wrap">{opportunity.description}</p>
+            {opportunity.description && !opportunity.description.startsWith('https://') && opportunity.description !== 'No description available'
+              ? <p className="text-gray-700 whitespace-pre-wrap">{opportunity.description}</p>
+              : <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                  Description is being loaded from SAM.gov — it will appear automatically the next time you open this record once the API quota resets (daily at midnight UTC). You can view the full solicitation now using the "View on SAM.gov" button below.
+                </p>
+            }
           </div>
 
           {/* Match Reasons */}
@@ -648,8 +757,8 @@ export default function OpportunityDetail() {
               )}
             </div>
 
-            {/* Document guide banner */}
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            {/* Document guide banner — only for real records */}
+            {!opportunity.sourceId?.includes('SAMPLE') && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div className="text-sm">
@@ -667,7 +776,7 @@ export default function OpportunityDetail() {
                   )}
                 </div>
               </div>
-            </div>
+            </div>}
           </div>
 
           {/* ── Our app actions ─────────────────────────────────────────────── */}
@@ -727,27 +836,96 @@ export default function OpportunityDetail() {
               </Button>
             )}
 
-            <button
-              onClick={() => exportSingleOpportunityPDF(opportunity, opportunity.matchReasons || [])}
-              className="flex items-center gap-2 px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors text-sm border border-gray-200"
-              title="Downloads a summary of this contract from our database — not the official SAM.gov documents"
-            >
-              <Download className="w-4 h-4" />
-              Export Summary (PDF)
-            </button>
           </div>
 
           {/* ── Attachments / Documents ──────────────────────────────────────── */}
           {opportunity.resourceLinks?.length > 0 && (
             <div className="mt-5 pt-4 border-t border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-3">
-                <Paperclip className="w-4 h-4 text-gray-400" /> Solicitation Documents ({opportunity.resourceLinks.length})
-              </h3>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-gray-400" />
+                  Solicitation Documents ({opportunity.resourceLinks.length})
+                </h3>
+                {(userPlan === 'pro' || userPlan === 'enterprise') && (
+                  <button
+                    disabled={deepLoading}
+                    onClick={async () => {
+                      setDeepLoading(true);
+                      setDeepResult(null);
+                      setDeepDocMeta(null);
+                      try {
+                        const res = await aiAPI.deepSummarize(id);
+                        setDeepResult(res.data.data.analysis);
+                        setDeepDocMeta(res.data.data);
+                      } catch (err) {
+                        setDeepResult(`Error: ${err.response?.data?.message || err.message}`);
+                      } finally {
+                        setDeepLoading(false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 font-medium shadow-sm"
+                  >
+                    {deepLoading
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading {opportunity.resourceLinks.length} docs…</>
+                      : <><Sparkles className="w-3.5 h-3.5" /> Analyze All {opportunity.resourceLinks.length} Docs with AI</>}
+                  </button>
+                )}
+              </div>
+
+              {/* Deep analysis result panel */}
+              {(deepLoading || deepResult) && (
+                <div className="mb-4 border border-purple-200 rounded-xl overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600">
+                    <Sparkles className="w-4 h-4 text-white" />
+                    <span className="text-sm font-semibold text-white">Deep AI Analysis — All Documents</span>
+                    {deepMeta && (
+                      <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${
+                        deepMeta.docsAnalyzed > 0 ? 'bg-white/20 text-white' : 'bg-amber-200 text-amber-800'
+                      }`}>
+                        {deepMeta.docsAnalyzed}/{deepMeta.totalDocs} docs read
+                      </span>
+                    )}
+                  </div>
+                  {deepLoading ? (
+                    <div className="flex flex-col items-center py-10 gap-3 bg-purple-50">
+                      <Loader2 className="w-7 h-7 text-purple-500 animate-spin" />
+                      <p className="text-sm text-purple-700 font-medium">Fetching & reading all {opportunity.resourceLinks.length} PDFs from SAM.gov…</p>
+                      <p className="text-xs text-purple-400">This may take 20–40 seconds for large solicitations</p>
+                    </div>
+                  ) : (
+                    <div>
+                      {deepMeta?.message && (
+                        <div className={`px-4 py-2 text-xs ${deepMeta.docsAnalyzed > 0 ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {deepMeta.message}
+                        </div>
+                      )}
+                      <div className="max-h-[700px] overflow-y-auto p-4 bg-gray-50">
+                        <AIResponseRenderer content={deepResult} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
-                {opportunity.resourceLinks.map((link, i) => (
+                {opportunity.resourceLinks.map((link, i) => {
+                  // Resolve display name: reject generic URL path segments stored from old fetches
+                  const GENERIC = new Set(['download', 'files', 'resources', 'v1', 'v2', 'prod', '']);
+                  let displayName = link.name || '';
+                  if (GENERIC.has(displayName.toLowerCase())) {
+                    // Try to extract filename from URL query params
+                    try {
+                      const u = new URL(link.url);
+                      displayName = u.searchParams.get('filename') || u.searchParams.get('name') || '';
+                    } catch {}
+                  }
+                  if (!displayName || GENERIC.has(displayName.toLowerCase())) {
+                    displayName = `Document ${i + 1}`;
+                  }
+                  return (
                   <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
                     <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                    <span className="flex-1 text-sm text-gray-700 truncate">{link.name || `Document ${i + 1}`}</span>
+                    <span className="flex-1 text-sm text-gray-700 truncate">{displayName}</span>
                     <div className="flex gap-2 shrink-0">
                       <a href={link.url} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:border-blue-300 hover:text-blue-600 transition-colors">
@@ -774,9 +952,10 @@ export default function OpportunityDetail() {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
-              {/* Show analysis results inline */}
+              {/* Per-doc analysis results inline */}
               {Object.entries(attachAnalysis).map(([url, analysis]) => (
                 <div key={url} className="mt-3 bg-purple-50 border border-purple-100 rounded-xl p-4">
                   <p className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-1.5">
@@ -791,7 +970,7 @@ export default function OpportunityDetail() {
 
         {/* AI Panel - Pro users only */}
         {userPlan === 'pro' || userPlan === 'enterprise' ? (
-          <AIPanel opportunityId={id} userPlan={userPlan} />
+          <AIPanel opportunityId={id} userPlan={userPlan} resourceLinks={opportunity.resourceLinks || []} />
         ) : (
           <Card className="mb-6 bg-gradient-to-r from-gray-50 to-gray-100">
             <div className="flex items-center justify-between">

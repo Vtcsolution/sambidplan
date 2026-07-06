@@ -1,8 +1,10 @@
 // backend/services/aiPredictionService.js
 //
-// Deep AI predictions using Claude Opus 4.8 via Anthropic SDK.
+// Deep AI predictions using GPT-4.1 (OpenAI).
 // Signals used per prediction:
-//   • User NAICS codes, business type, business name
+//   • User NAICS codes, business type, business name, certifications
+//   • Company UEI / CAGE code
+//   • Past performance: manual records + live USASpending.gov awards by UEI/name
 //   • Opportunity: title, description (full 800 chars), agency, NAICS,
 //     set-aside, value, deadline, PSC code
 //   • User's saved opportunities (preference signal — what they like)
@@ -20,10 +22,13 @@
 //   weeklyAdvice, budgetYearInsight, competitionLevel,
 //   bestMonthsToSubmit, avgContractValue, totalOpportunities
 
-import { chat } from './geminiService.js';
+import axios from 'axios';
+import { openaiChat } from './geminiService.js';
 import UserOpportunity from '../models/UserOpportunity.js';
 import Opportunity from '../models/Opportunity.js';
 import SavedOpportunity from '../models/SavedOpportunity.js';
+import PastPerformance from '../models/PastPerformance.js';
+import Company from '../models/Company.js';
 
 // ─── Robust JSON extractor / repairer ────────────────────────────────────────
 // Handles: truncated responses (max_tokens), smart quotes, trailing commas,
@@ -109,12 +114,18 @@ const urgencyScore = (dueDate) => {
   return 1;
 };
 
-const buildUserSummary = (user, savedTitles) =>
-  `Company Name: ${user.businessName || user.name || 'Unknown'}
+const buildUserSummary = (user, savedTitles, company = null) => {
+  const certs = company?.certifications?.map(c => c.name || c.type).join(', ') || 'None on file';
+  const uei   = company?.uei  || user.uei  || 'Not registered';
+  const cage  = company?.cage || user.cage || 'Not on file';
+  return `Company Name: ${company?.name || user.businessName || user.name || 'Unknown'}
 Business Type: ${user.businessType?.replace('_', ' ') || 'Unknown'}
 NAICS Codes: ${user.naicsCodes?.join(', ') || 'Not configured'}
+UEI: ${uei} | CAGE: ${cage}
+Certifications: ${certs}
 Plan: ${user.plan}
 Previously Saved (user interests): ${savedTitles.length > 0 ? savedTitles.slice(0, 5).join('; ') : 'None yet'}`;
+};
 
 // Agency posting frequency for competition assessment
 const buildCompetitionContext = (allForNaics) => {
@@ -126,6 +137,94 @@ const buildCompetitionContext = (allForNaics) => {
   const high = sorted.filter(([,c]) => c >= 10).map(([a]) => a).slice(0,3);
   const low  = sorted.filter(([,c]) => c <= 2).map(([a]) => a).slice(0,3);
   return { highVolume: high, lowVolume: low };
+};
+
+// ─── USASpending live past award lookup ───────────────────────────────────────
+// Queries USASpending.gov for this specific company's awarded federal contracts.
+// Uses UEI first (exact match), falls back to business name search.
+const fetchUSASpendingPastAwards = async (uei, businessName) => {
+  try {
+    const fiveYearsAgo = new Date(Date.now() - 5 * 365 * 86400000).toISOString().slice(0, 10);
+    const today        = new Date().toISOString().slice(0, 10);
+
+    const filters = {
+      award_type_codes: ['A', 'B', 'C', 'D'],
+      time_period: [{ start_date: fiveYearsAgo, end_date: today }],
+    };
+
+    if (uei) {
+      filters.recipient_ueis = [uei.toUpperCase()];
+    } else if (businessName) {
+      filters.recipient_search_text = [businessName];
+    } else {
+      return [];
+    }
+
+    const res = await axios.post(
+      'https://api.usaspending.gov/api/v2/search/spending_by_award/',
+      {
+        filters,
+        fields: [
+          'Award ID', 'Award Amount', 'Awarding Agency', 'naics_code',
+          'Description', 'Start Date', 'End Date', 'Recipient Name',
+          'Place of Performance State Code',
+        ],
+        limit: 20,
+        sort: 'Award Amount',
+        order: 'desc',
+      },
+      { timeout: 15000, headers: { 'Content-Type': 'application/json' } }
+    );
+
+    return (res.data?.results || []).map(a => ({
+      agency:      a['Awarding Agency']                   || '—',
+      amount:      Number(a['Award Amount'] || 0),
+      naicsCode:   a['naics_code']                        || '',
+      description: (a['Description'] || '').substring(0, 120),
+      startDate:   a['Start Date']                        || '',
+      endDate:     a['End Date']                          || '',
+      state:       a['Place of Performance State Code']   || '',
+    }));
+  } catch (err) {
+    // Non-fatal — predictions still run without this signal
+    console.warn('USASpending past awards fetch failed:', err.message);
+    return [];
+  }
+};
+
+// ─── Build past performance context for AI ────────────────────────────────────
+// Combines manual PastPerformance records + live USASpending awards into
+// a compact text block that fits inside the AI prompt.
+const buildPastPerformanceContext = (manualRecords, usaAwards) => {
+  const lines = [];
+
+  if (manualRecords.length > 0) {
+    lines.push('--- MANUALLY ENTERED PAST PERFORMANCE ---');
+    manualRecords.slice(0, 6).forEach((r, i) => {
+      const val   = r.finalValue || r.originalValue || 0;
+      const end   = r.endDate ? new Date(r.endDate).getFullYear() : '?';
+      const rating = r.cparsRating && r.cparsRating !== 'Not Rated' ? ` | CPARS: ${r.cparsRating}` : '';
+      lines.push(
+        `[${i + 1}] ${r.projectTitle} — ${r.agencyName}` +
+        ` | $${val.toLocaleString()} | NAICS: ${r.naicsCode || '—'} | ${r.role} | Ended ${end}${rating}`
+      );
+      if (r.scopeSummary) lines.push(`    Scope: ${r.scopeSummary.substring(0, 150)}`);
+    });
+  }
+
+  if (usaAwards.length > 0) {
+    lines.push('--- USASpending.gov VERIFIED FEDERAL AWARDS (last 5 years) ---');
+    usaAwards.slice(0, 10).forEach((a, i) => {
+      lines.push(
+        `[${i + 1}] ${a.agency} | $${a.amount.toLocaleString()} | NAICS: ${a.naicsCode || '—'}` +
+        ` | ${a.startDate?.slice(0, 7) || '?'} – ${a.endDate?.slice(0, 7) || '?'}` +
+        (a.description ? ` | ${a.description}` : '')
+      );
+    });
+  }
+
+  if (lines.length === 0) return 'No past performance data on file.';
+  return lines.join('\n');
 };
 
 // ─── Non-AI fallback: basic scoring without AI ──────────────────────────────
@@ -167,7 +266,7 @@ const buildBasicPredictions = (opportunities, competitionCtx) => {
 };
 
 // ─── Core: deep opportunity predictions ──────────────────────────────────────
-const predictOpportunities = async (user, opportunities, savedTitles, competitionCtx) => {
+const predictOpportunities = async (user, opportunities, savedTitles, competitionCtx, pastPerformanceCtx = '', company = null) => {
   if (!opportunities.length) return [];
 
   const fyCtx = getFiscalYearContext();
@@ -191,31 +290,41 @@ CRITICAL: Return ONLY a valid JSON array. No markdown, no text outside the JSON.
   const userPrompt = `ANALYZE THESE OPPORTUNITIES FOR THIS CONTRACTOR:
 
 === CONTRACTOR PROFILE ===
-${buildUserSummary(user, savedTitles)}
+${buildUserSummary(user, savedTitles, company)}
 Fiscal Year Context: ${fyCtx}
 
-=== OPPORTUNITIES ===
+=== PAST PERFORMANCE & VERIFIED FEDERAL AWARDS ===
+${pastPerformanceCtx}
+
+=== OPPORTUNITIES TO ANALYZE ===
 ${oppList}
 
 Return a JSON array. Each element must have EXACTLY these keys (all strings under 120 chars, no quotes inside strings):
 {
   "index": <1-based integer>,
-  "winProbability": <0-100 integer — realistic, avg 30% for well-qualified small biz>,
+  "winProbability": <0-100 integer — base 30% for qualified small biz; raise if past performance matches agency or NAICS; lower if no relevant past work>,
   "fitScore": <1-10 integer>,
   "confidenceLevel": "High" or "Medium" or "Low",
   "urgencyLevel": "Critical" or "High" or "Medium" or "Low",
   "recommendation": "STRONG GO" or "GO" or "CONDITIONAL" or "PASS",
-  "topReasons": [<2 short strings, no quotes inside>],
+  "topReasons": [<2 short strings — cite specific past performance when relevant, no quotes inside>],
   "risks": [<1-2 short strings, no quotes inside>],
-  "bidStrategy": "<one sentence, max 100 chars>",
+  "bidStrategy": "<one sentence referencing past relevant wins if applicable, max 100 chars>",
   "nextAction": "<one sentence, max 100 chars>",
   "teamingAdvice": "Solo bid" or "<one sentence>",
-  "uniqueAdvantage": "<one sentence, max 100 chars>"
+  "uniqueAdvantage": "<one sentence citing past performance or certifications if relevant, max 100 chars>"
 }
 
-Scoring rules: NAICS exact match raises probability. Set-aside eligibility match raises probability. High-volume agency lowers probability. Q4 FY = more competition.`;
+Scoring rules:
+- NAICS exact match in past performance → +15% win probability
+- Same agency won before → +20% win probability
+- CPARS Exceptional/Very Good rating in relevant work → +10%
+- High-volume agency (many bidders) → -10%
+- No relevant past performance → confidence = Low
+- Q4 FY = more competition → slight downward pressure
+- Set-aside eligibility match → +10–15%`;
 
-  const raw = await chat(systemPrompt, userPrompt, 'claude-opus-4-8', 4096);
+  const raw = await openaiChat(systemPrompt, userPrompt, 4096);
 
   const parsed = repairAndParseJSON(raw, true);
 
@@ -255,7 +364,7 @@ const buildFallbackInsights = (allForNaics) => {
   const avgValue = allForNaics.reduce((s, o) => s + (o.estimatedValue || 0), 0) / (allForNaics.length || 1);
   return {
     marketOutlook: 'Neutral',
-    outlookReason: 'Market data loaded — AI narrative unavailable (check Anthropic API key in admin settings).',
+    outlookReason: 'Market data loaded — AI narrative temporarily unavailable.',
     hotAgencies: sorted.slice(0, 4).map(([a]) => a),
     hiddenGemAgencies: sorted.slice(-2).map(([a]) => a),
     trendingSectors: [],
@@ -267,12 +376,12 @@ const buildFallbackInsights = (allForNaics) => {
     bestMonthsToSubmit: [],
     avgContractValue: Math.round(avgValue),
     totalOpportunities: allForNaics.length,
-    topWinningStrategy: 'Enable AI analysis by ensuring a valid Anthropic API key is configured in admin settings.',
+    topWinningStrategy: 'Review the highest-posting agencies in your NAICS and apply to set-aside opportunities matching your certifications.',
   };
 };
 
 // ─── Deep market intelligence ─────────────────────────────────────────────────
-const generateMarketInsights = async (user, allForNaics, savedTitles) => {
+const generateMarketInsights = async (user, allForNaics, savedTitles, pastPerformanceCtx = '', company = null) => {
   const agencyFreq   = {};
   const setAsideFreq = {};
   const valueByMonth = {};
@@ -296,11 +405,14 @@ const generateMarketInsights = async (user, allForNaics, savedTitles) => {
 
   const userPrompt = `PROVIDE DEEP MARKET INTELLIGENCE FOR THIS CONTRACTOR:
 
-=== CONTRACTOR ===
-${buildUserSummary(user, savedTitles)}
+=== CONTRACTOR PROFILE ===
+${buildUserSummary(user, savedTitles, company)}
 Federal Fiscal Year Context: ${getFiscalYearContext()}
 
-=== REAL MARKET DATA (last 90 days, their NAICS codes) ===
+=== PAST PERFORMANCE & VERIFIED FEDERAL AWARDS ===
+${pastPerformanceCtx}
+
+=== LIVE MARKET DATA (active contracts in your NAICS) ===
 Active contracts in database: ${allForNaics.length}
 Top agencies posting: ${topAgencies.join(', ') || 'Various'}
 Set-aside distribution: ${topSetAsides.join(', ') || 'Mostly Full & Open'}
@@ -322,10 +434,10 @@ Return a single JSON object:
   "bestMonthsToSubmit": ["<month names when this NAICS sees highest activity>"],
   "avgContractValue": <computed from data>,
   "totalOpportunities": <total in database>,
-  "topWinningStrategy": "<the single most impactful thing this contractor can do to increase win rate>"
+  "topWinningStrategy": "<the single most impactful winning strategy — reference their specific past performance agencies or certifications if relevant>"
 }`;
 
-  const raw = await chat(systemPrompt, userPrompt, 'claude-sonnet-4-6', 2048);
+  const raw = await openaiChat(systemPrompt, userPrompt, 2048);
   const insights = repairAndParseJSON(raw, false);
   insights.avgContractValue   = Math.round(avgValue);
   insights.totalOpportunities = allForNaics.length;
@@ -374,7 +486,25 @@ export const getUserPredictions = async (user, forceRefresh = false) => {
     .map(s => s.opportunity?.title)
     .filter(Boolean);
 
-  // 3. Broader market pool for insights — use future due dates (same lens as enterprise opportunities page)
+  // 3. Company profile — UEI, CAGE, certifications
+  const company = await Company.findOne({ owner: user._id }).lean().catch(() => null);
+  const uei  = company?.uei  || '';
+  const cage = company?.cage || '';
+  const bizName = company?.name || user.businessName || '';
+
+  // 4. Past performance — manual records + live USASpending awards in parallel
+  const [manualPP, usaAwards] = await Promise.all([
+    PastPerformance.find({ user: user._id })
+      .sort({ endDate: -1 })
+      .limit(10)
+      .lean()
+      .catch(() => []),
+    fetchUSASpendingPastAwards(uei, bizName),
+  ]);
+  const pastPerformanceCtx = buildPastPerformanceContext(manualPP, usaAwards);
+  console.log(`📋 Past performance: ${manualPP.length} manual records, ${usaAwards.length} USASpending awards`);
+
+  // 5. Broader market pool for insights
   const allForNaics = await Opportunity.find({
     naicsCode: { $in: user.naicsCodes || [] },
     dueDate: { $gt: new Date() },
@@ -382,19 +512,18 @@ export const getUserPredictions = async (user, forceRefresh = false) => {
 
   const competitionCtx = buildCompetitionContext(allForNaics);
 
-  // 4. Run predictions + market insights in parallel — each isolated so one failure doesn't kill both
+  // 6. Run predictions + market insights in parallel — each isolated so one failure doesn't kill both
   const [predictions, marketInsights] = await Promise.all([
     opportunities.length > 0
-      ? predictOpportunities(user, opportunities.slice(0, 5), savedTitles, competitionCtx)
+      ? predictOpportunities(user, opportunities.slice(0, 5), savedTitles, competitionCtx, pastPerformanceCtx, company)
           .catch(e => {
             console.error('predictOpportunities AI error:', e.status || '', e.message);
             return buildBasicPredictions(opportunities.slice(0, 5), competitionCtx);
           })
       : Promise.resolve([]),
-    generateMarketInsights(user, allForNaics, savedTitles)
+    generateMarketInsights(user, allForNaics, savedTitles, pastPerformanceCtx, company)
       .catch(e => {
         console.error('generateMarketInsights error:', e.status || '', e.message);
-        // Return data-only fallback so the page still renders
         return buildFallbackInsights(allForNaics);
       }),
   ]);
@@ -416,9 +545,15 @@ export const getUserPredictions = async (user, forceRefresh = false) => {
     generatedAt: new Date().toISOString(),
     fromCache:   false,
     userProfile: {
-      naicsCodes:   user.naicsCodes,
-      businessName: user.businessName || user.name,
-      businessType: user.businessType,
+      naicsCodes:        user.naicsCodes,
+      businessName:      company?.name || user.businessName || user.name,
+      businessType:      user.businessType,
+      uei:               uei || null,
+      cage:              cage || null,
+      certifications:    company?.certifications || [],
+      manualPPCount:     manualPP.length,
+      usaSpendingCount:  usaAwards.length,
+      totalAwardValue:   usaAwards.reduce((s, a) => s + a.amount, 0),
     },
   };
 

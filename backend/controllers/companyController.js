@@ -442,3 +442,78 @@ export const downloadDocument = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// GET /api/company/ai-readiness
+// Returns profile completeness for AI analysis quality indicator
+export const getAIReadiness = async (req, res) => {
+  try {
+    const user = req.user;
+    const company = await getMyCompany(user._id).lean().catch(() => null);
+
+    const items = [
+      {
+        key: 'businessName',
+        label: 'Business Name',
+        description: 'Your legal business name as registered in SAM.gov',
+        complete: !!(user.businessName && user.businessName.trim().length > 2),
+        required: true,
+        link: '/profile',
+      },
+      {
+        key: 'naicsCodes',
+        label: 'NAICS Codes',
+        description: 'Your business classification codes for matching opportunities',
+        complete: !!(user.naicsCodes && user.naicsCodes.length > 0),
+        required: true,
+        link: '/profile',
+      },
+      {
+        key: 'companyWorkspace',
+        label: 'Company Workspace',
+        description: 'Create a company workspace to store your full profile',
+        complete: !!company,
+        required: false,
+        link: '/company/profile',
+      },
+      {
+        key: 'uei',
+        label: 'UEI Number',
+        description: 'Your Unique Entity Identifier from SAM.gov',
+        complete: !!(company?.uei),
+        required: false,
+        link: '/company/profile',
+      },
+      {
+        key: 'ueiVerified',
+        label: 'SAM.gov Verified',
+        description: 'Verify your UEI to pull official SAM.gov registration data',
+        complete: !!(company?.ueiVerified),
+        required: false,
+        link: '/company/profile',
+      },
+      {
+        key: 'certifications',
+        label: 'Certifications',
+        description: 'Federal certifications: 8(a), WOSB, HUBZone, SDVOSB, etc.',
+        complete: !!(company?.certifications && company.certifications.length > 0),
+        required: false,
+        link: '/company/profile',
+      },
+      {
+        key: 'capabilities',
+        label: 'Core Capabilities',
+        description: 'Description of what your company does and your expertise areas',
+        complete: !!(company?.capabilities && company.capabilities.trim().length > 50),
+        required: false,
+        link: '/company/profile',
+      },
+    ];
+
+    const totalComplete = items.filter(i => i.complete).length;
+    const score = Math.round((totalComplete / items.length) * 100);
+
+    res.json({ success: true, data: { score, totalComplete, totalItems: items.length, items } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

@@ -5,7 +5,7 @@ import ContactInquiry from '../models/ContactInquiry.js';
 import SavedOpportunity from '../models/SavedOpportunity.js';
 import AdminNotification from '../models/admin/AdminNotification.js';
 import CampaignLog from '../models/admin/CampaignLog.js';
-import { chat } from '../services/geminiService.js';
+import { openaiChat as chat } from '../services/geminiService.js';
 import { sendBroadcastEmailToSegment } from '../services/emailService.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

@@ -2,16 +2,10 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import {
   Menu, LogOut, ChevronDown, LayoutDashboard, User, X,
-  Home, Info, HelpCircle, DollarSign, Phone, Gift,
-  Zap, Star, BookOpen
+  Home, Info, DollarSign, Phone, Gift, Zap
 } from 'lucide-react';
 import UserNotificationDropdown from './UserNotificationDropdown';
 import SambidLogo from './SambidLogo';
-
-const platformLinks = [
-  { path: '/how-it-works', label: 'How It Works',  icon: HelpCircle, desc: 'See the full platform walkthrough' },
-  { path: '/faq',          label: 'FAQ',            icon: BookOpen,   desc: 'Common questions answered' },
-];
 
 const featureDemoLinks = [
   { path: '/features/contract-opportunities', label: 'Contract Opportunities', desc: 'Auto-matched SAM.gov contracts' },
@@ -31,10 +25,8 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
   const location = useLocation();
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen]           = useState(false);
-  const [isPlatformOpen, setIsPlatformOpen]               = useState(false);
   const [isFeaturesOpen, setIsFeaturesOpen]               = useState(false);
   const dropdownRef  = useRef(null);
-  const platformRef  = useRef(null);
   const featuresRef  = useRef(null);
 
   const dashboardRoutes = [
@@ -53,8 +45,6 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
     const handler = e => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target))
         setIsProfileDropdownOpen(false);
-      if (platformRef.current && !platformRef.current.contains(e.target))
-        setIsPlatformOpen(false);
       if (featuresRef.current && !featuresRef.current.contains(e.target))
         setIsFeaturesOpen(false);
     };
@@ -64,7 +54,6 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
-    setIsPlatformOpen(false);
     setIsFeaturesOpen(false);
   }, [location.pathname]);
 
@@ -79,7 +68,6 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
   };
 
   const isActive   = path => location.pathname === path;
-  const isPlatPath = platformLinks.some(l => location.pathname === l.path);
   const showPublicNav = !isAuthenticated || !isDashboardRoute;
 
   const topLinks = [
@@ -179,40 +167,24 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                     )}
                   </div>
 
-                  {/* Resources dropdown */}
-                  <div className="relative" ref={platformRef}>
-                    <button
-                      onClick={() => { setIsPlatformOpen(o => !o); setIsFeaturesOpen(false); }}
-                      className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        isPlatPath || isPlatformOpen
-                          ? 'text-indigo-600 bg-indigo-50'
-                          : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-50'
-                      }`}
-                    >
-                      Resources
-                      <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${isPlatformOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {isPlatformOpen && (
-                      <div className="absolute left-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50">
-                        {platformLinks.map(l => {
-                          const Icon = l.icon;
-                          return (
-                            <Link key={l.path} to={l.path} onClick={() => setIsPlatformOpen(false)}
-                              className={`flex items-start gap-3 px-4 py-3 hover:bg-indigo-50 transition-colors ${isActive(l.path) ? 'bg-indigo-50' : ''}`}>
-                              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                                <Icon className="w-4 h-4 text-indigo-600" />
-                              </div>
-                              <div>
-                                <p className={`text-sm font-semibold ${isActive(l.path) ? 'text-indigo-600' : 'text-gray-900'}`}>{l.label}</p>
-                                <p className="text-xs text-gray-500 mt-0.5">{l.desc}</p>
-                              </div>
-                            </Link>
-                          );
-                        })}
-                      </div>
+                  {/* How It Works — animated standalone button */}
+                  <Link
+                    to="/how-it-works"
+                    onClick={() => setIsFeaturesOpen(false)}
+                    className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                      isActive('/how-it-works')
+                        ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-200'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200'
+                    }`}
+                  >
+                    How It Works
+                    {!isActive('/how-it-works') && (
+                      <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+                      </span>
                     )}
-                  </div>
+                  </Link>
 
                   {/* Other links */}
                   {topLinks.slice(1).map(link => (
@@ -369,20 +341,14 @@ export default function Navbar({ isAuthenticated, setIsAuthenticated, setUser, u
                     View all 18 features →
                   </Link>
 
-                  {/* Resources section */}
-                  <div className="px-3 pt-2 pb-1">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Resources</p>
-                  </div>
-                  {platformLinks.map(l => {
-                    const Icon = l.icon;
-                    return (
-                      <Link key={l.path} to={l.path} onClick={() => setIsMobileMenuOpen(false)}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive(l.path) ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'}`}>
-                        <Icon className="w-4 h-4 shrink-0" />
-                        {l.label}
-                      </Link>
-                    );
-                  })}
+                  {/* How It Works */}
+                  <Link
+                    to="/how-it-works"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${isActive('/how-it-works') ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white'}`}
+                  >
+                    How It Works
+                  </Link>
 
                   {/* Rest */}
                   <div className="px-3 pt-2 pb-1">

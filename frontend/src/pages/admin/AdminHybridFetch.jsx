@@ -55,6 +55,10 @@ export default function AdminHybridFetch() {
   const [srcFilter,  setSrcFilter]  = useState('all');
   const [apiFetching,  setApiFetching]  = useState(false);
   const [bulkRunning,  setBulkRunning]  = useState(false);
+  const [apiTesting,   setApiTesting]   = useState(false);
+  const [bulkTesting,  setBulkTesting]  = useState(false);
+  const [apiTestOffset,  setApiTestOffset]  = useState(0);
+  const [bulkTestOffset, setBulkTestOffset] = useState(0);
   const [msg,        setMsg]        = useState(null);
 
   const load = useCallback(async () => {
@@ -108,6 +112,40 @@ export default function AdminHybridFetch() {
       setMsg({ type: 'error', text: e.response?.data?.message || 'Failed to start bulk download.' });
     } finally {
       setBulkRunning(false);
+    }
+  };
+
+  const handleApiTest = async () => {
+    setApiTesting(true);
+    setMsg(null);
+    try {
+      const r = await adminPanelAPI.triggerFetchTest(apiTestOffset);
+      if (r.data.success) {
+        setApiTestOffset(o => o + 10);
+        setTimeout(load, 2000);
+      }
+      setMsg({ type: r.data.success ? 'success' : 'error', text: r.data.message });
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.message || 'Test fetch failed.' });
+    } finally {
+      setApiTesting(false);
+    }
+  };
+
+  const handleBulkTest = async () => {
+    setBulkTesting(true);
+    setMsg(null);
+    try {
+      const r = await adminPanelAPI.triggerBulkTest(bulkTestOffset);
+      if (r.data.success) {
+        setBulkTestOffset(o => o + 10);
+        setTimeout(load, 2000);
+      }
+      setMsg({ type: r.data.success ? 'success' : 'error', text: r.data.message });
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.message || 'Test bulk failed.' });
+    } finally {
+      setBulkTesting(false);
     }
   };
 
@@ -185,12 +223,22 @@ export default function AdminHybridFetch() {
 
           <button
             onClick={handleApiTrigger}
-            disabled={apiFetching || bd?.apiFetch?.isFetching}
+            disabled={apiFetching || apiTesting || bd?.apiFetch?.isFetching}
             className="w-full flex items-center justify-center gap-2 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60 transition"
           >
             {(apiFetching || bd?.apiFetch?.isFetching)
               ? <><RefreshCw className="w-4 h-4 animate-spin" /> Running...</>
               : <><Zap className="w-4 h-4" /> Trigger API Fetch Now</>}
+          </button>
+          <button
+            onClick={handleApiTest}
+            disabled={apiFetching || apiTesting || bd?.apiFetch?.isFetching}
+            className="w-full flex items-center justify-center gap-2 py-1.5 mt-2 bg-amber-50 border border-amber-300 text-amber-700 text-xs font-semibold rounded-lg hover:bg-amber-100 disabled:opacity-60 transition"
+            title="Each click fetches the next 10 records — costs 1 API call per click"
+          >
+            {apiTesting
+              ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Fetching...</>
+              : <><Zap className="w-3.5 h-3.5" /> Test: Fetch Next 10 {apiTestOffset > 0 && <span className="ml-1 px-1.5 py-0.5 bg-amber-200 rounded-full">{apiTestOffset} loaded</span>}</>}
           </button>
         </div>
 
@@ -231,12 +279,22 @@ export default function AdminHybridFetch() {
 
           <button
             onClick={handleBulkTrigger}
-            disabled={bulkRunning || bd?.bulkFetch?.isRunning}
+            disabled={bulkRunning || bulkTesting || bd?.bulkFetch?.isRunning}
             className="w-full flex items-center justify-center gap-2 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-60 transition"
           >
             {(bulkRunning || bd?.bulkFetch?.isRunning)
               ? <><RefreshCw className="w-4 h-4 animate-spin" /> Running...</>
               : <><Download className="w-4 h-4" /> Run Bulk Download Now</>}
+          </button>
+          <button
+            onClick={handleBulkTest}
+            disabled={bulkRunning || bulkTesting || bd?.bulkFetch?.isRunning}
+            className="w-full flex items-center justify-center gap-2 py-1.5 mt-2 bg-amber-50 border border-amber-300 text-amber-700 text-xs font-semibold rounded-lg hover:bg-amber-100 disabled:opacity-60 transition"
+            title="Each click fetches the next 10 records from bulk range — costs 1 API call per click"
+          >
+            {bulkTesting
+              ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Fetching...</>
+              : <><Download className="w-3.5 h-3.5" /> Test: Fetch Next 10 {bulkTestOffset > 0 && <span className="ml-1 px-1.5 py-0.5 bg-amber-200 rounded-full">{bulkTestOffset} loaded</span>}</>}
           </button>
         </div>
       </div>

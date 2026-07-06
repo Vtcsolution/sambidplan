@@ -19,7 +19,8 @@ import SavedOpportunity from '../models/SavedOpportunity.js';
 import Opportunity from '../models/Opportunity.js';
 import UserOpportunity from '../models/UserOpportunity.js';
 import SamCompany from '../models/SamCompany.js';
-import { triggerManualFetch, triggerManualBulk, fetchStats, bulkStats, distributeToUser } from '../services/schedulerService.js';
+import { triggerManualFetch, triggerManualBulk, triggerTestFetch, fetchStats, bulkStats, distributeToUser } from '../services/schedulerService.js';
+import { runBulkTest } from '../services/samBulkService.js';
 import { syncSamEntities, fetchAndSaveCompany, entitySyncStats } from '../services/samEntityService.js';
 import { quotaState, limiterState } from '../services/samRateLimiter.js';
 import { syncUsaSpendingCompanies, usaSpendingSyncStats } from '../services/usaSpendingCompanyService.js';
@@ -1311,6 +1312,35 @@ export const triggerBulkFetch = async (req, res) => {
     console.log(`🔧 Admin ${req.user.email} triggered manual bulk download`);
     triggerManualBulk().catch(err => console.error('Manual bulk error:', err.message));
     res.json({ success: true, message: 'Bulk download started. This may take a few minutes.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Test API fetch — exactly 10 records at given offset (1 API call)
+// @route   POST /api/admin/trigger-fetch-test
+export const triggerSAMFetchTest = async (req, res) => {
+  try {
+    if (fetchStats.isFetching) {
+      return res.json({ success: false, message: 'A full fetch is already running. Wait for it to finish.' });
+    }
+    const offset = parseInt(req.body?.offset ?? 0) || 0;
+    console.log(`🧪 Admin ${req.user.email} triggered TEST API fetch (10 records, offset ${offset})`);
+    const result = await triggerTestFetch(offset);
+    res.json({ success: true, message: result.message, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Test bulk fetch — exactly 10 records at given offset (1 API call)
+// @route   POST /api/admin/trigger-bulk-test
+export const triggerBulkFetchTest = async (req, res) => {
+  try {
+    const offset = parseInt(req.body?.offset ?? 0) || 0;
+    console.log(`🧪 Admin ${req.user.email} triggered TEST bulk fetch (10 records, offset ${offset})`);
+    const result = await runBulkTest(offset);
+    res.json({ success: true, message: result.message, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

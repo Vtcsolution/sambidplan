@@ -26,7 +26,7 @@ export const summarizeRFP = async (opportunity) => {
   
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
@@ -90,7 +90,7 @@ export const bidNoBidAnalysis = async (opportunity, userProfile) => {
   
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
@@ -145,7 +145,7 @@ export const generateFullProposal = async (opportunity, userProfile) => {
   
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',

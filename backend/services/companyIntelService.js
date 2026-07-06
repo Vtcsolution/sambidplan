@@ -3,21 +3,31 @@
 
 import Company from '../models/Company.js';
 import SamCompany from '../models/SamCompany.js';
+import PastPerformance from '../models/PastPerformance.js';
 
 // ── Fetch a company's real past wins from USASpending ─────────────────────────
-export const fetchCompanyWins = async (companyName, naicsCodes = [], limit = 20) => {
-  if (!companyName) return { wins: [], totalWins: 0, totalValue: 0 };
+// Uses UEI (exact, verified) when available; falls back to name text search.
+export const fetchCompanyWins = async (companyName, naicsCodes = [], limit = 20, uei = null) => {
+  if (!companyName && !uei) return { wins: [], totalWins: 0, totalValue: 0 };
 
   try {
     const filters = {
       award_type_codes: ['A', 'B', 'C', 'D'],
-      recipient_search_text: [companyName],
       time_period: [{
         start_date: new Date(Date.now() - 5 * 365 * 86400000).toISOString().slice(0, 10),
         end_date: new Date().toISOString().slice(0, 10),
       }],
     };
-    if (naicsCodes.length) filters.naics_codes = naicsCodes;
+
+    // UEI is the most accurate identifier — use it when available
+    if (uei) {
+      filters.recipient_ueis = [uei.toUpperCase()];
+    } else {
+      filters.recipient_search_text = [companyName];
+    }
+
+    // Don't filter by NAICS when using UEI — we want ALL past wins, not just current NAICS
+    if (naicsCodes.length && !uei) filters.naics_codes = naicsCodes;
 
     const response = await fetch('https://api.usaspending.gov/api/v2/search/spending_by_award/', {
       method: 'POST',
@@ -115,28 +125,72 @@ export const buildCompanyProfile = async (user) => {
     }
   }
 
-  // 4. Fetch real past wins from USASpending
+  // 4. Fetch manual PastPerformance records (entered by the user on the Past Performance page)
+  let manualPP = [];
+  try {
+    manualPP = await PastPerformance.find({ user: user._id })
+      .sort({ endDate: -1 })
+      .limit(10)
+      .lean();
+  } catch (e) { /* non-fatal */ }
+
+  if (manualPP.length > 0) {
+    lines.push(`\nPAST PERFORMANCE RECORDS (USER-ENTERED):`);
+    manualPP.forEach((r, i) => {
+      const val   = r.finalValue || r.originalValue || 0;
+      const start = r.startDate ? new Date(r.startDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '?';
+      const end   = r.endDate   ? new Date(r.endDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Present';
+      const rating = r.cparsRating && r.cparsRating !== 'Not Rated' ? ` | CPARS: ${r.cparsRating}` : '';
+      lines.push(`  ${i + 1}. ${r.projectTitle}`);
+      lines.push(`     Agency: ${r.agencyName}${r.subAgency ? ' / ' + r.subAgency : ''}${r.officeName ? ' / ' + r.officeName : ''}`);
+      lines.push(`     Value: $${val.toLocaleString()} | Role: ${r.role} | Period: ${start} – ${end}${rating}`);
+      lines.push(`     NAICS: ${r.naicsCode || '—'} | Contract Type: ${r.contractType || '—'}${r.setAside ? ' | Set-Aside: ' + r.setAside : ''}`);
+      if (r.scopeSummary) lines.push(`     Scope: ${r.scopeSummary.substring(0, 200)}`);
+      if (r.keyDeliverables?.length) lines.push(`     Key Deliverables: ${r.keyDeliverables.filter(Boolean).slice(0, 3).join('; ')}`);
+      if (r.technologiesUsed?.length) lines.push(`     Technologies: ${r.technologiesUsed.filter(Boolean).slice(0, 5).join(', ')}`);
+      if (r.pocName) lines.push(`     POC: ${r.pocName}${r.pocTitle ? ', ' + r.pocTitle : ''}${r.pocEmail ? ' — ' + r.pocEmail : ''}`);
+    });
+  }
+
+  // 5. Key personnel from company workspace members
+  if (company?.members?.length) {
+    const personnel = company.members
+      .filter(m => m.inviteStatus === 'accepted' && m.role)
+      .slice(0, 6);
+    if (personnel.length > 0) {
+      lines.push(`\nKEY PERSONNEL (Company Team):`);
+      personnel.forEach(m => {
+        lines.push(`  - Role: ${m.role.replace('_', ' ')}`);
+      });
+    }
+  }
+
+  // 6. Fetch real past wins from USASpending — use UEI for accuracy, fall back to name
   const companyName = company?.name || user.businessName;
+  const uei  = company?.uei || '';
   const naics = company?.naicsCodes?.length ? company.naicsCodes : (user.naicsCodes || []);
   let winsData = { wins: [], totalWins: 0, totalValue: 0 };
 
-  if (companyName && companyName.length > 2) {
-    winsData = await fetchCompanyWins(companyName, naics, 10);
+  if (uei || (companyName && companyName.length > 2)) {
+    winsData = await fetchCompanyWins(companyName, naics, 15, uei);
   }
 
   if (winsData.wins.length > 0) {
-    lines.push(`\nPAST CONTRACT WINS (FROM USASPENDING.GOV — LAST 5 YEARS):`);
-    lines.push(`Total Contracts Won: ${winsData.totalWins}`);
+    lines.push(`\nFEDERAL CONTRACT AWARD HISTORY (FROM USASPENDING.GOV — LAST 5 YEARS):`);
+    lines.push(`Search method: ${uei ? `UEI ${uei} (exact match)` : `Name search: "${companyName}"`}`);
+    lines.push(`Total Contracts Found: ${winsData.totalWins}`);
     lines.push(`Total Award Value: $${winsData.totalValue.toLocaleString()}`);
-    lines.push(`Average Award: $${winsData.averageValue.toLocaleString()}`);
+    if (winsData.averageValue) lines.push(`Average Award Value: $${winsData.averageValue.toLocaleString()}`);
     lines.push('');
-    winsData.wins.slice(0, 10).forEach((w, i) => {
-      lines.push(`  ${i + 1}. $${w.amount.toLocaleString()} — ${w.agency} — ${w.startDate || ''} to ${w.endDate || ''}`);
-      if (w.description) lines.push(`     ${w.description.substring(0, 120)}`);
-      if (w.naicsCode) lines.push(`     NAICS: ${w.naicsCode} | Location: ${w.location || 'N/A'}`);
+    winsData.wins.slice(0, 15).forEach((w, i) => {
+      lines.push(`  ${i + 1}. $${w.amount.toLocaleString()} — ${w.agency}`);
+      lines.push(`     Period: ${w.startDate || '?'} to ${w.endDate || '?'} | NAICS: ${w.naicsCode || '—'} | Location: ${w.location || 'N/A'}`);
+      if (w.description) lines.push(`     Scope: ${w.description.substring(0, 150)}`);
     });
   } else {
-    lines.push(`\nPAST CONTRACT WINS: No federal contract award history found on USASpending.gov for "${companyName}".`);
+    lines.push(`\nFEDERAL CONTRACT AWARD HISTORY: No awards found on USASpending.gov`);
+    lines.push(`  (Searched by: ${uei ? `UEI ${uei}` : `name "${companyName}"`})`);
+    lines.push(`  Note: If company is new to federal contracting, emphasize relevant commercial experience.`);
   }
 
   return {
@@ -144,5 +198,6 @@ export const buildCompanyProfile = async (user) => {
     company,
     samData,
     winsData,
+    manualPP,
   };
 };

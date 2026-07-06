@@ -1,5 +1,6 @@
 // backend/controllers/authController.js
 import User from '../models/User.js';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import speakeasy from 'speakeasy';
@@ -406,6 +407,9 @@ export const updateProfile = async (req, res) => {
     if (name        !== undefined) user.name        = name;
     if (businessName !== undefined) user.businessName = businessName;
     if (businessType !== undefined) user.businessType = businessType;
+    const naicsChanged = naicsCodes !== undefined &&
+      JSON.stringify(naicsCodes?.sort()) !== JSON.stringify([...(user.naicsCodes || [])].sort());
+
     if (naicsCodes   !== undefined) user.naicsCodes   = naicsCodes;
     if (emailAlertsEnabled !== undefined) user.emailAlertsEnabled = emailAlertsEnabled;
     if (alertFrequency     !== undefined) user.alertFrequency     = alertFrequency;
@@ -413,8 +417,11 @@ export const updateProfile = async (req, res) => {
 
     await user.save();
 
-    if (name) {
-      // Return updated name so frontend can sync localStorage
+    // If NAICS codes changed → immediately distribute matching opportunities to this user's feed
+    if (naicsChanged && naicsCodes?.length > 0) {
+      import('../services/schedulerService.js').then(({ distributeToUser }) => {
+        distributeToUser(user).catch(e => console.warn('Post-NAICS distribution error:', e.message));
+      }).catch(() => {});
     }
 
     res.json({ success: true, data: user });

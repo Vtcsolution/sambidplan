@@ -18,6 +18,7 @@ import {
   deleteDocument,
   addComment,
   downloadDocument,
+  getAIReadiness,
 } from '../controllers/companyController.js';
 import {
   createWorkspaceUser,
@@ -38,8 +39,9 @@ router.get('/join/:token', previewInvite);
 router.use(protect);
 
 // Company CRUD — no requireCompany on create/mine so users can create/check
-router.post('/',     createCompany);
-router.get('/mine',  getMyCompanyProfile);
+router.post('/',            createCompany);
+router.get('/mine',         getMyCompanyProfile);
+router.get('/ai-readiness', getAIReadiness);
 
 // Accept invite — user must be logged in but NOT necessarily in a company yet
 router.post('/join/:token', acceptInvite);

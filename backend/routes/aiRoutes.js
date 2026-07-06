@@ -5,7 +5,7 @@ import {
   askQuestion, analyzeCompetition, assessRisk,
   generateCapabilityStatementAI, analyzeRFP, rfpUploadMiddleware,
   goNoGoWorkflow, marketResearch, getIncumbentIntelligence,
-  sourcesSought, analyzeAttachment,
+  sourcesSought, analyzeAttachment, deepSummarize,
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { requireAICredits } from '../middleware/aiCreditMiddleware.js';
@@ -26,5 +26,6 @@ router.post('/market-research',            requireAICredits('market_research'), 
 router.get('/incumbent/:opportunityId',    requireAICredits('incumbent'),            getIncumbentIntelligence);
 router.post('/sources-sought',             requireAICredits('sources_sought'),       sourcesSought);
 router.post('/analyze-attachment',         requireAICredits('analyze_attachment'),   analyzeAttachment);
+router.post('/deep-summarize/:opportunityId', requireAICredits('summarize'),         deepSummarize);
 
 export default router;

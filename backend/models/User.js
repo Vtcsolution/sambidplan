@@ -196,6 +196,9 @@ lastFetchReset: {
   twoFactorTempToken: { type: String, default: null, select: false },
   twoFactorTempExpires: { type: Date, default: null, select: false },
 
+  // Deadline alert window: send "upcoming deadline" emails for opps due within this many days
+  deadlineAlertDays: { type: Number, default: 30 },
+
   createdAt: {
     type: Date,
     default: Date.now

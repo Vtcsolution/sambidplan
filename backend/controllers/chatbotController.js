@@ -1,4 +1,4 @@
-import { chat } from '../services/geminiService.js';
+import { openaiChat as chat } from '../services/geminiService.js';
 import { spendAICredits } from '../services/aiCreditService.js';
 import Admin from '../models/Admin.js';
 import AdminNotification from '../models/admin/AdminNotification.js';
@@ -133,7 +133,7 @@ export const chatWithBot = async (req, res) => {
     const userContext = `User: ${req.user.name || 'User'}, Plan: ${req.user.plan || 'free'}, Email: ${req.user.email}`;
     const userPrompt = `${userContext}\n\nUser's question: ${message.trim()}`;
 
-    const response = await chat(PLATFORM_KNOWLEDGE, userPrompt, 'claude-sonnet-4-6', 512);
+    const response = await chat(PLATFORM_KNOWLEDGE, userPrompt, 512);
 
     res.json({ success: true, data: { reply: response } });
   } catch (err) {

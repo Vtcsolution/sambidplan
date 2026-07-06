@@ -1,12 +1,10 @@
 // frontend/src/components/AIPanel.jsx
 import { useState } from 'react';
 import AIResponseRenderer from './AIResponseRenderer';
-import { 
-  Sparkles, 
-  FileText, 
-  TrendingUp, 
-  Shield, 
-  Users, 
+import CompanyReadinessModal from './CompanyReadinessModal';
+import {
+  FileText,
+  Shield,
   MessageCircle,
   Loader2,
   ChevronDown,
@@ -19,57 +17,37 @@ import { aiAPI } from '../services/api';
 import Button from './Button';
 import Card from './Card';
 
-export default function AIPanel({ opportunityId, userPlan }) {
+export default function AIPanel({ opportunityId, userPlan, resourceLinks = [] }) {
   const [activeFeature, setActiveFeature] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [deepMeta, setDeepMeta] = useState(null);
   const [question, setQuestion] = useState('');
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
+  const [readinessModal, setReadinessModal] = useState(null); // { feature } | null
+
+  const hasDocuments = resourceLinks.length > 0;
+  const docCount = resourceLinks.length;
 
   const features = [
     {
       id: 'summarize',
-      name: 'AI Summarize',
+      name: hasDocuments ? 'Deep AI Analysis' : 'AI Summarize',
       icon: FileText,
-      description: 'Get a quick summary of the RFP',
+      description: hasDocuments
+        ? `Reads all ${docCount} attached PDF${docCount !== 1 ? 's' : ''} + full opportunity data`
+        : 'Full summary of the opportunity',
       color: 'blue',
+      badge: hasDocuments ? `${docCount} docs` : null,
       action: async () => {
+        if (hasDocuments) {
+          const res = await aiAPI.deepSummarize(opportunityId);
+          setDeepMeta(res.data.data);
+          return res.data.data.analysis;
+        }
         const res = await aiAPI.summarize(opportunityId);
         return res.data.data.summary;
-      }
-    },
-    {
-      id: 'bidAnalysis',
-      name: 'Bid Analysis',
-      icon: TrendingUp,
-      description: 'Should you bid? AI recommendation',
-      color: 'green',
-      action: async () => {
-        const res = await aiAPI.bidAnalysis(opportunityId);
-        return res.data.data.analysis;
-      }
-    },
-    {
-      id: 'fullProposal',
-      name: 'Full Proposal',
-      icon: Sparkles,
-      description: 'Generate complete proposal',
-      color: 'purple',
-      action: async () => {
-        const res = await aiAPI.fullProposal(opportunityId);
-        return res.data.data.proposal;
-      }
-    },
-    {
-      id: 'competitive',
-      name: 'Competitive Analysis',
-      icon: Users,
-      description: 'Analyze competitors',
-      color: 'orange',
-      action: async () => {
-        const res = await aiAPI.competitiveAnalysis(opportunityId);
-        return res.data.data.analysis;
       }
     },
     {
@@ -82,28 +60,37 @@ export default function AIPanel({ opportunityId, userPlan }) {
         const res = await aiAPI.riskAssessment(opportunityId);
         return res.data.data.assessment;
       }
-    }
+    },
   ];
 
-  const handleFeatureClick = async (feature) => {
-    if (userPlan !== 'pro' && userPlan !== 'enterprise') {
-      alert('Pro plan required for AI features. Please upgrade.');
-      return;
-    }
-
+  const runFeature = async (feature) => {
     setActiveFeature(feature.id);
     setLoading(true);
     setResult(null);
-    
+    setReadinessModal(null);
     try {
       const content = await feature.action();
       setResult(content);
     } catch (error) {
       console.error('AI feature error:', error);
-      setResult('⚠️ AI service temporarily unavailable. Please try again later.\n\nError: ' + (error.response?.data?.message || error.message));
+      const msg = error?.response?.data?.message || error.message || '';
+      setResult(`⚠️ ${msg || 'AI service temporarily unavailable. Please try again.'}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFeatureClick = (feature) => {
+    if (userPlan !== 'pro' && userPlan !== 'enterprise') {
+      alert('Pro plan required for AI features. Please upgrade.');
+      return;
+    }
+    // Show readiness modal before deep analysis and risk assessment
+    if (feature.id === 'summarize' || feature.id === 'risk') {
+      setReadinessModal(feature);
+      return;
+    }
+    runFeature(feature);
   };
 
   const handleAskQuestion = async () => {
@@ -150,6 +137,14 @@ export default function AIPanel({ opportunityId, userPlan }) {
   };
 
   return (
+    <>
+    {readinessModal && (
+      <CompanyReadinessModal
+        featureName={readinessModal.name}
+        onProceed={() => runFeature(readinessModal)}
+        onClose={() => setReadinessModal(null)}
+      />
+    )}
     <Card className="mb-6 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
@@ -165,18 +160,28 @@ export default function AIPanel({ opportunityId, userPlan }) {
       {expanded && (
         <div className="p-4 pt-0 border-t border-gray-100">
           {/* Feature Buttons */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-2 gap-3 mb-6">
             {features.map((feature) => (
               <button
                 key={feature.id}
                 onClick={() => handleFeatureClick(feature)}
                 disabled={loading && activeFeature === feature.id}
-                className={`p-3 rounded-xl border-2 transition-all text-center ${getColorClasses(feature.color)} ${
+                className={`p-3 rounded-xl border-2 transition-all text-center relative ${getColorClasses(feature.color)} ${
                   activeFeature === feature.id && loading ? 'opacity-50 cursor-wait' : ''
                 }`}
               >
-                <feature.icon className="w-5 h-5 mx-auto mb-1" />
-                <span className="text-xs font-medium">{feature.name}</span>
+                <div className="relative inline-block">
+                  <feature.icon className="w-5 h-5 mx-auto mb-1" />
+                  {feature.badge && (
+                    <span className="absolute -top-1 -right-2 text-[9px] bg-indigo-600 text-white px-1 rounded-full leading-tight">
+                      {feature.badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs font-medium block leading-tight">{feature.name}</span>
+                {feature.description && feature.id === 'summarize' && (
+                  <span className="text-[10px] opacity-60 leading-tight mt-0.5 block">{feature.description}</span>
+                )}
               </button>
             ))}
           </div>
@@ -215,44 +220,63 @@ export default function AIPanel({ opportunityId, userPlan }) {
 
           {/* Loading State */}
           {loading && (
-            <div className="flex items-center justify-center py-12 bg-gray-50 rounded-lg">
+            <div className="flex flex-col items-center justify-center py-12 bg-gray-50 rounded-lg gap-2">
               <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-              <span className="ml-2 text-gray-600">AI is analyzing...</span>
+              <span className="text-gray-600 text-sm font-medium">
+                {hasDocuments && activeFeature === 'summarize'
+                  ? `Fetching & reading ${docCount} document${docCount !== 1 ? 's' : ''} from SAM.gov…`
+                  : 'AI is analyzing…'}
+              </span>
+              {hasDocuments && activeFeature === 'summarize' && (
+                <span className="text-xs text-gray-400">This may take 15–30 seconds</span>
+              )}
             </div>
           )}
 
           {/* Result Display */}
           {result && !loading && (
-            <div className="relative mt-4">
-              <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                <AIResponseRenderer content={result} />
+            <div className="mt-4">
+              {deepMeta && activeFeature === 'summarize' && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-2 ${
+                  deepMeta.docsAnalyzed > 0
+                    ? 'bg-green-50 border border-green-200 text-green-700'
+                    : 'bg-amber-50 border border-amber-200 text-amber-700'
+                }`}>
+                  <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                  {deepMeta.message}
+                </div>
+              )}
+              <div className="relative">
+                <div className="bg-gray-50 rounded-lg p-4 max-h-[800px] overflow-y-auto">
+                  <AIResponseRenderer content={result} />
+                </div>
+                <button
+                  onClick={copyToClipboard}
+                  className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+                  title="Copy to clipboard"
+                >
+                  {copied ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
               </div>
-              <button
-                onClick={copyToClipboard}
-                className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
-                title="Copy to clipboard"
-              >
-                {copied ? (
-                  <Check className="w-4 h-4 text-green-500" />
-                ) : (
-                  <Copy className="w-4 h-4 text-gray-500" />
-                )}
-              </button>
             </div>
           )}
 
           {/* Quick Tips */}
           <div className="mt-4 p-3 bg-indigo-50 rounded-lg">
             <p className="text-xs text-indigo-700">
-              <strong>✨ Pro Tips:</strong> 
+              <strong>✨ Pro Tips:</strong>
               • Ask specific questions for better answers
-              • Use "Generate Full Proposal" for complete RFP response
-              • Run "Risk Assessment" before bidding
+              • Run "Risk Assessment" before deciding to bid
               • Copy responses to use in your proposal
             </p>
           </div>
         </div>
       )}
     </Card>
+    </>
   );
 }

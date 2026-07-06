@@ -4,7 +4,7 @@ import {
   Sparkles, RefreshCw, TrendingUp, Target, AlertTriangle,
   CheckCircle, ArrowRight, Zap, BarChart3, Brain,
   ChevronDown, ChevronUp, ExternalLink, Clock, Lightbulb,
-  Users, Shield, CalendarDays, Star
+  Users, Shield, CalendarDays, Star, Award
 } from 'lucide-react';
 import { predictionAPI } from '../services/api';
 import { AICreditsInline, AICreditsExhaustedModal } from './AICreditsBar';
@@ -371,7 +371,7 @@ export default function AIPredictionsWidget({ userPlan }) {
             </div>
             <div className="text-center">
               <p className="text-sm font-medium text-gray-700">AI is analyzing your opportunities</p>
-              <p className="text-xs text-gray-400 mt-1">Calculating win probabilities based on your profile…</p>
+              <p className="text-xs text-gray-400 mt-1">Reading your past performance & USASpending awards…</p>
             </div>
           </div>
         ) : error ? (
@@ -392,6 +392,20 @@ export default function AIPredictionsWidget({ userPlan }) {
               ) : <div />}
               {credits && <AICreditsInline credits={credits} />}
             </div>
+
+            {/* Past performance signal indicator */}
+            {data?.userProfile && (data.userProfile.manualPPCount > 0 || data.userProfile.usaSpendingCount > 0) && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700">
+                <Award className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  <strong>Past performance included:</strong>{' '}
+                  {data.userProfile.manualPPCount > 0 && `${data.userProfile.manualPPCount} manual record${data.userProfile.manualPPCount !== 1 ? 's' : ''}`}
+                  {data.userProfile.manualPPCount > 0 && data.userProfile.usaSpendingCount > 0 && ' + '}
+                  {data.userProfile.usaSpendingCount > 0 && `${data.userProfile.usaSpendingCount} verified USASpending award${data.userProfile.usaSpendingCount !== 1 ? 's' : ''}`}
+                  {data.userProfile.totalAwardValue > 0 && ` ($${(data.userProfile.totalAwardValue / 1e6).toFixed(1)}M total)`}
+                </span>
+              </div>
+            )}
 
             {/* Market insights */}
             <MarketInsightsPanel insights={data?.marketInsights} />
