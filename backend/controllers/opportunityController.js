@@ -767,9 +767,10 @@ export const getOpportunityById = async (req, res) => {
     // ── 2. Re-fetch resource links if empty ──────────────────────────────────
     if (!opportunity.resourceLinks || opportunity.resourceLinks.length === 0) {
       const noticeId = extractNoticeId(opportunity);
-      if (noticeId && SAM_API_KEY) {
+      const anyKey = process.env.SAM_API_KEY || process.env.SAM_API_KEY_2 || process.env.SAM_API_KEY_3 || process.env.SAM_API_KEY_4;
+      if (noticeId && anyKey) {
         try {
-          const links = await fetchSAMResourceLinks(SAM_API_KEY, noticeId);
+          const links = await fetchSAMResourceLinks(anyKey, noticeId);
           if (links.length > 0) {
             opportunity.resourceLinks = links;
             dirty = true;

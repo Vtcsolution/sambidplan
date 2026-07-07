@@ -386,30 +386,32 @@ export const runNightlyBulkDownload = async () => {
   return { fetched, saved, skipped, pages, totalInStore };
 };
 
-// ─── Resolve all unresolved descriptions in the DB ───────────────────────────
-// Queries for records whose description is still a SAM.gov URL, resolves them
-// in batches of 1500 (2 keys × 1000/day minus buffer). Runs after every bulk
-// download so ALL records eventually have real text — not just the first 200.
-// No artificial limit — processes every active record with an unresolved description.
-// Stops naturally when SAM.gov quota is exhausted (all keys return 429).
-// Unfinished records are picked up on the next nightly run.
-export const resolveAllPendingDescriptions = async () => {
-  console.log('\n📝 Resolving ALL unresolved descriptions for active contracts...');
+// ─── Resolve pending descriptions — quota-aware, reserves capacity for on-demand ─
+// maxCalls caps how many API calls are spent here, so the remaining daily quota
+// stays available for users who open records during the day (on-demand resolution
+// in getOpportunityById). Without this cap the nightly run exhausted all keys by
+// 5 AM and every on-demand attempt 429'd until midnight.
+export const resolveAllPendingDescriptions = async (maxCalls = 1000) => {
+  console.log(`\n📝 Resolving unresolved descriptions (cap: ${maxCalls} calls)...`);
 
   const pending = await Opportunity.find({
     description: { $regex: /^https?:\/\/.*api\.sam\.gov/ },
     source: 'sam',
-    dueDate: { $gt: new Date() },
+    $or: [{ dueDate: { $gt: new Date() } }, { dueDate: null }],
   })
-    .sort({ dueDate: 1 }) // soonest deadline first — most urgent contracts get text first
+    .sort({ dueDate: 1 }) // soonest deadline first; null dueDate records sort last
     .select('_id sourceId description')
     .lean();
 
-  console.log(`   Found ${pending.length} active records with unresolved descriptions`);
+  console.log(`   Found ${pending.length} records with unresolved descriptions`);
   if (pending.length === 0) return 0;
 
   let resolved = 0;
   for (const rec of pending) {
+    if (resolved >= maxCalls) {
+      console.log(`  ⏸️  Reached nightly cap of ${maxCalls} — remaining will resolve on-demand or tomorrow night.`);
+      break;
+    }
     try {
       const text = await resolveDescription(null, rec.description);
       if (text && !text.startsWith('http')) {
@@ -433,14 +435,10 @@ export const resolveAllPendingDescriptions = async () => {
   return resolved;
 };
 
-// ─── Resolve resource links (PDFs/attachments) for all active records ─────────
-// Queries for active records that have no resource links yet, fetches them from
-// SAM.gov, and saves permanently. Runs after every nightly bulk download.
-// No artificial limit — processes every active record that has no resource links yet.
-// Stops naturally when SAM.gov quota is exhausted (all keys return 429).
-// Unfinished records are picked up on the next nightly run.
-export const resolveAllPendingResourceLinks = async () => {
-  console.log('\n📎 Resolving resource links (PDFs/attachments) for ALL active contracts...');
+// ─── Resolve resource links (PDFs/attachments) for active records ─────────────
+// maxCalls caps quota usage so on-demand fetches still work during the day.
+export const resolveAllPendingResourceLinks = async (maxCalls = 200) => {
+  console.log(`\n📎 Resolving resource links (cap: ${maxCalls} calls)...`);
 
   const pending = await Opportunity.find({
     resourceLinks: { $size: 0 },
@@ -458,6 +456,10 @@ export const resolveAllPendingResourceLinks = async () => {
   let checked = 0;
   let withFiles = 0;
   for (const rec of pending) {
+    if (checked >= maxCalls) {
+      console.log(`  ⏸️  Reached resource-links cap of ${maxCalls} — remaining will resolve on-demand or tomorrow night.`);
+      break;
+    }
     try {
       const links = await fetchSAMResourceLinks(null, rec.noticeId);
       await Opportunity.updateOne({ _id: rec._id }, { $set: { resourceLinks: links } });
@@ -523,10 +525,14 @@ export const bulkStats = {
 //   2. Descriptions  : resolve URL → real text for EVERY active record (no cap)
 //   3. Resource links: fetch PDFs/attachments for EVERY active record with none yet (no cap)
 //
-// No artificial limits — quota is the only natural stop.
-// When ALL API keys return 429, each step breaks and logs how many were completed.
-// Unfinished records are picked up automatically on the next nightly run.
-// Add more SAM_API_KEY_N keys in .env to increase nightly throughput.
+// Quota budget per nightly run:
+//   keys × 1000/day = total daily quota
+//   We spend ~half on the nightly batch (descriptions + resource links) and
+//   reserve the other half for on-demand resolution when users open records.
+//   If you have 4 keys (4,000/day) you can raise the caps — e.g. 2000 + 400.
+const NIGHTLY_DESC_CAP  = 1000; // description resolutions per night
+const NIGHTLY_LINKS_CAP = 200;  // resource-link fetches per night
+
 export const triggerBulkDownload = async () => {
   if (bulkStats.isRunning) {
     console.log('⏳ Bulk download already in progress — skipping');
@@ -541,11 +547,11 @@ export const triggerBulkDownload = async () => {
     bulkStats.lastRunCount = result.saved;
     bulkStats.lastRunPages = result.pages;
 
-    // Step 2: resolve descriptions (URL → full text) for ALL active records
-    await resolveAllPendingDescriptions();
+    // Step 2: resolve descriptions — capped to preserve quota for on-demand
+    await resolveAllPendingDescriptions(NIGHTLY_DESC_CAP);
 
-    // Step 3: fetch PDFs/attachments for ALL active records that have none yet
-    await resolveAllPendingResourceLinks();
+    // Step 3: fetch PDFs/attachments — capped to preserve quota for on-demand
+    await resolveAllPendingResourceLinks(NIGHTLY_LINKS_CAP);
 
     return result;
   } finally {
