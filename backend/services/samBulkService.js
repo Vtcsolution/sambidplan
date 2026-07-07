@@ -24,6 +24,7 @@
 // retrieves the most records possible, minimising quota consumption.
 
 import Opportunity from '../models/Opportunity.js';
+import UserOpportunity from '../models/UserOpportunity.js';
 import { samGetWithRotation, fetchSAMResourceLinks } from './samApiService.js';
 import { getNaicsDescription, getPscDescription } from './codeDescriptions.js';
 
@@ -386,22 +387,31 @@ export const runNightlyBulkDownload = async () => {
   return { fetched, saved, skipped, pages, totalInStore };
 };
 
-// ─── Resolve pending descriptions — quota-aware, reserves capacity for on-demand ─
-// maxCalls caps how many API calls are spent here, so the remaining daily quota
-// stays available for users who open records during the day (on-demand resolution
-// in getOpportunityById). Without this cap the nightly run exhausted all keys by
-// 5 AM and every on-demand attempt 429'd until midnight.
-export const resolveAllPendingDescriptions = async (maxCalls = 1000) => {
-  console.log(`\n📝 Resolving unresolved descriptions (cap: ${maxCalls} calls)...`);
+// ─── Resolve pending descriptions — user feeds first, then rest ───────────────
+// Priority pass: records that are in any user's personal feed get resolved first
+// so non-enterprise users always see complete data. Enterprise users query the
+// master store directly and benefit from on-demand resolution when they open records.
+export const resolveAllPendingDescriptions = async (maxCalls = 9999) => {
+  console.log(`\n📝 Resolving unresolved descriptions (priority: user feeds first)...`);
 
-  const pending = await Opportunity.find({
+  const urlFilter = {
     description: { $regex: /^https?:\/\/.*api\.sam\.gov/ },
     source: 'sam',
     $or: [{ dueDate: { $gt: new Date() } }, { dueDate: null }],
-  })
-    .sort({ dueDate: 1 }) // soonest deadline first; null dueDate records sort last
-    .select('_id sourceId description')
-    .lean();
+  };
+
+  // Get IDs of records in any user's personal feed — resolve these first
+  const userFeedIds = await UserOpportunity.distinct('opportunity');
+
+  const [priorityPending, restPending] = await Promise.all([
+    Opportunity.find({ _id: { $in: userFeedIds }, ...urlFilter })
+      .sort({ dueDate: 1 }).select('_id sourceId description').lean(),
+    Opportunity.find({ _id: { $nin: userFeedIds }, ...urlFilter })
+      .sort({ dueDate: 1 }).select('_id sourceId description').lean(),
+  ]);
+
+  const pending = [...priorityPending, ...restPending];
+  console.log(`   Found ${pending.length} records (${priorityPending.length} in user feeds, ${restPending.length} background)`);
 
   console.log(`   Found ${pending.length} records with unresolved descriptions`);
   if (pending.length === 0) return 0;
