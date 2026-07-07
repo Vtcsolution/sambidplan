@@ -530,8 +530,8 @@ export const bulkStats = {
 //   We spend ~half on the nightly batch (descriptions + resource links) and
 //   reserve the other half for on-demand resolution when users open records.
 //   If you have 4 keys (4,000/day) you can raise the caps — e.g. 2000 + 400.
-const NIGHTLY_DESC_CAP  = 2000; // description resolutions per night (3 keys = 3000/day; reserve 1000 for on-demand)
-const NIGHTLY_LINKS_CAP = 500;  // resource-link fetches per night
+const NIGHTLY_DESC_CAP  = 9999; // use all available quota — resolves as many as possible each night
+const NIGHTLY_LINKS_CAP = 9999; // use all available quota for resource links too
 
 export const triggerBulkDownload = async () => {
   if (bulkStats.isRunning) {
