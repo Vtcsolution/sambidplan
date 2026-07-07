@@ -675,9 +675,21 @@ export default function OpportunityDetail() {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Description</h3>
             {opportunity.description && !opportunity.description.startsWith('https://') && opportunity.description !== 'No description available'
               ? <p className="text-gray-700 whitespace-pre-wrap">{opportunity.description}</p>
-              : <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-                  Description is being loaded from SAM.gov — it will appear automatically the next time you open this record once the API quota resets (daily at midnight UTC). You can view the full solicitation now using the "View on SAM.gov" button below.
-                </p>
+              : <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-4">
+                  <p className="text-sm text-blue-800 font-medium mb-1">Full description available on SAM.gov</p>
+                  <p className="text-sm text-blue-700 mb-3">Click "View on SAM.gov" below to read the complete solicitation, attachments, and submission instructions.</p>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await opportunityAPI.getById(id);
+                        if (res.data?.data) setOpportunity(res.data.data);
+                      } catch {}
+                    }}
+                    className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition-colors"
+                  >
+                    Try loading description
+                  </button>
+                </div>
             }
           </div>
 
