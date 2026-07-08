@@ -116,6 +116,10 @@ const resolveDescription = async (apiKey, descOrUrl) => {
       return (text || desc).substring(0, 15000);
     } catch (e) {
       if (e.response?.status === 429) throw e; // all keys exhausted — let caller break the loop
+      if (e.response?.status === 500 || e.response?.status === 404) {
+        // SAM.gov has no description at this URL — mark permanently so we stop wasting quota
+        return 'No description available';
+      }
       console.error('  resolveDescription failed:', e.message);
       return desc;
     }
@@ -435,9 +439,9 @@ export const resolveAllPendingDescriptions = async (maxCalls = 9999) => {
       }
       console.warn(`  ⚠️  Failed (${rec.sourceId}): ${err.message}`);
     }
+    await new Promise(r => setTimeout(r, 250)); // 250ms between calls — avoids SAM.gov per-second limit
     if (resolved > 0 && resolved % 100 === 0) {
       console.log(`  📝 Progress: ${resolved}/${pending.length}`);
-      await new Promise(r => setTimeout(r, 1000));
     }
   }
 
