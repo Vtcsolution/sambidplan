@@ -464,7 +464,12 @@ export const startScheduler = () => {
   //   • The master fetch cron (0 * * * *) also fires at 04:00 UTC — the 55-min guard
   //     on runMasterFetch will skip it so bulk gets the full quota to itself.
   cron.schedule('0 4 * * *', async () => {
-    console.log('\n🌙 BULK DOWNLOAD (04:00 UTC = 09:00 AM Pakistan) starting...');
+    // Wait 5 min for SAM.gov quota reset to fully propagate before making any calls.
+    // Quota resets at midnight US Eastern (04:00 UTC summer / 05:00 UTC winter).
+    // Without this wait the first requests can still see yesterday's exhausted quota.
+    console.log('\n⏳ 04:00 UTC — waiting 5 min for SAM.gov quota reset to propagate...');
+    await new Promise(r => setTimeout(r, 5 * 60 * 1000));
+    console.log('\n🌙 BULK DOWNLOAD (04:05 UTC = 09:05 AM Pakistan) starting...');
     await triggerBulkDownload();
     // Wait 2 min then distribute so users see fresh data on login
     await new Promise(r => setTimeout(r, 120_000));

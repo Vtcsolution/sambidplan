@@ -555,16 +555,20 @@ export const triggerBulkDownload = async () => {
 
   bulkStats.isRunning = true;
   try {
-    // Step 1: download all active records from SAM.gov
+    // Step 1: resolve existing pending descriptions FIRST — they get priority over new fetches
+    // This ensures quota is used on descriptions before the bulk fetch consumes any calls
+    await resolveAllPendingDescriptions(NIGHTLY_DESC_CAP);
+
+    // Step 2: download all active records from SAM.gov (uses ~12-50 calls, well within remaining quota)
     const result = await runNightlyBulkDownload();
     bulkStats.lastRunAt    = new Date();
     bulkStats.lastRunCount = result.saved;
     bulkStats.lastRunPages = result.pages;
 
-    // Step 2: resolve descriptions — capped to preserve quota for on-demand
-    await resolveAllPendingDescriptions(NIGHTLY_DESC_CAP);
+    // Step 3: resolve descriptions for any newly fetched records (uses leftover quota)
+    await resolveAllPendingDescriptions(300);
 
-    // Step 3: fetch PDFs/attachments — capped to preserve quota for on-demand
+    // Step 4: fetch PDFs/attachments
     await resolveAllPendingResourceLinks(NIGHTLY_LINKS_CAP);
 
     return result;
